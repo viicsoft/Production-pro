@@ -1,0 +1,272 @@
+@page "/Admin"
+@model AtemDirector.Server.Pages.Admin.IndexModel
+@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - Viicsoft Admin</title>
+    <!-- Basic Dashboard Styling -->
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #1b1b1b; color: #ddd; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid #333; margin-bottom: 30px; }
+        h1 { margin: 0; font-weight: 300; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; font-size: 14px; }
+        .btn-primary { background: #007acc; color: white; }
+        .btn-danger { background: #b00; color: white; }
+        .card { background: #2b2b2b; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+        h2 { margin-top: 0; color: #fff; font-size: 18px; border-bottom: 1px solid #444; padding-bottom: 10px; margin-bottom: 20px; }
+        
+        /* Form Styles */
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; color: #aaa; }
+        input[type="text"], input[type="file"], select { width: 100%; padding: 8px; background: #333; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; }
+        
+        /* Grid Styles */
+        .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .media-item { background: #252525; border-radius: 8px; overflow: hidden; border: 1px solid #333; position: relative; }
+        .media-preview { width: 100%; height: 160px; background: #000; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        .media-preview img { width: 100%; height: 100%; object-fit: cover; }
+        .media-preview video { width: 100%; height: 100%; object-fit: cover; }
+        .media-info { padding: 15px; }
+        .media-desc { font-weight: bold; margin-bottom: 5px; display: block; }
+        .media-date { font-size: 12px; color: #666; }
+        .delete-form { position: absolute; top: 10px; right: 10px; }
+        .btn-sm { padding: 4px 8px; font-size: 12px; background: rgba(200,0,0,0.8); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <h1>Viicsoft Admin Dashboard</h1>
+                @if (TempData["Message"] != null)
+                {
+                    <div style="padding:5px 10px; background:#4caf50; color:white; border-radius:4px; font-weight:bold;">
+                        @TempData["Message"]
+                    </div>
+                }
+            </div>
+            <a href="/?logout=true" class="btn btn-danger">Logout</a>
+        </header>
+
+        <!-- MAIN VIEW TABS -->
+        <div style="display:flex; gap:10px; margin-bottom:20px;">
+            <a href="?View=Admin" class="btn @(Model.View != "Production" ? "btn-primary" : "btn-secondary")">Admin Dashboard</a>
+            <a href="?View=Production" class="btn @(Model.View == "Production" ? "btn-primary" : "btn-secondary")">PRODUCTION</a>
+        </div>
+
+        <!-- CATEGORY TABS -->
+        <div style="display:flex; gap:10px; margin-bottom:20px; border-bottom:2px solid #333; padding-bottom:10px;">
+            <a href="?View=@Model.View&SelectedCategoryId=" class="btn @(Model.SelectedCategoryId == null ? "btn-primary" : "btn-secondary")" style="text-decoration:none;">
+                All / General
+            </a>
+            @foreach (var cat in Model.Categories)
+            {
+                <a href="?View=@Model.View&SelectedCategoryId=@cat.Id" class="btn @(Model.SelectedCategoryId == cat.Id ? "btn-primary" : "btn-secondary")" style="text-decoration:none;">
+                    @cat.Name
+                </a>
+            }
+        </div>
+
+        @if (Model.View != "Production")
+        {
+            <!-- MANAGE CATEGORIES SECTION -->
+            <div class="card">
+                <h2>Manage Categories</h2>
+                <form method="post" asp-page-handler="CreateCategory" style="display:flex; gap:10px; margin-bottom:15px;">
+                    <input type="text" name="categoryName" placeholder="New category name..." required style="flex:1; padding:8px; border-radius:4px; border:1px solid #444; background:#222; color:#fff;" />
+                    <button type="submit" class="btn btn-primary">Create Category</button>
+                </form>
+                
+                @if (Model.Categories.Count == 0)
+                {
+                    <p style="color:#aaa;">No categories created yet.</p>
+                }
+                else
+                {
+                    <div style="display:flex; flex-wrap:wrap; gap:10px;">
+                        @foreach (var cat in Model.Categories)
+                        {
+                            <div style="display:flex; align-items:center; gap:5px; padding:5px 10px; background:#333; border-radius:4px;">
+                                <span>@cat.Name</span>
+                                <form method="post" asp-page-handler="DeleteCategory" asp-route-categoryId="@cat.Id" style="margin:0;" onsubmit="return confirm('Delete category @cat.Name?');">
+                                    <button type="submit" class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:11px;">X</button>
+                                </form>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- ACTIVE ROOMS SECTION -->
+            <div class="card">
+                <h2>Active Rooms</h2>
+                @if (Model.ActiveRooms.Count == 0)
+                {
+                    <p style="color:#aaa;">No active rooms found.</p>
+                }
+                else
+                {
+                    <ul>
+                    @foreach (var room in Model.ActiveRooms)
+                    {
+                        <li>
+                            <strong style="font-size:18px;">Room: @room.Key</strong>
+                            <ul style="margin-top:5px; margin-bottom:15px;">
+                                @if (room.Value.Count == 0) { <li style="color:#666;">No users connected</li> }
+                                @foreach (var user in room.Value)
+                                {
+                                    <li>
+                                        <span style="color:#0f0;">●</span> 
+                                        @user.Role - <strong>@user.Alias</strong>
+                                    </li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                    </ul>
+                }
+            </div>
+
+            <!-- UPLOAD SECTION -->
+            <div class="card">
+                <h2>Add New Content</h2>
+                <form method="post" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label>Content Type</label>
+                        <select name="Type" id="typeSelect" onchange="toggleInputs()">
+                            <option value="Image">Image Upload</option>
+                            <option value="Video">Video Upload</option>
+                            <option value="Youtube">YouTube Embed</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="fileInput">
+                        <label>Select File (Image/Video)</label>
+                        <input type="file" name="UploadFile" />
+                    </div>
+
+                    <div class="form-group" id="urlInput" style="display:none;">
+                        <label>YouTube URL / Video ID</label>
+                        <input type="text" name="YoutubeUrl" placeholder="https://youtube.com/watch?v=..." />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Description / Caption</label>
+                        <input type="text" name="Description" required />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Category (optional - leave blank for General)</label>
+                        <select name="CategoryId">
+                            <option value="">General (No Category)</option>
+                            @foreach (var cat in Model.Categories)
+                            {
+                                <option value="@cat.Id">@cat.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Add Content</button>
+                </form>
+            </div>
+        }
+
+        <!-- LIST SECTION -->
+        <div class="media-grid">
+            @foreach (var item in Model.MediaItems)
+            {
+                <div class="media-item">
+                    <div class="media-preview">
+                        @if (item.Type == "Image")
+                        {
+                            <img src="@item.Url" alt="@item.Description" />
+                        }
+                        else if (item.Type == "Video")
+                        {
+                            <video controls>
+                                <source src="@item.Url" type="video/mp4">
+                                Your browser does not support the video tag.
+                            </video>
+                        }
+                        else if (item.Type == "Youtube")
+                        {
+                            <!-- Convert watch URL to embed if needed, simplistic approach -->
+                            <iframe width="100%" height="100%" src="https://www.youtube.com/embed/@ExtractYoutubeId(item.Url)" frameborder="0" allowfullscreen></iframe>
+                        }
+                    </div>
+                    <div class="media-info">
+                        <span class="media-desc">@item.Description</span>
+                        <span class="media-date">@item.CreatedAt.ToShortDateString()</span>
+                        
+                        <div style="margin-top:10px; border-top:1px solid #333; padding-top:10px;">
+                            <form method="post" asp-page-handler="SendMedia" style="display:flex; gap:5px;">
+                                <input type="hidden" name="mediaId" value="@item.Id" />
+                                <select name="targetAlias" style="font-size:12px; padding:4px;">
+                                    <option value="">-- Send to --</option>
+                                    @foreach (var room in Model.ActiveRooms)
+                                    {
+                                        <optgroup label="Room: @room.Key">
+                                            @foreach (var user in room.Value)
+                                            {
+                                                <!-- We need to send both room and alias. 
+                                                     Hack: Combine them in value and split server-side? 
+                                                     Or just use JS. Let's use hidden input for room and simple loop.
+                                                     Wait, standard form submit limitations. 
+                                                     Let's stick to simple single-form-per-item approach.
+                                                -->
+                                                <option value="@room.Key|@user.Alias">@user.Role: @user.Alias</option>
+                                            }
+                                        </optgroup>
+                                    }
+                                </select>
+                                <button type="submit" class="btn btn-primary btn-sm">Send</button>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    @if (Model.View != "Production")
+                    {
+                        <form method="post" asp-page-handler="Delete" asp-route-id="@item.Id" class="delete-form" onsubmit="return confirm('Delete this item?');">
+                            <button type="submit" class="btn btn-danger btn-sm">X</button>
+                        </form>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <script>
+        function toggleInputs() {
+            var type = document.getElementById('typeSelect').value;
+            if (type === 'Youtube') {
+                document.getElementById('fileInput').style.display = 'none';
+                document.getElementById('urlInput').style.display = 'block';
+            } else {
+                document.getElementById('fileInput').style.display = 'block';
+                document.getElementById('urlInput').style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
+
+@functions {
+    public string ExtractYoutubeId(string url)
+    {
+        // Simple helper to extract ID from standard YT urls
+        // In a real app, use Regex
+        if (string.IsNullOrEmpty(url)) return "";
+        if (!url.Contains("v=")) return url; // Assign Assume it might be ID
+        try {
+            var uri = new Uri(url);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            return query["v"];
+        } catch { return url; }
+    }
+}

@@ -1,0 +1,50 @@
+# .NET Core / Visual Studio
+bin/
+obj/
+[Oo]bj/
+[Bb]in/
+*.user
+*.userosscache
+*.sln.docstates
+
+# MAUI / Mobile
+.razor-cache/
+.vs/
+.vs*
+.idea/
+*.suo
+*.user
+*.userprefs
+
+# Android
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# iOS/Mac
+.DS_Store
+xcuserdata/
+DerivedData/
+
+# Packages & Tools
+.nuget/
+*.nupkg
+node_modules/
+.npm/
+
+# AtemDirector Specific
+installer-output/
+publish/
+*.log
+brain/
+
+# Global Binary Exclusions
+*.exe
+*.dll
+*.pdb
+*.node
+*.msi
+*.zip
+*.7z
+*.rar

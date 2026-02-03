@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Windows GUI app -->
+    <OutputType>WinExe</OutputType>
+
+    <!-- .NET 9 with Windows desktop APIs -->
+    <TargetFramework>net9.0-windows</TargetFramework>
+
+    <!-- WPF -->
+    <UseWPF>true</UseWPF>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="icon.png" />
+    <Resource Include="icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- existing shared projects -->
+    <ProjectReference Include="..\core\core.csproj" />
+    <ProjectReference Include="..\simulator\simulator.csproj" />
+
+    <!-- Blackmagic ATEM SDK interop (managed DLL we will generate) -->
+    <Reference Include="BMDSwitcherAPI">
+      <HintPath>lib\Interop.BMDSwitcherAPI.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    
+    <!-- Native COM DLL required for ATEM SDK -->
+    <Content Include="lib\BMDSwitcherAPI64.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>
