@@ -70,7 +70,7 @@ namespace Desktop
             
             _app.UseRouting();
 
-            _app.MapGet("/api/intercom/token", (string identity, string name) =>
+            _app.MapGet("/api/intercom/token", (string identity, string name, string? roomName) =>
             {
                 if (string.IsNullOrEmpty(identity)) return Results.BadRequest("identity is required");
                 
@@ -84,7 +84,7 @@ namespace Desktop
                     { "video", new Dictionary<string, object>()
                         {
                             { "roomJoin", true },
-                            { "room", "intercom" }
+                            { "room", string.IsNullOrEmpty(roomName) ? "intercom" : roomName }
                         }
                     }
                 };
@@ -250,6 +250,18 @@ namespace Desktop
                 type = "reminder",
                 targetCameras = targetCameras,
                 text = text
+            };
+            await BroadcastJsonAsync(payload);
+        }
+
+        public async Task BroadcastGradeAsync(int targetCamera, string grade, string feedback)
+        {
+            var payload = new
+            {
+                type = "grade",
+                targetCameras = new[] { targetCamera },
+                grade = grade,
+                feedback = feedback
             };
             await BroadcastJsonAsync(payload);
         }

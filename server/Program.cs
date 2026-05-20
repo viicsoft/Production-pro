@@ -37,7 +37,7 @@ namespace AtemDirector.Server
             new ConcurrentDictionary<WebSocket, VoiceClient>();
 
         // ---------- ROOM RELAY state (Online Mode) ----------
-        public record RelayRoom(string RoomId, string Pin, string ProductionName, WebSocket DirectorWs, JsonElement? Inputs);
+        public record RelayRoom(string RoomId, string Pin, string ProductionName, WebSocket DirectorWs, string? InputsJson);
         public static readonly ConcurrentDictionary<string, RelayRoom> RelayRooms = new();
         // roomId -> (clientId -> WebSocket)
         public static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, WebSocket>> RelayCrews = new();
@@ -182,7 +182,7 @@ namespace AtemDirector.Server
                 return Results.Ok(new { exists = false });
             });
             // API: Intercom Token (LiveKit JWT for intercom)
-            app.MapGet("/api/intercom/token", (string identity, string name) =>
+            app.MapGet("/api/intercom/token", (string identity, string name, string? roomName) =>
             {
                 if (string.IsNullOrEmpty(identity)) return Results.BadRequest("identity is required");
                 
@@ -196,7 +196,7 @@ namespace AtemDirector.Server
                     { "video", new Dictionary<string, object>()
                         {
                             { "roomJoin", true },
-                            { "room", "intercom" }
+                            { "room", string.IsNullOrEmpty(roomName) ? "intercom" : roomName }
                         }
                     }
                 };
@@ -552,7 +552,7 @@ namespace AtemDirector.Server
                         var roomId = root.GetProperty("roomId").GetString() ?? "";
                         var pin = root.GetProperty("pin").GetString() ?? "";
                         var prodName = root.TryGetProperty("productionName", out var pn) ? pn.GetString() ?? "" : "";
-                        var inputs = root.TryGetProperty("inputs", out var inp) ? (JsonElement?)inp : null;
+                        var inputsJson = root.TryGetProperty("inputs", out var inp) ? inp.GetRawText() : null;
 
                         if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(pin))
                         {
@@ -561,7 +561,7 @@ namespace AtemDirector.Server
                         }
 
                         // Register room
-                        var room = new RelayRoom(roomId, pin, prodName, ws, inputs);
+                        var room = new RelayRoom(roomId, pin, prodName, ws, inputsJson);
                         RelayRooms[roomId] = room;
                         RelayCrews.GetOrAdd(roomId, _ => new ConcurrentDictionary<string, WebSocket>());
 
@@ -594,9 +594,10 @@ namespace AtemDirector.Server
                         Console.WriteLine($"[Relay] Crew {myClientId} (cam {cam}) joined room {roomId}");
                         await SendJsonAsync(ws, new { type = "joined", roomId }, context.RequestAborted);
                         
-                        if (room.Inputs.HasValue)
+                        if (room.InputsJson != null)
                         {
-                            var inputMsgBytes = JsonSerializer.SerializeToUtf8Bytes(new { type = "inputs", inputs = room.Inputs.Value });
+                            var inputMsg = $"{{\"type\":\"inputs\",\"inputs\":{room.InputsJson}}}";
+                            var inputMsgBytes = Encoding.UTF8.GetBytes(inputMsg);
                             await SafeSendAsync(ws, inputMsgBytes, context.RequestAborted);
                         }
 

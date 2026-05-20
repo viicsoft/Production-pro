@@ -20,10 +20,22 @@ namespace Desktop
         public bool IsOpen { get; set; } = false;
     }
 
+    public class CameraRoleMetadata
+    {
+        public string Role { get; set; } = "Custom";
+        public string Mobility { get; set; } = "fixed";
+        public string DefaultFraming { get; set; } = "variable";
+        public string SubjectArea { get; set; } = "variable";
+        public string UseFrequency { get; set; } = "primary";
+        public string TransitionCompatibility { get; set; } = "";
+    }
+
     public class InputConfig
     {
         public HashSet<int> ActiveInputs { get; set; } = new(Enumerable.Range(1, 8));
         public Dictionary<int, string> CustomLabels { get; set; } = new();
+        public Dictionary<int, CameraRoleMetadata> CameraRoles { get; set; } = new();
+        public Dictionary<int, int> CaptureDeviceIndices { get; set; } = new();
         public string SelectedTransitionStyle { get; set; } = "Mix";
         public int AutoTransitionRateMs { get; set; } = 1000;
         public WindowRect SuperSourceDock { get; set; } = new();

@@ -40,7 +40,10 @@ public sealed record ShotSuggestion(
     string? MediaPath = null,
     string? MediaType = null,  // "image" or "video"
     string? MediaUrl = null    // populated when broadcasting
-);
+)
+{
+    public bool IsAiGenerated { get; set; } = false;
+}
 
 public sealed record SwitcherState(
     List<SwitcherInput> Inputs, 

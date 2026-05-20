@@ -1000,7 +1000,7 @@
                 statusText.innerText = "Connecting...";
                 
                 try {
-                    const res = await fetch(`/api/intercom/token?identity=Cam${myCam}&name=Camera%20${myCam}`);
+                    const res = await fetch(`/api/intercom/token?identity=Cam${myCam}&name=Camera%20${myCam}&roomName=${roomId}`);
                     const data = await res.json();
                     
                     const wsUrl = 'wss://vidikom.app:7880';

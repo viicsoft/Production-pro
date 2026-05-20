@@ -339,6 +339,12 @@
                 <MenuItem Header="Outputs"/>
                 <MenuItem Header="Stream"/>
                 <MenuItem Header="Record"/>
+                <MenuItem Header="AI Director">
+                    <MenuItem Header="Start AI Director" x:Name="MenuStartAiDirector" Click="StartAiDirector_Click"/>
+                    <MenuItem Header="Stop AI Director" x:Name="MenuStopAiDirector" Click="StopAiDirector_Click" IsEnabled="False"/>
+                    <Separator/>
+                    <MenuItem Header="Pause (Take the wheel)" x:Name="MenuPauseAiDirector" Click="PauseAiDirector_Click" IsEnabled="False"/>
+                </MenuItem>
                 <MenuItem Header="Connection">
                     <MenuItem Header="Host Settings" StaysOpenOnClick="True">
                        <MenuItem.Icon>

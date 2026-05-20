@@ -91,16 +91,22 @@ namespace Desktop
         private readonly List<Border> _tickMarks = new();
 
         private static readonly string LogFile = @"C:\worker\AtemDirector\desktop\debug.log";
-        private static void Log(string msg)
+        public static void Log(string msg)
         {
             try { File.AppendAllText(LogFile, $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch { }
         }
 
+        public static MainWindow Instance { get; private set; }
+
         public MainWindow()
         {
+            Instance = this;
             InitializeComponent();
             _switcher = _simAtem;
             _config = InputConfig.Load();
+
+            FrameCaptureService.Instance.InputDeviceMap = new Dictionary<int, int>(_config.CaptureDeviceIndices);
+            FrameCaptureService.Instance.Start();
 
             // Restore transition style
             if (Enum.TryParse<TransitionStyle>(_config.SelectedTransitionStyle, out var saved))
@@ -252,7 +258,7 @@ namespace Desktop
                 };
 
                 // The server binds to port 8080 by default in StartAsync()
-                IntercomWebView.Source = new Uri("http://127.0.0.1:8080/director-intercom.html");
+                IntercomWebView.Source = new Uri($"http://127.0.0.1:8080/director-intercom.html?roomName={RoomManager.ActiveRoom?.RoomId ?? "intercom"}");
             }
             catch (Exception ex)
             {
@@ -330,6 +336,18 @@ namespace Desktop
             return null;
         }
 
+        private int _recommendedCut = -1;
+        public void HighlightRecommendedCut(int inputId)
+        {
+            Dispatcher.InvokeAsync(() => {
+                _recommendedCut = inputId;
+                foreach (var kvp in _buttonControls)
+                {
+                    if (kvp.Value.Tag is CamButton cam) ApplyButtonStyle(kvp.Value, cam);
+                }
+            });
+        }
+
         private void ApplyButtonStyle(Button btn, CamButton cam)
         {
             StopPulseOnButton(btn);
@@ -342,6 +360,17 @@ namespace Desktop
                     btn.Style = (Style)FindResource("PreviewCamButton"); break;
                 default:
                     btn.Style = (Style)FindResource("NeutralCamButton"); break;
+            }
+
+            if (cam.InputId == _recommendedCut && cam.State != CamState.Program)
+            {
+                btn.BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xD7, 0x00)); // Gold
+                btn.BorderThickness = new Thickness(5);
+            }
+            else
+            {
+                btn.BorderBrush = System.Windows.Media.Brushes.Transparent;
+                btn.BorderThickness = new Thickness(0);
             }
         }
 
@@ -811,6 +840,33 @@ namespace Desktop
 
         // ============ CONNECTION ============
 
+
+        private void StartAiDirector_Click(object sender, RoutedEventArgs e)
+        {
+            _ = AiDirectorLoop.Instance.StartAsync(_config);
+            MenuStartAiDirector.IsEnabled = false;
+            MenuStopAiDirector.IsEnabled = true;
+            MenuPauseAiDirector.IsEnabled = true;
+            MenuPauseAiDirector.Header = "Pause (Take the wheel)";
+            Log("AI Director Started");
+        }
+
+        private void StopAiDirector_Click(object sender, RoutedEventArgs e)
+        {
+            AiDirectorLoop.Instance.Stop();
+            MenuStartAiDirector.IsEnabled = true;
+            MenuStopAiDirector.IsEnabled = false;
+            MenuPauseAiDirector.IsEnabled = false;
+            Log("AI Director Stopped");
+        }
+
+        private void PauseAiDirector_Click(object sender, RoutedEventArgs e)
+        {
+            AiDirectorLoop.Instance.IsPaused = !AiDirectorLoop.Instance.IsPaused;
+            MenuPauseAiDirector.Header = AiDirectorLoop.Instance.IsPaused ? "Resume AI Director" : "Pause (Take the wheel)";
+            Log(AiDirectorLoop.Instance.IsPaused ? "AI Director Paused" : "AI Director Resumed");
+        }
+
         private async void Connect_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1037,8 +1093,15 @@ namespace Desktop
             }
         }
 
+        private int _lastUiProgramInput = -1;
         private void UpdateButtonStyles(int programInput, int previewInput)
         {
+            if (_lastUiProgramInput != programInput)
+            {
+                _lastUiProgramInput = programInput;
+                AiDirectorLoop.Instance.OnCameraCut(programInput);
+            }
+
             foreach (var cam in _camButtons)
             {
                 if (cam.InputId == programInput) cam.State = CamState.Program;
@@ -1079,7 +1142,6 @@ namespace Desktop
                     Background = new SolidColorBrush(isActive ? Color.FromRgb(0x33, 0x55, 0x33) : Color.FromRgb(0x33, 0x33, 0x33)),
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
-                panel.MouseLeftButtonDown += (s, e) => { };
                 var cb = new CheckBox
                 {
                     Content = $"Input {inputId}", IsChecked = isActive, Foreground = Brushes.White,
@@ -1089,7 +1151,7 @@ namespace Desktop
                 var tb = new TextBox
                 {
                     Text = _config.CustomLabels.ContainsKey(inputId) ? _config.CustomLabels[inputId] : "",
-                    Margin = new Thickness(10, 0, 10, 10),
+                    Margin = new Thickness(10, 0, 10, 4),
                     Background = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)),
                     Foreground = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
                     Padding = new Thickness(6, 4, 6, 4), FontSize = 12,
@@ -1097,10 +1159,10 @@ namespace Desktop
                 tb.Tag = inputId;
                 var watermark = new TextBlock
                 {
-                    Text = $"Cam{inputId}", Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66)),
-                    Margin = new Thickness(8, 5, 0, 0), IsHitTestVisible = false, FontSize = 12,
+                    Text = "Custom Label...", Foreground = Brushes.Gray, Margin = new Thickness(16, 4, 10, 4),
+                    IsHitTestVisible = false, FontSize = 12,
+                    Visibility = string.IsNullOrEmpty(tb.Text) ? Visibility.Visible : Visibility.Collapsed
                 };
-                watermark.Visibility = string.IsNullOrEmpty(tb.Text) ? Visibility.Visible : Visibility.Collapsed;
                 tb.TextChanged += (s, e2) =>
                 {
                     var box = s as TextBox;
@@ -1111,9 +1173,58 @@ namespace Desktop
                         else _config.CustomLabels[id2] = box.Text;
                     }
                 };
+
+                var roleCombo = new ComboBox
+                {
+                    Margin = new Thickness(10, 0, 10, 10),
+                    Background = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)),
+                    Foreground = Brushes.Black,
+                    FontSize = 11,
+                    ToolTip = "Camera Role for AI Director"
+                };
+                string[] roles = { "Master Wide", "Master Close-Up", "Crane", "Jib", "Roving Stage", "Roving Audience Left", "Roving Audience Right", "Roving Audience Center", "Locked Wide", "Locked Close-Up", "Handheld Stage", "Handheld Audience", "Overhead", "Backstage / Behind-Scenes", "B-Roll", "Custom" };
+                foreach (var r in roles) roleCombo.Items.Add(r);
+                
+                if (!_config.CameraRoles.ContainsKey(inputId))
+                    _config.CameraRoles[inputId] = new CameraRoleMetadata();
+                roleCombo.SelectedItem = _config.CameraRoles[inputId].Role;
+
+                roleCombo.SelectionChanged += (s, e3) => 
+                {
+                    if (roleCombo.SelectedItem is string selectedRole)
+                    {
+                        var meta = _config.CameraRoles[inputId];
+                        meta.Role = selectedRole;
+                        meta.Mobility = selectedRole.Contains("Handheld") || selectedRole.Contains("Roving") ? "roving" : selectedRole.Contains("Locked") || selectedRole.Contains("Master") ? "fixed" : "variable";
+                        meta.SubjectArea = selectedRole.Contains("Audience") ? "audience" : selectedRole.Contains("Stage") ? "stage" : "variable";
+                        meta.DefaultFraming = selectedRole.Contains("Wide") ? "wide" : selectedRole.Contains("Close-Up") ? "close" : "variable";
+                    }
+                };
+
+                var deviceCombo = new ComboBox
+                {
+                    Margin = new Thickness(10, 0, 10, 10),
+                    Background = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)),
+                    Foreground = Brushes.Black,
+                    FontSize = 11,
+                    ToolTip = "USB Capture Device (Video Index)"
+                };
+                deviceCombo.Items.Add("No Capture Device");
+                for (int d = 0; d < 10; d++) deviceCombo.Items.Add($"USB Video Device {d}");
+                
+                deviceCombo.SelectedIndex = _config.CaptureDeviceIndices.TryGetValue(inputId, out var existingIdx) ? existingIdx + 1 : 0;
+                
+                deviceCombo.SelectionChanged += (s, e4) => 
+                {
+                    if (deviceCombo.SelectedIndex > 0)
+                        _config.CaptureDeviceIndices[inputId] = deviceCombo.SelectedIndex - 1;
+                    else
+                        _config.CaptureDeviceIndices.Remove(inputId);
+                };
+
                 var tbGrid = new Grid();
                 tbGrid.Children.Add(tb); tbGrid.Children.Add(watermark);
-                panel.Children.Add(cb); panel.Children.Add(tbGrid);
+                panel.Children.Add(cb); panel.Children.Add(tbGrid); panel.Children.Add(roleCombo); panel.Children.Add(deviceCombo);
                 EditInputList.Items.Add(panel);
             }
         }
@@ -1136,6 +1247,10 @@ namespace Desktop
             RebuildButtonGrid(); 
             _ = PwaServer.Instance.BroadcastInputsAsync();
             if (PanelShotSuggestions.Content is ShotSuggestionsView ssv) ssv.RebuildCameraList();
+
+            // Sync video capture map and restart
+            FrameCaptureService.Instance.InputDeviceMap = new Dictionary<int, int>(_config.CaptureDeviceIndices);
+            FrameCaptureService.Instance.Start();
         }
 
         #region Room Logic

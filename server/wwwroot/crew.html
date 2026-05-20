@@ -899,6 +899,22 @@
                     alert("Director reminder: " + data.text);
                     if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
                 }
+                else if (data.type === 'grade' && data.targetCameras.includes(parseInt(myCam))) {
+                    const gradeBox = document.createElement('div');
+                    gradeBox.style.cssText = `
+                        position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+                        background: ${data.grade === 'A' ? 'var(--tally-green)' : data.grade === 'B' ? '#4CAF50' : data.grade === 'C' ? '#FFC107' : data.grade === 'D' ? '#FF9800' : 'var(--tally-red)'};
+                        color: white; padding: 15px 25px; border-radius: 8px; z-index: 10000;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.4); text-align: center;
+                        font-family: 'Inter', sans-serif; min-width: 250px;
+                        animation: slideDown 0.3s ease-out;
+                    `;
+                    gradeBox.innerHTML = `<div style="font-size: 24px; font-weight: bold; margin-bottom: 5px;">Grade: ${data.grade}</div>
+                                          <div style="font-size: 14px;">${data.feedback}</div>`;
+                    document.body.appendChild(gradeBox);
+                    setTimeout(() => gradeBox.remove(), 8000);
+                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                }
             };
         }
 
