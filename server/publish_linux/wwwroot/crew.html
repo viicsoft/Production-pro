@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Crew PWA</title>
+    <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Stage 1: Design Tokens & Base Theme */
+        :root {
+            --bg-dark: #0A0A0F;
+            --bg-card: #15151C;
+            --accent-blue: #3B82F6;
+            --tally-red: #EF4444;
+            --tally-green: #10B981;
+            --text-primary: #FFFFFF;
+            --text-secondary: #9CA3AF;
+            
+            --nav-height: 70px;
+            --safe-area-bottom: env(safe-area-inset-bottom, 20px);
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body { 
+            margin: 0; 
+            padding: 0; 
+            background: var(--bg-dark); 
+            color: var(--text-primary); 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            overflow: hidden; 
+            overscroll-behavior-y: none;
+        }
+
+        /* Utility classes */
+        .hidden { display: none !important; }
+        .text-muted { color: var(--text-secondary); }
+
+        /* Legacy Pairing Screens (Temporarily styled) */
+        #pairing-screen, #camera-select-screen { 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            height: 100vh; padding: 20px; text-align: center; 
+        }
+        input { font-size: 24px; padding: 10px; text-align: center; width: 150px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #333; background: #222; color: white; }
+        .btn-primary { font-size: 18px; padding: 15px 30px; background: var(--accent-blue); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .cam-btn { font-size: 24px; padding: 20px; margin: 10px; width: 80%; background: var(--bg-card); color: white; border: 1px solid #333; border-radius: 8px; font-weight: bold; cursor: pointer; }
+
+        /* Main App Container */
+        #main-app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Tab Content Area */
+        #tab-container {
+            flex: 1;
+            overflow-y: auto;
+            position: relative;
+            padding-bottom: calc(var(--nav-height) + var(--safe-area-bottom));
+        }
+
+        .tab-content {
+            display: none;
+            padding: 16px;
+            animation: fadeIn 0.2s ease-out;
+        }
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Bottom Navigation */
+        #bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: calc(var(--nav-height) + var(--safe-area-bottom));
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding-bottom: var(--safe-area-bottom);
+            z-index: 1000;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            width: 25%;
+            height: 100%;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .nav-item svg {
+            margin-bottom: 4px;
+            stroke-width: 1.5;
+            transition: stroke 0.2s, fill 0.2s;
+        }
+
+        /* Active Nav States */
+        .nav-item.active { color: var(--text-primary); }
+        
+        .nav-item[data-tab="tally"].active { color: var(--tally-red); }
+        .nav-item[data-tab="tally"].active svg { stroke: var(--tally-red); fill: rgba(239, 68, 68, 0.2); }
+        
+        .nav-item[data-tab="comms"].active { color: var(--accent-blue); }
+        .nav-item[data-tab="comms"].active svg { stroke: var(--accent-blue); fill: rgba(59, 130, 246, 0.2); }
+        
+        .nav-item[data-tab="suggestions"].active { color: var(--accent-blue); }
+        .nav-item[data-tab="suggestions"].active svg { stroke: var(--accent-blue); fill: rgba(59, 130, 246, 0.2); }
+        
+        .nav-item[data-tab="settings"].active { color: var(--text-primary); }
+        .nav-item[data-tab="settings"].active svg { stroke: var(--text-primary); fill: rgba(255, 255, 255, 0.2); }
+
+        /* Stage 2: Top Status Bar */
+        .top-status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            background: var(--bg-dark);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .signal-indicator { display: flex; align-items: center; gap: 6px; }
+        .signal-indicator svg { width: 16px; height: 16px; stroke: var(--tally-green); }
+        .signal-label { color: var(--tally-green); display: block; line-height: 1; letter-spacing: 0.5px;}
+        .signal-status { color: var(--text-secondary); font-weight: 400; display: block; line-height: 1; margin-top: 2px;}
+        
+        .channel-selector { display: flex; align-items: center; font-size: 14px; font-weight: bold; letter-spacing: 0.5px;}
+        
+        .mute-all-btn { 
+            background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-secondary); 
+            border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; 
+            display: flex; align-items: center; cursor: pointer;
+        }
+        .mute-all-btn.active { color: var(--tally-red); border-color: rgba(239, 68, 68, 0.3); }
+        .mute-all-btn.active svg { stroke: var(--tally-red); }
+
+        /* Stage 2: Tally Preview Card */
+        .tally-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            margin: 16px 0;
+            height: 220px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: background-color 0.2s;
+        }
+
+        .tally-card.tally-pgm { background-color: var(--tally-red); border-color: var(--tally-red); }
+        .tally-card.tally-pvw { background-color: var(--tally-green); border-color: var(--tally-green); }
+        .tally-card.tally-standby { background-color: #222; }
+
+        .tally-card-header { display: flex; align-items: center; gap: 8px; z-index: 2;}
+        
+        .tally-state-badge {
+            background: var(--tally-red); color: white; padding: 4px 10px; 
+            border-radius: 4px; font-size: 12px; font-weight: 800; letter-spacing: 0.5px;
+        }
+        .tally-card.tally-pvw .tally-state-badge { background: #059669; } /* darker green for contrast */
+        .tally-card.tally-standby .tally-state-badge { display: none; }
+        
+        .cam-label { font-weight: bold; font-size: 14px; letter-spacing: 0.5px; }
+        .cam-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tally-red); }
+        .tally-card.tally-pvw .cam-dot { background: var(--tally-green); }
+        .tally-card.tally-standby .cam-dot { background: #555; }
+
+        .tally-card-footer { display: flex; justify-content: center; z-index: 2;}
+        .tally-state-text {
+            background: var(--tally-red); color: white; padding: 8px 30px; 
+            border-radius: 20px; font-size: 16px; font-weight: bold; letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .tally-card.tally-pvw .tally-state-text { background: #059669; }
+        .tally-card.tally-standby .tally-state-text { background: transparent; box-shadow: none; color: #555; }
+
+        /* Stage 2: Shot Direction Row */
+        .shot-direction-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        .nav-pill-btn {
+            background: var(--bg-card); border: 1px solid rgba(255,255,255,0.05); color: var(--text-secondary);
+            border-radius: 20px; padding: 8px 12px; font-size: 12px; font-weight: 600;
+            display: flex; align-items: center; gap: 4px; cursor: pointer;
+        }
+        .nav-pill-btn:active { background: #222; }
+        
+        .shot-title {
+            flex: 1; text-align: center; font-size: 18px; font-weight: 600; 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 10px;
+        }
+
+        /* Stage 3: Suggestions Carousel */
+        .suggestions-carousel {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            gap: 12px;
+            padding-bottom: 12px;
+            scrollbar-width: none; /* Firefox */
+        }
+        .suggestions-carousel::-webkit-scrollbar { display: none; } /* Chrome */
+        
+        .empty-state {
+            width: 100%; text-align: center; color: var(--text-secondary);
+            font-style: italic; padding: 20px;
+        }
+
+        .suggestion-card {
+            min-width: 160px;
+            max-width: 160px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.05);
+            scroll-snap-align: start;
+            transition: transform 0.2s, border-color 0.2s;
+            position: relative;
+        }
+
+        .suggestion-card.active-shot {
+            border-color: var(--accent-blue);
+            transform: scale(1.02);
+            box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .suggestion-thumb {
+            width: 100%;
+            height: 90px;
+            background: #2a2a35;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+        }
+        
+        .suggestion-thumb img {
+            width: 100%; height: 100%; object-fit: cover;
+        }
+
+        .suggestion-details {
+            padding: 8px 12px;
+        }
+
+        .suggestion-queue-num {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .suggestion-card-title {
+            font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .suggestion-card-category {
+            font-size: 11px; color: var(--accent-blue); margin-top: 2px;
+        }
+
+        /* Stage 4 & 5: COMMS */
+        .comms-inline-card {
+            background: var(--bg-card); border-radius: 12px; padding: 12px; margin-bottom: 12px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .comms-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; margin-bottom: 12px; color: var(--text-secondary); }
+        .comms-header svg { width: 14px; height: 14px; vertical-align: middle; margin-right: 4px; }
+        
+        .comms-participants { display: flex; gap: 6px; }
+        .participant-bubble {
+            width: 24px; height: 24px; border-radius: 50%; background: #333; 
+            display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;
+            border: 2px solid transparent;
+        }
+        .participant-bubble.active { border-color: var(--tally-green); background: rgba(16, 185, 129, 0.2); }
+
+        .vad-visualizer {
+            display: flex; align-items: center; justify-content: center; gap: 4px; height: 30px; margin-bottom: 12px;
+        }
+        .vad-bar {
+            width: 6px; height: 6px; background: var(--tally-green); border-radius: 3px;
+            transition: height 0.1s ease;
+        }
+
+        .mic-toggle-btn {
+            width: 100%; padding: 14px; border-radius: 8px; border: none; font-size: 14px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mic-toggle-btn.muted { background: #333; color: var(--text-secondary); }
+        .mic-toggle-btn.live { background: var(--tally-red); color: white; box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+        .mic-toggle-btn svg { width: 18px; height: 18px; }
+
+        .mic-toggle-btn.large { padding: 24px; font-size: 18px; border-radius: 16px; flex-direction: column; height: 120px;}
+        .mic-toggle-btn.large svg { width: 32px; height: 32px; }
+
+        .comms-full-header { text-align: center; margin-bottom: 24px; }
+        .comms-full-header h2 { margin: 0 0 4px 0; font-size: 20px; }
+        
+        .participant-grid { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+        .participant-row {
+            display: flex; align-items: center; gap: 12px; background: var(--bg-card);
+            padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .participant-name { flex: 1; font-size: 14px; font-weight: 600; }
+        .vol-slider { flex: 1; accent-color: var(--accent-blue); }
+
+        /* Stage 6: Suggestions List */
+        .suggestions-list { display: flex; flex-direction: column; gap: 12px; }
+        .suggestion-list-item {
+            display: flex; gap: 12px; background: var(--bg-card); padding: 12px;
+            border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); align-items: center;
+        }
+        .suggestion-list-item img { width: 80px; height: 60px; border-radius: 4px; object-fit: cover; }
+        .suggestion-list-info { flex: 1; }
+        .suggestion-list-title { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+        .suggestion-list-cat { font-size: 12px; color: var(--text-secondary); }
+
+        /* Stage 7: Settings */
+        .settings-group { background: var(--bg-card); border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
+        .setting-row { 
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 15px; font-weight: 500;
+        }
+        .setting-row:last-child { border-bottom: none; }
+        .setting-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent-blue); }
+        .settings-btn { 
+            width: 100%; padding: 16px; background: transparent; border: none; color: var(--text-primary);
+            text-align: left; font-size: 15px; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer;
+        }
+        .settings-btn:last-child { border-bottom: none; }
+        .version-info { text-align: center; color: var(--text-secondary); font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <!-- Setup Screens -->
+    <div id="pairing-screen">
+        <h2 style="margin-bottom: 5px;">Join Production</h2>
+        <p class="text-muted" style="margin-bottom: 30px; font-size: 14px;">Enter the Room Number and PIN provided by your Director.</p>
+        
+        <input type="number" id="room-input" placeholder="Room Number (e.g. 123456)" maxlength="6" style="width: 250px;">
+        <input type="number" id="pin-input" placeholder="PIN (e.g. 9999)" maxlength="4" style="width: 250px;">
+        
+        <button id="pair-btn" class="btn-primary" style="width: 250px; margin-top: 10px;">Connect</button>
+        <p id="pair-error" class="hidden" style="color: var(--tally-red); margin-top: 15px;">Invalid Room or PIN.</p>
+    </div>
+
+    <div id="camera-select-screen" class="hidden">
+        <h2 style="margin-bottom:30px">Select Your Camera</h2>
+        <button class="cam-btn" onclick="selectCamera(1)">CAM 1</button>
+        <button class="cam-btn" onclick="selectCamera(2)">CAM 2</button>
+        <button class="cam-btn" onclick="selectCamera(3)">CAM 3</button>
+        <button class="cam-btn" onclick="selectCamera(4)">CAM 4</button>
+    </div>
+
+    <!-- Main App Layout (Hidden until paired) -->
+    <div id="main-app" class="hidden">
+        
+        <div id="tab-container">
+            <!-- TALLY TAB (Default) -->
+            <div id="tab-tally" class="tab-content active">
+                
+                <!-- 2. Top Status Bar -->
+                <div class="top-status-bar">
+                    <div class="signal-indicator">
+                        <i data-lucide="bar-chart-2"></i>
+                        <div>
+                            <span class="signal-label">SIGNAL</span>
+                            <span class="signal-status">Strong</span>
+                        </div>
+                    </div>
+                    
+                    <div class="channel-selector">
+                        CH 3 – PROD <i data-lucide="chevron-down" style="width:14px;height:14px;margin-left:4px;"></i>
+                    </div>
+                    
+                    <button class="mute-all-btn">
+                        <i data-lucide="mic-off" style="width:14px;height:14px;margin-right:4px;"></i> MUTE ALL
+                    </button>
+                </div>
+
+                <!-- 3. Tally Preview Card -->
+                <div id="tally-card" class="tally-card tally-standby">
+                    <div class="tally-card-header">
+                        <span id="tally-state-badge" class="tally-state-badge">STANDBY</span>
+                        <span class="cam-label">CAM <span id="tally-cam-number">1</span></span>
+                        <span id="tally-cam-dot" class="cam-dot"></span>
+                    </div>
+                    <!-- Video preview placeholder for Stage 9 -->
+                    <video id="tally-video" class="hidden" autoplay playsinline muted></video>
+                    
+                    <div class="tally-card-footer">
+                        <span id="tally-state-text" class="tally-state-text">STANDBY</span>
+                    </div>
+                </div>
+
+                <!-- 4. Current Shot Direction Row -->
+                <div class="shot-direction-row">
+                    <button class="nav-pill-btn" onclick="prevSuggestion()">
+                        <i data-lucide="chevron-left" style="width:16px;height:16px;"></i> PREV
+                    </button>
+                    
+                    <div id="current-shot-title" class="shot-title">
+                        Waiting for suggestions...
+                    </div>
+                    
+                    <button class="nav-pill-btn" onclick="nextSuggestion()">
+                        NEXT <i data-lucide="chevron-right" style="width:16px;height:16px;"></i>
+                    </button>
+                </div>
+
+                <!-- 5. Shot Suggestions Carousel -->
+                <div id="suggestions-carousel" class="suggestions-carousel">
+                    <!-- Cards will be dynamically injected here by JS -->
+                    <div class="empty-state">No upcoming shots</div>
+                </div>
+                <!-- Stage 4: Inline COMMS Card -->
+                <div class="comms-inline-card">
+                    <div class="comms-header">
+                        <span><i data-lucide="mic"></i> INTERCOM</span>
+                        <div class="comms-participants" id="inline-participants">
+                            <div class="participant-bubble active">D</div>
+                            <div class="participant-bubble">1</div>
+                        </div>
+                    </div>
+                    <div class="vad-visualizer hidden" id="inline-vad">
+                        <div class="vad-bar" style="height:6px"></div>
+                        <div class="vad-bar" style="height:12px"></div>
+                        <div class="vad-bar" style="height:24px"></div>
+                        <div class="vad-bar" style="height:12px"></div>
+                        <div class="vad-bar" style="height:6px"></div>
+                    </div>
+                    <button id="inline-mic-btn" class="mic-toggle-btn muted" onclick="toggleIntercom()">
+                        <i data-lucide="mic-off"></i> TAP TO TALK
+                    </button>
+                </div>
+                
+            </div>
+
+            <!-- COMMS TAB -->
+            <div id="tab-comms" class="tab-content">
+                <div class="comms-full-header">
+                    <h2>Production Intercom</h2>
+                    <span class="signal-status" id="comms-status-text">Disconnected</span>
+                </div>
+                
+                <div class="participant-grid" id="comms-participant-grid">
+                    <!-- Dynamic participants -->
+                    <div class="participant-row">
+                        <div class="participant-bubble active">D</div>
+                        <span class="participant-name">Director</span>
+                        <input type="range" class="vol-slider" min="0" max="100" value="100">
+                    </div>
+                </div>
+
+                <div class="comms-full-footer">
+                    <button id="full-mic-btn" class="mic-toggle-btn large muted" onclick="toggleIntercom()">
+                        <i data-lucide="mic-off"></i> 
+                        <span>Muted<br><small>Tap to talk</small></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- SUGGESTIONS TAB -->
+            <div id="tab-suggestions" class="tab-content">
+                <h2 style="margin-top:0;">Shot Queue</h2>
+                <div class="suggestions-list" id="suggestions-list">
+                    <div class="empty-state">No upcoming shots</div>
+                </div>
+            </div>
+
+            <!-- SETTINGS TAB -->
+            <div id="tab-settings" class="tab-content">
+                <h2 style="margin-top:0;">Settings</h2>
+                
+                <div class="settings-group">
+                    <label class="setting-row">
+                        <span>Haptic Feedback</span>
+                        <input type="checkbox" id="setting-haptic" checked onchange="toggleHaptic(this.checked)">
+                    </label>
+                    <label class="setting-row">
+                        <span>Video Preview (High BW)</span>
+                        <input type="checkbox" id="setting-video" onchange="toggleVideoPreview(this.checked)">
+                    </label>
+                </div>
+
+                <div class="settings-group">
+                    <button class="settings-btn" onclick="leaveRoom()">Leave Room</button>
+                    <button class="settings-btn" onclick="switchCamera()">Switch Camera</button>
+                </div>
+                
+                <div class="version-info">
+                    AtemDirector PWA v2.0
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav id="bottom-nav">
+            <div class="nav-item active" data-tab="tally" onclick="switchTab('tally')">
+                <i data-lucide="video"></i>
+                TALLY
+            </div>
+            <div class="nav-item" data-tab="comms" onclick="switchTab('comms')">
+                <i data-lucide="mic"></i>
+                COMMS
+            </div>
+            <div class="nav-item" data-tab="suggestions" onclick="switchTab('suggestions')">
+                <i data-lucide="lightbulb"></i>
+                SUGGESTIONS
+            </div>
+            <div class="nav-item" data-tab="settings" onclick="switchTab('settings')">
+                <i data-lucide="settings"></i>
+                SETTINGS
+            </div>
+        </nav>
+    </div>
+
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // ---- Stage 1: Tab Routing Logic ----
+        function switchTab(tabId) {
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            // Remove active state from all nav items
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            // Show target content
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+            // Set active state on target nav item
+            document.querySelector(`.nav-item[data-tab="${tabId}"]`).classList.add('active');
+        }
+
+
+        // ---- Stage 2 & 3: Tally & Suggestion Logic ----
+        let suggestionQueue = [];
+        let currentSuggestionIndex = -1;
+
+        function updateTallyUI(isPgm, isPvw) {
+            const card = document.getElementById('tally-card');
+            const badge = document.getElementById('tally-state-badge');
+            const text = document.getElementById('tally-state-text');
+            
+            card.classList.remove('tally-pgm', 'tally-pvw', 'tally-standby');
+            
+            if (isPgm) {
+                card.classList.add('tally-pgm');
+                badge.innerText = "LIVE";
+                badge.style.display = "inline-block";
+                text.innerText = "TALLY RED";
+                if (navigator.vibrate) navigator.vibrate(200);
+            } else if (isPvw) {
+                card.classList.add('tally-pvw');
+                badge.innerText = "PREVIEW";
+                badge.style.display = "inline-block";
+                text.innerText = "TALLY GREEN";
+                if (navigator.vibrate) navigator.vibrate(50);
+            } else {
+                card.classList.add('tally-standby');
+                badge.style.display = "none";
+                text.innerText = "STANDBY";
+            }
+        }
+
+        function setCameraLabel(num) {
+            document.getElementById('tally-cam-number').innerText = num;
+        }
+
+        function prevSuggestion() {
+            if (currentSuggestionIndex > 0) {
+                currentSuggestionIndex--;
+                updateShotDirectionUI();
+            }
+        }
+
+        function nextSuggestion() {
+            if (currentSuggestionIndex < suggestionQueue.length - 1) {
+                currentSuggestionIndex++;
+                updateShotDirectionUI();
+                sendSuggestionAck();
+            }
+        }
+
+        function updateShotDirectionUI() {
+            const titleEl = document.getElementById('current-shot-title');
+            if (suggestionQueue.length === 0 || currentSuggestionIndex === -1) {
+                titleEl.innerText = "Waiting for suggestions...";
+            } else {
+                titleEl.innerText = suggestionQueue[currentSuggestionIndex].title;
+            }
+            renderCarousel();
+        }
+
+        function renderCarousel() {
+            const container = document.getElementById('suggestions-carousel');
+            const listContainer = document.getElementById('suggestions-list');
+
+            if (suggestionQueue.length === 0) {
+                container.innerHTML = '<div class="empty-state">No upcoming shots</div>';
+                listContainer.innerHTML = '<div class="empty-state">No upcoming shots</div>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            listContainer.innerHTML = '';
+            
+            suggestionQueue.forEach((shot, index) => {
+                const isActive = index === currentSuggestionIndex;
+                const isUpcoming = index >= currentSuggestionIndex;
+                
+                // 1. Carousel Card
+                const card = document.createElement('div');
+                card.className = `suggestion-card ${isActive ? 'active-shot' : ''}`;
+                card.id = `shot-card-${index}`;
+                
+                card.onclick = () => {
+                    currentSuggestionIndex = index;
+                    updateShotDirectionUI();
+                };
+                
+                let mediaHtml = '<i data-lucide="image" style="width:32px;height:32px;opacity:0.3;"></i>';
+                if (shot.mediaUrl && shot.mediaType === 'Image') {
+                    mediaHtml = `<img src="/api/suggestions/media/${shot.mediaUrl}" alt="Shot thumb" loading="lazy" />`;
+                }
+
+                card.innerHTML = `
+                    <div class="suggestion-queue-num">Q${index + 1}</div>
+                    <div class="suggestion-thumb">${mediaHtml}</div>
+                    <div class="suggestion-details">
+                        <div class="suggestion-card-title">${shot.title}</div>
+                        <div class="suggestion-card-category">${shot.category || 'Standard'}</div>
+                    </div>
+                `;
+                container.appendChild(card);
+
+                // 2. Full List Item
+                const listItem = document.createElement('div');
+                listItem.className = 'suggestion-list-item';
+                if (isActive) listItem.style.borderColor = 'var(--accent-blue)';
+                
+                listItem.onclick = card.onclick;
+                
+                listItem.innerHTML = `
+                    <div class="suggestion-thumb" style="width:80px;height:60px;border-radius:4px;overflow:hidden;position:relative;">
+                        ${mediaHtml}
+                        <div class="suggestion-queue-num" style="font-size:8px;top:2px;left:2px;">Q${index + 1}</div>
+                    </div>
+                    <div class="suggestion-list-info">
+                        <div class="suggestion-list-title">${shot.title}</div>
+                        <div class="suggestion-list-cat">${shot.category || 'Standard'}</div>
+                    </div>
+                `;
+                listContainer.appendChild(listItem);
+            });
+            
+            // Re-init lucide icons for new content
+            lucide.createIcons();
+            
+            // Scroll active card into view
+            if (currentSuggestionIndex >= 0) {
+                const activeCard = document.getElementById(`shot-card-${currentSuggestionIndex}`);
+                if (activeCard) {
+                    activeCard.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                }
+            }
+        }
+
+        function sendSuggestionAck() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ack', camera: myCam }));
+            }
+        }
+
+        // ---- Connection & Room Logic ----
+        let ws;
+        let roomId = localStorage.getItem('atem_room') || '';
+        let pin = localStorage.getItem('atem_pin') || '';
+        let myCam = localStorage.getItem('atem_cam');
+
+        const screens = {
+            pairing: document.getElementById('pairing-screen'),
+            select: document.getElementById('camera-select-screen'),
+            main: document.getElementById('main-app')
+        };
+
+        function showScreen(name) {
+            Object.values(screens).forEach(s => s.classList.add('hidden'));
+            screens[name].classList.remove('hidden');
+        }
+
+        // Check URL for join parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('r') && urlParams.has('p')) {
+            roomId = urlParams.get('r');
+            pin = urlParams.get('p');
+            localStorage.setItem('atem_room', roomId);
+            localStorage.setItem('atem_pin', pin);
+            // Clear from URL so it doesn't stay
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        if (roomId && pin && myCam) {
+            setCameraLabel(myCam);
+            connectWs();
+        } else if (roomId && pin) {
+            // Have room details, but no camera selected yet
+            showScreen('select');
+        } else {
+            showScreen('pairing');
+        }
+
+        document.getElementById('pair-btn').onclick = () => {
+            const rInput = document.getElementById('room-input').value.replace(/\s/g, '');
+            const pInput = document.getElementById('pin-input').value.replace(/\s/g, '');
+            
+            if (rInput.length < 5 || pInput.length < 4) {
+                document.getElementById('pair-error').textContent = "Please enter valid Room Number and PIN.";
+                document.getElementById('pair-error').classList.remove('hidden');
+                return;
+            }
+            
+            roomId = rInput;
+            pin = pInput;
+            localStorage.setItem('atem_room', roomId);
+            localStorage.setItem('atem_pin', pin);
+            
+            document.getElementById('pair-error').classList.add('hidden');
+            
+            if (myCam) {
+                setCameraLabel(myCam);
+                connectWs();
+            } else {
+                showScreen('select');
+            }
+        };
+
+        function selectCamera(num) {
+            myCam = num;
+            localStorage.setItem('atem_cam', myCam);
+            setCameraLabel(myCam);
+            connectWs();
+        }
+
+        function leaveRoom() {
+            if (ws) {
+                ws.onclose = null; // Prevent auto-reconnect
+                ws.close();
+                ws = null;
+            }
+            localStorage.removeItem('atem_room');
+            localStorage.removeItem('atem_pin');
+            localStorage.removeItem('atem_cam');
+            roomId = '';
+            pin = '';
+            myCam = '';
+            document.getElementById('room-input').value = '';
+            document.getElementById('pin-input').value = '';
+            showScreen('pairing');
+        }
+
+        function switchCamera() {
+            if (ws) {
+                ws.onclose = null; // Prevent auto-reconnect temporarily
+                ws.close();
+                ws = null;
+            }
+            localStorage.removeItem('atem_cam');
+            myCam = '';
+            showScreen('select');
+        }
+
+        function connectWs() {
+            showScreen('main');
+            
+            // Determine connection mode
+            const isOnline = location.host.includes('vidikom.app') || location.host.includes('github.io');
+            
+            if (isOnline) {
+                // ONLINE MODE: connect to cloud relay WebSocket
+                ws = new WebSocket(`wss://${location.host}/ws/room`);
+                
+                ws.onopen = () => {
+                    if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
+                    // Send crew-join message to the relay
+                    ws.send(JSON.stringify({ 
+                        type: 'crew-join', 
+                        roomId: roomId, 
+                        pin: pin, 
+                        cam: myCam 
+                    }));
+                };
+            } else {
+                // LAN MODE: connect directly to desktop's embedded server
+                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = location.host || 'localhost:8080';
+                ws = new WebSocket(`${proto}//${host}/ws?roomId=${roomId}&pin=${pin}`);
+                
+                ws.onopen = () => {
+                    if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
+                    document.querySelector('.signal-status').innerText = "Strong";
+                    document.querySelector('.signal-status').style.color = "var(--text-secondary)";
+                    document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-green)";
+                    if (myCam) {
+                        ws.send(JSON.stringify({ type: 'identity', cam: myCam }));
+                    }
+                };
+            }
+
+            ws.onclose = () => {
+                document.querySelector('.signal-status').innerText = "Reconnecting...";
+                document.querySelector('.signal-status').style.color = "var(--tally-red)";
+                document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-red)";
+                setTimeout(connectWs, 2000); // Auto-reconnect
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                
+                // Handle relay lifecycle messages
+                if (data.type === 'joined') {
+                    document.querySelector('.signal-status').innerText = "Online";
+                    document.querySelector('.signal-status').style.color = "var(--tally-green)";
+                    document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-green)";
+                    return;
+                }
+                if (data.type === 'error') {
+                    document.querySelector('.signal-status').innerText = data.message || "Error";
+                    document.querySelector('.signal-status').style.color = "var(--tally-red)";
+                    document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-red)";
+                    // Show error and go back to pairing screen
+                    alert(data.message || "Connection error");
+                    leaveRoom();
+                    return;
+                }
+                if (data.type === 'room-ended') {
+                    alert("The director has ended this room session.");
+                    leaveRoom();
+                    return;
+                }
+                
+                if (data.type === 'tally') {
+                    const me = data.mes && data.mes[0];
+                    if (me) {
+                        const isPgm = me.program && me.program.includes(parseInt(myCam));
+                        const isPvw = me.preview && me.preview.includes(parseInt(myCam));
+                        updateTallyUI(isPgm, isPvw);
+                    }
+                }
+                else if (data.type === 'suggestion' && data.targetCameras.includes(parseInt(myCam))) {
+                    suggestionQueue.push(data.suggestion);
+                    currentSuggestionIndex = suggestionQueue.length - 1; // Auto-advance to newest
+                    updateShotDirectionUI();
+                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                }
+                else if (data.type === 'reminder' && data.targetCameras.includes(parseInt(myCam))) {
+                    alert("Director reminder: " + data.text);
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+                }
+            };
+        }
+
+        // ---- Legacy Intercom Logic (Preserved) ----
+        let livekitRoom = null;
+        let isMicMuted = true;
+
+        async function toggleIntercom() {
+            const inlineBtn = document.getElementById('inline-mic-btn');
+            const fullBtn = document.getElementById('full-mic-btn');
+            const statusText = document.getElementById('comms-status-text');
+            
+            if (!livekitRoom) {
+                inlineBtn.innerHTML = '<i data-lucide="loader"></i> CONNECTING...';
+                fullBtn.innerHTML = '<i data-lucide="loader"></i> <span>Connecting...</span>';
+                statusText.innerText = "Connecting...";
+                
+                try {
+                    const res = await fetch(`/api/intercom/token?identity=Cam${myCam}&name=Camera%20${myCam}`);
+                    const data = await res.json();
+                    
+                    const wsUrl = 'wss://vidikom.app:7880';
+                    livekitRoom = new LivekitClient.Room({ adaptiveStream: false, dynacast: false });
+
+                    livekitRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                        if (track.kind === LivekitClient.Track.Kind.Audio) {
+                            const el = track.attach();
+                            document.body.appendChild(el);
+                        }
+                    });
+
+                    await livekitRoom.connect(wsUrl, data.token);
+                    await livekitRoom.localParticipant.setMicrophoneEnabled(true);
+                    
+                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => {
+                        if (pub.track) pub.track.mute();
+                    });
+                    
+                    isMicMuted = true;
+                    statusText.innerText = "Connected";
+                    statusText.style.color = "var(--tally-green)";
+                    updateMicUI();
+                } catch (e) {
+                    console.error("Intercom failed", e);
+                    livekitRoom = null;
+                    statusText.innerText = "Disconnected";
+                    updateMicUI(); // Will revert to default
+                }
+            } else {
+                if (isMicMuted) {
+                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => { if (pub.track) pub.track.unmute(); });
+                    isMicMuted = false;
+                } else {
+                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => { if (pub.track) pub.track.mute(); });
+                    isMicMuted = true;
+                }
+                updateMicUI();
+            }
+        }
+
+        function updateMicUI() {
+            const inlineBtn = document.getElementById('inline-mic-btn');
+            const fullBtn = document.getElementById('full-mic-btn');
+            const vad = document.getElementById('inline-vad');
+            
+            if (!livekitRoom) {
+                inlineBtn.className = 'mic-toggle-btn muted';
+                inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> JOIN INTERCOM';
+                fullBtn.className = 'mic-toggle-btn large muted';
+                fullBtn.innerHTML = '<i data-lucide="mic-off"></i> <span>Disconnected<br><small>Tap to join</small></span>';
+                vad.classList.add('hidden');
+            } else if (isMicMuted) {
+                inlineBtn.className = 'mic-toggle-btn muted';
+                inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> TAP TO TALK';
+                fullBtn.className = 'mic-toggle-btn large muted';
+                fullBtn.innerHTML = '<i data-lucide="mic-off"></i> <span>Muted<br><small>Tap to talk</small></span>';
+                vad.classList.add('hidden');
+            } else {
+                inlineBtn.className = 'mic-toggle-btn live';
+                inlineBtn.innerHTML = '<i data-lucide="mic"></i> LIVE';
+                fullBtn.className = 'mic-toggle-btn large live';
+                fullBtn.innerHTML = '<i data-lucide="mic"></i> <span>Live<br><small>Tap to mute</small></span>';
+                vad.classList.remove('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        // ---- Settings & Polish (Stage 7 & 8) ----
+        let hapticEnabled = true;
+        function toggleHaptic(val) { hapticEnabled = val; }
+        
+        const originalVibrate = navigator.vibrate;
+        navigator.vibrate = function(pattern) {
+            if (hapticEnabled && originalVibrate) {
+                return originalVibrate.call(navigator, pattern);
+            }
+            return false;
+        };
+
+        function toggleVideoPreview(val) {
+            const vid = document.getElementById('tally-video');
+            if (val) {
+                vid.classList.remove('hidden');
+                // Fake preview stream for demo
+                vid.src = "https://www.w3schools.com/html/mov_bbb.mp4";
+                vid.loop = true;
+            } else {
+                vid.classList.add('hidden');
+                vid.pause();
+                vid.src = "";
+            }
+        }
+
+        // Client-Side Ping
+        setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN && !location.host.includes('vidikom.app')) {
+                const start = performance.now();
+                const pingId = Math.random().toString(36).substring(7);
+                // Listen for pong
+                const handler = (e) => {
+                    const data = JSON.parse(e.data);
+                    if (data.type === 'pong' && data.id === pingId) {
+                        const latency = Math.round(performance.now() - start);
+                        const status = document.querySelector('.signal-status');
+                        status.innerText = latency < 50 ? 'Strong' : latency < 150 ? 'Good' : 'Weak';
+                        status.style.color = latency < 50 ? 'var(--tally-green)' : latency < 150 ? '#F59E0B' : 'var(--tally-red)';
+                        ws.removeEventListener('message', handler);
+                    }
+                };
+                ws.addEventListener('message', handler);
+                ws.send(JSON.stringify({ type: 'ping', id: pingId }));
+            }
+        }, 5000);
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.error(err));
+        }
+    </script>
+</body>
+</html>

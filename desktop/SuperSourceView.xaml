@@ -1,0 +1,179 @@
+<UserControl x:Class="Desktop.SuperSourceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#1E1E1E"
+             Foreground="#CCC">
+
+    <UserControl.Resources>
+        <!-- Local styles so this view works outside MainWindow -->
+        <Style x:Key="SSTabButton" TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,0,5,0"/>
+            <Setter Property="Width" Value="60"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="#AAA"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd" CornerRadius="4" BorderThickness="1" BorderBrush="#444" Background="#2A2A2A" Padding="8,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#E69500" Offset="0"/>
+                                            <GradientStop Color="#B37400" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFA500"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#777"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SSActionButton" TargetType="Button">
+            <Setter Property="Margin" Value="0,0,0,5"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#CCC"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="5" BorderThickness="1" BorderBrush="#555" Padding="{TemplateBinding Padding}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#444" Offset="0"/>
+                                    <GradientStop Color="#2E2E2E" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#888"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background">
+                                    <Setter.Value><SolidColorBrush Color="#555"/></Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="3*"/> <!-- Box Controls -->
+            <ColumnDefinition Width="2*"/> <!-- Art & Presets -->
+        </Grid.ColumnDefinitions>
+
+        <!-- LEFT: BOX CONTROLS -->
+        <Border Grid.Column="0" Background="#252525" CornerRadius="8" BorderBrush="#333" BorderThickness="1" Margin="0,0,5,0" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <RadioButton x:Name="TabBox1" Content="BOX 1" Style="{StaticResource SSTabButton}" IsChecked="True" Checked="BoxTab_Checked" Tag="0"/>
+                    <RadioButton x:Name="TabBox2" Content="BOX 2" Style="{StaticResource SSTabButton}" Checked="BoxTab_Checked" Tag="1"/>
+                    <RadioButton x:Name="TabBox3" Content="BOX 3" Style="{StaticResource SSTabButton}" Checked="BoxTab_Checked" Tag="2"/>
+                    <RadioButton x:Name="TabBox4" Content="BOX 4" Style="{StaticResource SSTabButton}" Checked="BoxTab_Checked" Tag="3"/>
+                </StackPanel>
+
+                <Grid Grid.Row="1">
+                    <StackPanel>
+                        <!-- Enable & Source -->
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,20">
+                            <CheckBox x:Name="ChkBoxEnable" Content="ENABLE BOX" Foreground="#FFF" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0" Checked="BoxControl_Changed" Unchecked="BoxControl_Changed"/>
+                            <TextBlock Text="SOURCE:" Foreground="#888" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <ComboBox x:Name="CmbBoxSource" Width="100" Background="#333" Foreground="Black" SelectionChanged="BoxControl_Changed"/>
+                        </StackPanel>
+
+                        <!-- Position & Size -->
+                        <TextBlock Text="POSITION X" Foreground="#888" FontSize="10"/>
+                        <Slider x:Name="SldPosX" Minimum="-16.0" Maximum="16.0" Value="0" TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,0,0,10" ValueChanged="BoxControl_Changed"/>
+                        
+                        <TextBlock Text="POSITION Y" Foreground="#888" FontSize="10"/>
+                        <Slider x:Name="SldPosY" Minimum="-9.0" Maximum="9.0" Value="0" TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,0,0,10" ValueChanged="BoxControl_Changed"/>
+                        
+                        <TextBlock Text="SIZE" Foreground="#888" FontSize="10"/>
+                        <Slider x:Name="SldSize" Minimum="0.0" Maximum="1.0" Value="0.5" TickFrequency="0.01" IsSnapToTickEnabled="True" Margin="0,0,0,20" ValueChanged="BoxControl_Changed"/>
+
+                        <!-- Crop -->
+                        <CheckBox x:Name="ChkBoxCrop" Content="ENABLE CROP" Foreground="#FFF" FontWeight="Bold" Margin="0,0,0,10" Checked="BoxControl_Changed" Unchecked="BoxControl_Changed"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                                <TextBlock Text="TOP" Foreground="#888" FontSize="10"/>
+                                <Slider x:Name="SldCropTop" Minimum="0" Maximum="18" Value="0" TickFrequency="0.1" Margin="0,0,0,5" ValueChanged="BoxControl_Changed"/>
+                                <TextBlock Text="BOTTOM" Foreground="#888" FontSize="10"/>
+                                <Slider x:Name="SldCropBottom" Minimum="0" Maximum="18" Value="0" TickFrequency="0.1" ValueChanged="BoxControl_Changed"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                                <TextBlock Text="LEFT" Foreground="#888" FontSize="10"/>
+                                <Slider x:Name="SldCropLeft" Minimum="0" Maximum="32" Value="0" TickFrequency="0.1" Margin="0,0,0,5" ValueChanged="BoxControl_Changed"/>
+                                <TextBlock Text="RIGHT" Foreground="#888" FontSize="10"/>
+                                <Slider x:Name="SldCropRight" Minimum="0" Maximum="32" Value="0" TickFrequency="0.1" ValueChanged="BoxControl_Changed"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- RIGHT: ART & PRESETS -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Art Controls -->
+            <Border Grid.Row="0" Background="#252525" CornerRadius="8" BorderBrush="#333" BorderThickness="1" Margin="5,0,0,5" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="ART CONTROL" Foreground="#FFF" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                        <TextBlock Text="FILL:" Foreground="#888" Width="40" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="CmbArtFill" Width="100" Background="#333" Foreground="Black" SelectionChanged="ArtControl_Changed"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="KEY:" Foreground="#888" Width="40" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="CmbArtKey" Width="100" Background="#333" Foreground="Black" SelectionChanged="ArtControl_Changed"/>
+                    </StackPanel>
+                    <RadioButton x:Name="RadArtBackground" Content="BACKGROUND" Foreground="#CCC" IsChecked="True" Checked="ArtControl_Changed" Margin="0,0,0,5"/>
+                    <RadioButton x:Name="RadArtForeground" Content="FOREGROUND" Foreground="#CCC" Checked="ArtControl_Changed"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Presets -->
+            <Border Grid.Row="1" Background="#252525" CornerRadius="8" BorderBrush="#333" BorderThickness="1" Margin="5,5,0,0" Padding="10">
+                <StackPanel>
+                    <TextBlock Text="PRESETS" Foreground="#FFF" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <Button Content="4-GRID (QUAD)" Style="{StaticResource SSActionButton}" Height="30" Click="Preset4Grid_Click"/>
+                    <Button Content="2-POP (SIDE-BY-SIDE)" Style="{StaticResource SSActionButton}" Height="30" Click="Preset2Pop_Click"/>
+                    <Button Content="PIP (PICTURE IN PICTURE)" Style="{StaticResource SSActionButton}" Height="30" Click="PresetPIP_Click"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

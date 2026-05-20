@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Director Intercom</title>
+    <!-- Use UMD build of livekit-client -->
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+</head>
+<body>
+    <script>
+        let room;
+
+        async function connectIntercom() {
+            try {
+                // Fetch JWT token from our local embedded server
+                const res = await fetch('/api/intercom/token?identity=Director&name=Director');
+                const data = await res.json();
+                
+                // The URL is our Contabo VPS for online roaming
+                const wsUrl = 'wss://vidikom.app:7880';
+                
+                // LivekitClient is available globally from the UMD build
+                room = new LivekitClient.Room({
+                    adaptiveStream: false,
+                    dynacast: false
+                });
+
+                // Set up event listeners for incoming audio
+                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    if (track.kind === LivekitClient.Track.Kind.Audio) {
+                        // Attach the audio track to the DOM so it plays
+                        const element = track.attach();
+                        document.body.appendChild(element);
+                    }
+                });
+
+                // Connect to the room
+                await room.connect(wsUrl, data.token);
+                
+                // Publish local microphone
+                await room.localParticipant.setMicrophoneEnabled(true);
+                
+                // Notify WPF that connection succeeded
+                window.chrome.webview.postMessage("intercom_connected");
+            } catch (err) {
+                console.error(err);
+                window.chrome.webview.postMessage("intercom_error");
+            }
+        }
+
+        async function disconnectIntercom() {
+            if (room) {
+                room.disconnect();
+                room = null;
+                window.chrome.webview.postMessage("intercom_disconnected");
+            }
+        }
+    </script>
+</body>
+</html>

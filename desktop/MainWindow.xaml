@@ -1,0 +1,729 @@
+<Window x:Class="Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="ATEM Software Control"
+        Height="850" Width="1400"
+        Background="#1B1B1B"
+        Foreground="#D0D0D0"
+        FontFamily="Segoe UI"
+        Icon="icon.png"
+        PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Window.Resources>
+        <!-- ================= COLORS ================= -->
+        <SolidColorBrush x:Key="WindowBg" Color="#1B1B1B"/>
+        <SolidColorBrush x:Key="PanelBg" Color="#282828"/>
+        <SolidColorBrush x:Key="PanelBorder" Color="#3E3E3E"/>
+        <SolidColorBrush x:Key="TextNormal" Color="#DDDDDD"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#999999"/>
+
+        <!-- ================= PULSING GLOW STORYBOARD ================= -->
+        <Storyboard x:Key="ProgramPulse" RepeatBehavior="Forever">
+            <DoubleAnimation
+                Storyboard.TargetProperty="(UIElement.Effect).(DropShadowEffect.BlurRadius)"
+                From="12" To="30" Duration="0:0:0.6" AutoReverse="True"
+                EasingFunction="{x:Null}"/>
+        </Storyboard>
+
+        <!-- ================= NEUTRAL CAMERA BUTTON ================= -->
+        <Style x:Key="NeutralCamButton" TargetType="Button">
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="OuterBorder" CornerRadius="8" BorderThickness="1" BorderBrush="#4A4A4A">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#3E3E3E" Offset="0.0"/>
+                                    <GradientStop Color="#2A2A2A" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" BlurRadius="4" ShadowDepth="2" Opacity="0.4"/>
+                            </Border.Effect>
+                            <Grid>
+                                <!-- Inner Glass Highlight -->
+                                <Border CornerRadius="7" Margin="1" Opacity="0.15" VerticalAlignment="Top" Height="40">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#FFFFFF" Offset="0"/>
+                                            <GradientStop Color="Transparent" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="OuterBorder" Property="BorderBrush" Value="#666666"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="OuterBorder" Property="Background">
+                                    <Setter.Value>
+                                        <SolidColorBrush Color="#222222"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= PREVIEW (GREEN) CAMERA BUTTON ================= -->
+        <Style x:Key="PreviewCamButton" TargetType="Button">
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="OuterBorder" CornerRadius="8" BorderThickness="2" BorderBrush="#43A047">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#388E3C" Offset="0.0"/>
+                                    <GradientStop Color="#1B5E20" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect Color="#4CAF50" BlurRadius="15" ShadowDepth="0" Opacity="0.6"/>
+                            </Border.Effect>
+                            <Grid>
+                                <Border CornerRadius="7" Margin="1" Opacity="0.25" VerticalAlignment="Top" Height="40">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#FFFFFF" Offset="0"/>
+                                            <GradientStop Color="Transparent" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= PROGRAM (RED) CAMERA BUTTON ================= -->
+        <Style x:Key="ProgramCamButton" TargetType="Button">
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="OuterBorder" CornerRadius="8" BorderThickness="2" BorderBrush="#EF5350">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#D32F2F" Offset="0.0"/>
+                                    <GradientStop Color="#8E0000" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect x:Name="ProgramGlow" Color="#FF1744" BlurRadius="12" ShadowDepth="0" Opacity="0.7"/>
+                            </Border.Effect>
+                            <Grid>
+                                <Border CornerRadius="7" Margin="1" Opacity="0.25" VerticalAlignment="Top" Height="40">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#FFFFFF" Offset="0"/>
+                                            <GradientStop Color="Transparent" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= TRANSITION ACTION BUTTON (CUT / AUTO) ================= -->
+        <Style x:Key="TransitionActionButton" TargetType="Button">
+            <Setter Property="Margin" Value="3"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ActionBorder" CornerRadius="5" BorderThickness="1" BorderBrush="#555"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#444" Offset="0"/>
+                                    <GradientStop Color="#2E2E2E" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ActionBorder" Property="BorderBrush" Value="#888"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ActionBorder" Property="Background">
+                                    <Setter.Value>
+                                        <SolidColorBrush Color="#555"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= TRANSITION STYLE BUTTON (MIX/DIP/WIPE/STING/DVE) ================= -->
+        <Style x:Key="TransitionStyleButton" TargetType="Button">
+            <Setter Property="Margin" Value="3"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#AAAAAA"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="StyleBorder" CornerRadius="5" BorderThickness="1" BorderBrush="#444"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Background>
+                                <SolidColorBrush Color="#2A2A2A"/>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StyleBorder" Property="BorderBrush" Value="#777"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StyleBorder" Property="Background">
+                                    <Setter.Value>
+                                        <SolidColorBrush Color="#444"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= TRANSITION STYLE BUTTON — SELECTED (AMBER) ================= -->
+        <Style x:Key="TransitionStyleButtonSelected" TargetType="Button">
+            <Setter Property="Margin" Value="3"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="StyleBorder" CornerRadius="5" BorderThickness="1" BorderBrush="#FFA500"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#E69500" Offset="0"/>
+                                    <GradientStop Color="#B37400" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect Color="#FFA500" BlurRadius="8" ShadowDepth="0" Opacity="0.4"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= TRANSITION STYLE BUTTON — SELECTED (RED) ================= -->
+        <Style x:Key="TransitionStyleButtonRed" TargetType="Button">
+            <Setter Property="Margin" Value="3"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="StyleBorder" CornerRadius="5" BorderThickness="1" BorderBrush="#FF3333"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#E60000" Offset="0"/>
+                                    <GradientStop Color="#B30000" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect Color="#FF0000" BlurRadius="8" ShadowDepth="0" Opacity="0.4"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= VIEW TAB BUTTON ================= -->
+        <Style x:Key="ViewTabButton" TargetType="Button">
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="#AAAAAA"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="TabBorder" CornerRadius="4" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#333"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= VIEW TAB BUTTON — SELECTED ================= -->
+        <Style x:Key="ViewTabButtonSelected" TargetType="Button" BasedOn="{StaticResource ViewTabButton}">
+            <Setter Property="Foreground" Value="#FFA500"/>
+            <Setter Property="Background" Value="#222"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="TabBorder" CornerRadius="4" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" BorderBrush="#FFA500" BorderThickness="0,0,0,2">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Menu Bar -->
+            <RowDefinition Height="Auto"/>  <!-- Header Block -->
+            <RowDefinition Height="*"/>     <!-- Main Body (Buttons + T-Bar) -->
+            <RowDefinition Height="Auto"/>  <!-- Transition Button Bar -->
+            <RowDefinition Height="24"/>    <!-- Status Bar -->
+        </Grid.RowDefinitions>
+
+        <!-- 1. MENU BAR -->
+        <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="#CCC" BorderThickness="0,0,0,1">
+            <Menu Background="Transparent" Padding="2">
+                <MenuItem Header="File"/>
+                <MenuItem Header="Macros"/>
+                <MenuItem Header="Outputs"/>
+                <MenuItem Header="Stream"/>
+                <MenuItem Header="Record"/>
+                <MenuItem Header="Connection">
+                    <MenuItem Header="Host Settings" StaysOpenOnClick="True">
+                       <MenuItem.Icon>
+                           <TextBlock Text="IP" FontWeight="Bold"/>
+                       </MenuItem.Icon>
+                       <StackPanel Orientation="Horizontal" Width="200">
+                           <TextBlock Text="Host:" VerticalAlignment="Center" Margin="5"/>
+                           <TextBox x:Name="Host" Text="127.0.0.1" Width="120"/>
+                       </StackPanel>
+                    </MenuItem>
+                    <MenuItem Header="Connect" Click="Connect_Click" FontWeight="Bold"/>
+                    <Separator/>
+                    <MenuItem Header="Edit Inputs..." Click="ToggleEditMode_Click"/>
+                </MenuItem>
+                <MenuItem Header="Help"/>
+            </Menu>
+        </Border>
+
+        <!-- 2. HEADER -->
+        <Grid Grid.Row="1" Background="{StaticResource PanelBg}" Height="50">
+            <!-- DEFAULT HEADER -->
+            <Grid x:Name="EmptyRoomHeader" Visibility="Visible">
+                <TextBlock Text="ATEM Software Control" 
+                           Foreground="#888" 
+                           FontSize="22" 
+                           FontWeight="Light" 
+                           VerticalAlignment="Center" 
+                           Margin="20,0"/>
+            </Grid>
+
+            <!-- ACTIVE ROOM HEADER -->
+            <Grid x:Name="ActiveRoomHeader" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0">
+                    <TextBlock Text="ROOM:" Foreground="#888" FontSize="14" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,5,0"/>
+                    <TextBlock x:Name="TxtHeaderRoomId" Text="123 456" Foreground="#4CAF50" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                    
+                    <TextBlock Text="PIN:" Foreground="#888" FontSize="14" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,5,0"/>
+                    <TextBlock x:Name="TxtHeaderPin" Text="9999" Foreground="#FFA500" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
+
+                    <Button x:Name="BtnShowQr" Content="QR Code" Background="#2A2A2A" Foreground="White" Padding="10,5" Margin="0,0,10,0" BorderThickness="1" BorderBrush="#555" Cursor="Hand" Click="BtnShowQr_Click"/>
+                    <Button x:Name="BtnCopyLink" Content="Copy Link" Background="#2A2A2A" Foreground="White" Padding="10,5" Margin="0,0,20,0" BorderThickness="1" BorderBrush="#555" Cursor="Hand" Click="BtnCopyLink_Click"/>
+                    
+                    <TextBlock x:Name="TxtCrewCount" Text="Crew: 0" Foreground="#AAA" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBlock x:Name="TxtNetworkMode" Text="" Foreground="#4CAF50" FontSize="12" VerticalAlignment="Center" Margin="0,0,20,0" FontWeight="Bold"/>
+                </StackPanel>
+            </Grid>
+            
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0">
+                <Button x:Name="BtnRegenPin" Content="Regen PIN" Visibility="Collapsed" Background="#0078D4" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,10,0" FontWeight="Bold" Click="BtnRegenPin_Click" Cursor="Hand"/>
+                <Button x:Name="BtnEndRoom" Content="End Room" Visibility="Collapsed" Background="#D32F2F" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,20,0" FontWeight="Bold" Click="BtnEndRoom_Click" Cursor="Hand"/>
+                <Button x:Name="BtnToggleIntercom" Content="🎙️ INTERCOM: OFF" Background="#333" Foreground="#AAA" BorderThickness="0" Padding="10,5" Margin="0,0,20,0" FontWeight="Bold" Click="BtnToggleIntercom_Click" Cursor="Hand"/>
+                <TextBlock Text="Viicsoft design" Foreground="White" FontSize="14" FontFamily="Segoe UI Semilight" VerticalAlignment="Center"/>
+                <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                    <Border Width="5" Height="5" Background="#FFA500" CornerRadius="3" Margin="0,1"/>
+                    <Border Width="5" Height="5" Background="#FFA500" CornerRadius="3" Margin="0,1"/>
+                    <Border Width="5" Height="5" Background="#FFA500" CornerRadius="3" Margin="0,1"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- 3. MAIN BODY: CAMERA BUTTON GRID + T-BAR -->
+        <Grid x:Name="PanelSwitcher" Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>      <!-- Camera buttons -->
+                <ColumnDefinition Width="100"/>    <!-- T-Bar fader -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Camera Button Grid -->
+            <ItemsControl x:Name="ButtonGrid" Grid.Column="0" Margin="10"
+                          SizeChanged="ButtonGrid_SizeChanged">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid x:Name="ButtonUniformGrid" Columns="{Binding GridColumns, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+
+            <!-- T-BAR FADER -->
+            <Border Grid.Column="1" Background="#161616" CornerRadius="8" Margin="4,10,10,10"
+                    BorderBrush="#2A2A2A" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- T-Bar Label -->
+                    <TextBlock Text="T-BAR" HorizontalAlignment="Center" 
+                               Foreground="#555" FontSize="10" FontWeight="Bold"
+                               Margin="0,8,0,4"/>
+
+                    <!-- Fader Track Area -->
+                    <Border Grid.Row="1" Background="#111" CornerRadius="6" Margin="10,4,10,14" BorderBrush="#0A0A0A" BorderThickness="1">
+                        <Border.Effect>
+                            <DropShadowEffect ShadowDepth="2" Direction="90" Color="#222" Opacity="0.5" BlurRadius="2"/>
+                        </Border.Effect>
+                        <Canvas x:Name="TBarCanvas"
+                                Background="Transparent" ClipToBounds="True"
+                                MouseLeftButtonDown="TBarCanvas_MouseLeftButtonDown"
+                                MouseLeftButtonUp="TBarCanvas_MouseLeftButtonUp"
+                                MouseMove="TBarCanvas_MouseMove" Cursor="Hand">
+
+                            <!-- Track line (deep groove) -->
+                            <Border x:Name="TBarTrackLine" Width="6" Background="#000" CornerRadius="3" Canvas.Left="30">
+                                <Border.Effect>
+                                    <DropShadowEffect ShadowDepth="1" Direction="270" Color="#222" Opacity="0.3" BlurRadius="2"/>
+                                </Border.Effect>
+                            </Border>
+
+                            <!-- Handle -->
+                            <Border x:Name="TBarHandle" Width="66" Height="26" CornerRadius="13"
+                                    Cursor="Hand" Canvas.Left="0" Canvas.Top="0">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#FFFFFF" Offset="0.0"/>
+                                        <GradientStop Color="#C5C5C5" Offset="0.2"/>
+                                        <GradientStop Color="#A0A0A0" Offset="0.5"/>
+                                        <GradientStop Color="#707070" Offset="0.8"/>
+                                        <GradientStop Color="#AAAAAA" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#000" BlurRadius="8" ShadowDepth="4" Opacity="0.8" Direction="270"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <!-- Central black divider -->
+                                    <Rectangle Width="3" Height="26" Fill="#0A0A0A" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+                        </Canvas>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ALTERNATIVE VIEWS -->
+
+        <!-- MEDIA POOL -->
+        <ContentControl x:Name="PanelMedia" Grid.Row="2" Visibility="Collapsed"/>
+
+        <!-- AUDIO MIXER -->
+        <ContentControl x:Name="PanelAudio" Grid.Row="2" Visibility="Collapsed"/>
+
+        <!-- CAMERA CONTROL -->
+        <ContentControl x:Name="PanelCamera" Grid.Row="2" Visibility="Collapsed"/>
+
+        <!-- SHOT SUGGESTIONS -->
+        <ContentControl x:Name="PanelShotSuggestions" Grid.Row="2" Visibility="Collapsed"/>
+
+        <!-- ROOM SETUP -->
+        <ContentControl x:Name="PanelRoomSetup" Grid.Row="2" Visibility="Collapsed"/>
+
+        <!-- 4. TRANSITION BUTTON BAR -->
+        <Border x:Name="TransitionButtonBar" Grid.Row="3" Background="#252525" BorderBrush="#3E3E3E" BorderThickness="0,1,0,0">
+            <ScrollViewer x:Name="BottomBarScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                          PreviewMouseWheel="BottomBarScroll_PreviewMouseWheel" Padding="10,6">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    
+                    <!-- View Tabs -->
+                    <Button x:Name="TabSwitcher" Content="SWITCHER" Style="{StaticResource ViewTabButtonSelected}" Click="ViewTab_Click" Tag="Switcher"/>
+                    <Button x:Name="TabMedia" Content="MEDIA" Style="{StaticResource ViewTabButton}" Click="ViewTab_Click" Tag="Media"/>
+                    <Button x:Name="TabAudio" Content="AUDIO" Style="{StaticResource ViewTabButton}" Click="ViewTab_Click" Tag="Audio"/>
+                    <Button x:Name="TabCamera" Content="CAMERA" Style="{StaticResource ViewTabButton}" Click="ViewTab_Click" Tag="Camera"/>
+                    <Button x:Name="TabRoom" Content="ROOM" Style="{StaticResource ViewTabButton}" Click="ViewTab_Click" Tag="Room"/>
+                    <Button x:Name="TabShotSuggestions" Content="SHOT SUGGESTIONS" Style="{StaticResource ViewTabButton}" Click="ViewTab_Click" Tag="ShotSuggestions"/>
+                    
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+
+                    <!-- Action buttons -->
+                    <Button x:Name="BtnCut" Content="CUT" Style="{StaticResource TransitionActionButton}" Click="CutButton_Click"/>
+                    <Button x:Name="BtnAuto" Content="AUTO" Style="{StaticResource TransitionActionButton}" Click="AutoButton_Click"/>
+                    
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+
+                    <!-- Next Transition -->
+                    <TextBlock Text="NEXT TRANSITION:" Foreground="#888" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,6,0"/>
+                    <Button x:Name="BtnNextBkgd" Content="BKGD" Style="{StaticResource TransitionStyleButtonSelected}" Click="NextTransition_Click" Tag="Background"/>
+                    <Button x:Name="BtnNextKey1" Content="KEY 1" Style="{StaticResource TransitionStyleButton}" Click="NextTransition_Click" Tag="Key1"/>
+                    <Button x:Name="BtnNextKey2" Content="KEY 2" Style="{StaticResource TransitionStyleButton}" Click="NextTransition_Click" Tag="Key2"/>
+                    <Button x:Name="BtnNextKey3" Content="KEY 3" Style="{StaticResource TransitionStyleButton}" Click="NextTransition_Click" Tag="Key3"/>
+                    <Button x:Name="BtnNextKey4" Content="KEY 4" Style="{StaticResource TransitionStyleButton}" Click="NextTransition_Click" Tag="Key4"/>
+                    <Border Width="1" Height="16" Background="#555" Margin="6,0"/>
+                    <Button x:Name="BtnOnAir1" Content="ON AIR" Style="{StaticResource TransitionStyleButton}" Click="OnAir_Click" Tag="0"/>
+                    <Button x:Name="BtnOnAir2" Content="ON AIR" Style="{StaticResource TransitionStyleButton}" Click="OnAir_Click" Tag="1"/>
+                    <Button x:Name="BtnOnAir3" Content="ON AIR" Style="{StaticResource TransitionStyleButton}" Click="OnAir_Click" Tag="2"/>
+                    <Button x:Name="BtnOnAir4" Content="ON AIR" Style="{StaticResource TransitionStyleButton}" Click="OnAir_Click" Tag="3"/>
+
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+                    
+                    <!-- Style buttons -->
+                    <Button x:Name="BtnMix" Content="MIX" Style="{StaticResource TransitionStyleButtonSelected}" Click="TransitionStyle_Click" Tag="Mix"/>
+                    <Button x:Name="BtnDip" Content="DIP" Style="{StaticResource TransitionStyleButton}" Click="TransitionStyle_Click" Tag="Dip"/>
+                    <Button x:Name="BtnWipe" Content="WIPE" Style="{StaticResource TransitionStyleButton}" Click="TransitionStyle_Click" Tag="Wipe"/>
+                    <Button x:Name="BtnSting" Content="STING" Style="{StaticResource TransitionStyleButton}" Click="TransitionStyle_Click" Tag="Stinger"/>
+                    <Button x:Name="BtnDve" Content="DVE" Style="{StaticResource TransitionStyleButton}" Click="TransitionStyle_Click" Tag="DVE"/>
+                    
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+                    
+                    <!-- Rate control -->
+                    <TextBlock Text="RATE" Foreground="#888" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,6,0"/>
+                    <Border Background="#333" CornerRadius="4" BorderBrush="#555" BorderThickness="1" Padding="2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="RateTextBox" Text="1.0" Width="40" FontSize="12" Background="#222" Foreground="White" BorderThickness="0" TextAlignment="Center" VerticalContentAlignment="Center" LostFocus="RateTextBox_LostFocus" PreviewKeyDown="RateTextBox_PreviewKeyDown"/>
+                            <TextBlock Text="s" Foreground="#888" FontSize="11" VerticalAlignment="Center" Margin="2,0,4,0"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+                    
+                    <!-- DSK 1 -->
+                    <TextBlock Text="DSK 1" Foreground="#888" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,6,0"/>
+                    <Button x:Name="BtnDsk1Tie" Content="TIE" Style="{StaticResource TransitionStyleButton}" Click="DskTie_Click" Tag="0"/>
+                    <Border Background="#333" CornerRadius="4" BorderBrush="#555" BorderThickness="1" Padding="2" Margin="3">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="RATE" Foreground="#888" FontSize="9" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,4,0"/>
+                            <TextBox x:Name="Dsk1RateText" Text="1.0" Width="30" FontSize="12" Background="#222" Foreground="White" BorderThickness="0" TextAlignment="Center" VerticalContentAlignment="Center" LostFocus="DskRate_LostFocus" Tag="0"/>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="BtnDsk1OnAir" Content="ON AIR" Style="{StaticResource TransitionStyleButton}" Click="DskOnAir_Click" Tag="0"/>
+                    <Button x:Name="BtnDsk1Auto" Content="AUTO" Style="{StaticResource TransitionActionButton}" Click="DskAuto_Click" Tag="0"/>
+
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+                    
+                    <!-- DSK 2 -->
+                    <TextBlock Text="DSK 2" Foreground="#888" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,6,0"/>
+                    <Button x:Name="BtnDsk2Tie" Content="TIE" Style="{StaticResource TransitionStyleButton}" Click="DskTie_Click" Tag="1"/>
+                    <Border Background="#333" CornerRadius="4" BorderBrush="#555" BorderThickness="1" Padding="2" Margin="3">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="RATE" Foreground="#888" FontSize="9" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,4,0"/>
+                            <TextBox x:Name="Dsk2RateText" Text="1.0" Width="30" FontSize="12" Background="#222" Foreground="White" BorderThickness="0" TextAlignment="Center" VerticalContentAlignment="Center" LostFocus="DskRate_LostFocus" Tag="1"/>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="BtnDsk2OnAir" Content="ON AIR" Style="{StaticResource TransitionStyleButton}" Click="DskOnAir_Click" Tag="1"/>
+                    <Button x:Name="BtnDsk2Auto" Content="AUTO" Style="{StaticResource TransitionActionButton}" Click="DskAuto_Click" Tag="1"/>
+
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+                    
+                    <!-- FTB -->
+                    <TextBlock Text="FTB" Foreground="#888" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,6,0"/>
+                    <Border Background="#333" CornerRadius="4" BorderBrush="#555" BorderThickness="1" Padding="2" Margin="3">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="RATE" Foreground="#888" FontSize="9" FontWeight="Bold" VerticalAlignment="Center" Margin="4,0,4,0"/>
+                            <TextBox x:Name="FtbRateText" Text="1.0" Width="30" FontSize="12" Background="#222" Foreground="White" BorderThickness="0" TextAlignment="Center" VerticalContentAlignment="Center" LostFocus="FtbRate_LostFocus"/>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="BtnFtb" Content="FTB" Style="{StaticResource TransitionActionButton}" Click="Ftb_Click"/>
+
+                    <Border Width="1" Height="24" Background="#555" Margin="10,0"/>
+                    
+                    <!-- Floating Docks -->
+                    <Button x:Name="BtnSuperSource" Content="SUPERSOURCE" Style="{StaticResource ViewTabButton}" Click="DockToggle_Click" Tag="SuperSource"/>
+                    <Button x:Name="BtnPalettes" Content="PALETTES" Style="{StaticResource ViewTabButton}" Click="DockToggle_Click" Tag="Palettes"/>
+                    
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- 5. STATUS BAR -->
+        <Border x:Name="StatusBar" Grid.Row="4" Background="#333">
+             <DockPanel LastChildFill="False">
+                 <TextBlock Text="Ready" Foreground="#888" VerticalAlignment="Center" Margin="10,0"/>
+                 <TextBlock x:Name="StatusText" Text="Disconnected" DockPanel.Dock="Right" Foreground="#888" VerticalAlignment="Center" Margin="10,0"/>
+             </DockPanel>
+        </Border>
+
+        <!-- 6. EDIT MODE OVERLAY -->
+        <Border x:Name="EditOverlay" 
+                Background="#EE111111" 
+                Visibility="Collapsed"
+                Grid.RowSpan="5"
+                Panel.ZIndex="1000">
+            <Border Background="#2B2B2B" 
+                    Padding="30" 
+                    CornerRadius="12"
+                    BorderBrush="#555"
+                    BorderThickness="1"
+                    MaxWidth="750"
+                    MaxHeight="700"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <StackPanel Margin="0,0,0,20">
+                        <TextBlock Text="Edit Active Inputs" 
+                                   FontSize="22" 
+                                   FontWeight="Bold" 
+                                   Foreground="#EEEEEE"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock Text="Toggle inputs on/off and set custom labels. Only active inputs appear as buttons." 
+                                   FontSize="12" 
+                                   Foreground="#888"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,6,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <!-- Input Grid -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="EditInputList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="5"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- Done Button -->
+                    <Button Grid.Row="2" 
+                            Content="Done" 
+                            Click="EditDone_Click"
+                            Margin="0,20,0,0"
+                            Padding="30,10"
+                            FontSize="15"
+                            FontWeight="SemiBold"
+                            HorizontalAlignment="Center"
+                            Cursor="Hand">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#0078D4"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    CornerRadius="6"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center" 
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#1084D8"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+            </Border>
+        </Border>
+
+        <!-- 7. QR CODE OVERLAY -->
+        <Border x:Name="QrOverlay" 
+                Background="#EE111111" 
+                Visibility="Collapsed"
+                Grid.RowSpan="5"
+                Panel.ZIndex="2000">
+            <Border Background="#2B2B2B" 
+                    Padding="30" 
+                    CornerRadius="12"
+                    BorderBrush="#555"
+                    BorderThickness="1"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="Join Room" FontSize="22" FontWeight="Bold" Foreground="#EEEEEE" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                    <TextBlock Text="Scan with your phone's camera to join instantly." FontSize="14" Foreground="#888" HorizontalAlignment="Center" Margin="0,0,0,20"/>
+                    
+                    <Border Background="White" Padding="10" CornerRadius="8" HorizontalAlignment="Center">
+                        <Image x:Name="ImgQrCode" Width="300" Height="300" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                    </Border>
+
+                    <Button Content="Close" Click="BtnCloseQr_Click" Margin="0,20,0,0" Padding="30,10" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" Cursor="Hand" Background="#0078D4" Foreground="White" BorderThickness="0">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="6"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 8. HIDDEN WEBVIEW FOR INTERCOM (WebRTC) -->
+        <wv2:WebView2 x:Name="IntercomWebView" Visibility="Collapsed" Width="0" Height="0" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+    </Grid>
+</Window>

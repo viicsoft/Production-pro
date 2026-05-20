@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>AtemDirector – Director / Camera Console</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background-color: #101014;
+            color: #ffffff;
+            /* Tally border - default state */
+            border: 8px solid transparent;
+            box-sizing: border-box;
+            transition: border-color 0.3s ease;
+        }
+
+        /* Tally state borders */
+        body.tally-preview {
+            border-color: #4caf50 !important;
+            box-shadow: inset 0 0 20px rgba(76, 175, 80, 0.3);
+        }
+
+        body.tally-program {
+            border-color: #f44336 !important;
+            box-shadow: inset 0 0 20px rgba(244, 67, 54, 0.3);
+        }
+
+        header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #222;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        #statusDot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff5252;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        #statusText {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        main {
+            padding: 16px;
+            display: grid;
+            grid-template-columns: minmax(260px, 320px) 1fr;
+            gap: 16px;
+        }
+
+        .card {
+            background: #17181d;
+            border-radius: 8px;
+            padding: 12px 14px;
+            border: 1px solid #262731;
+        }
+
+        .card h2 {
+            margin: 0 0 8px;
+            font-size: 16px;
+        }
+
+        label {
+            font-size: 13px;
+            display: block;
+            margin-top: 6px;
+        }
+
+        input,
+        select,
+        button {
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 6px 8px;
+            border-radius: 4px;
+            border: 1px solid #333644;
+            background: #111118;
+            color: #fff;
+            box-sizing: border-box;
+        }
+
+        select {
+            width: 100%;
+            padding: 6px 8px;
+            border-radius: 4px;
+            border: 1px solid #333644;
+            background: #111118;
+            color: #fff;
+        }
+
+        button {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            margin-top: 8px;
+            margin-right: 6px;
+        }
+
+        button.primary {
+            background: #1e88e5;
+            color: #fff;
+        }
+
+        button.danger {
+            background: #e53935;
+            color: #fff;
+        }
+
+        button.secondary {
+            background: #333644;
+            color: #fff;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        #directorView {
+            display: none;
+        }
+
+        #cameraView {
+            display: none;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th,
+        td {
+            padding: 4px 6px;
+            border-bottom: 1px solid #22242c;
+            text-align: left;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 11px;
+        }
+
+        .badge.pgm-on {
+            background: #c62828;
+        }
+
+        .badge.pgm-off {
+            background: #333;
+        }
+
+        .badge.pvw-on {
+            background: #2e7d32;
+        }
+
+        .badge.pvw-off {
+            background: #333;
+        }
+
+        /* Tally status indicator (small text badge) */
+        #tallyStatus {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 14px;
+            background: #333;
+            color: #fff;
+            z-index: 1000;
+            display: none;
+        }
+
+        #tallyStatus.preview {
+            background: #4caf50;
+            display: block;
+        }
+
+        #tallyStatus.program {
+            background: #f44336;
+            display: block;
+        }
+
+        .small-note {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 6px;
+        }
+
+        .participants {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0;
+        }
+
+        .participantCard {
+            min-width: 80px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: #20212a;
+            border: 1px solid #343646;
+            text-align: center;
+            font-size: 11px;
+            box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+            transition: box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+        }
+
+        .participantCard .name {
+            font-weight: 600;
+        }
+
+        .participantCard .role {
+            opacity: 0.7;
+        }
+
+        .participantCard.speaking {
+            background: #1b2833;
+            border-color: #4caf50;
+            box-shadow: 0 0 12px 0 rgba(76, 175, 80, 0.85);
+        }
+
+        @media (max-width: 768px) {
+            main {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body data-version="v9">
+    <header>
+        <h1>AtemDirector Web Console</h1>
+        <div id="statusText">
+            <span id="statusDot"></span>
+            <span id="statusLabel">Disconnected</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- LEFT: join + audio controls -->
+        <section class="card">
+            <h2>Join Room</h2>
+
+            <label for="roleSelect">Role</label>
+            <select id="roleSelect">
+                <option value="director">Director</option>
+                <option value="camera">Camera</option>
+            </select>
+
+            <label for="roomInput">Room ID</label>
+            <select id="roomInput">
+                <option value="Room1">Room1</option>
+                <option value="Room2">Room2</option>
+                <option value="Room3">Room3</option>
+                <option value="Room4">Room4</option>
+                <option value="Room5">Room5</option>
+                <option value="Room6">Room6</option>
+                <option value="Room7">Room7</option>
+                <option value="Room8">Room8</option>
+                <option value="Room9">Room9</option>
+                <option value="Room10">Room10</option>
+            </select>
+
+            <!-- Director: Define Cameras -->
+            <div id="configSection" style="display:none; margin-top:10px; border-top:1px solid #333; padding-top:10px;">
+                <label>Camera Config (One per line)</label>
+                <textarea id="cameraConfigInput" rows="4"
+                    style="width:100%; background:#111118; color:#fff; border:1px solid #333; border-radius:4px; box-sizing:border-box;">Cam1
+Cam2
+Cam3
+Cam4</textarea>
+                <div style="display:flex; gap:5px; margin-top:5px;">
+                    <input type="number" id="genCount" value="4" style="width:50px; padding:4px;" />
+                    <button id="genBtn" class="secondary"
+                        style="margin:0; padding:4px 10px; font-size:12px;">Generate</button>
+                </div>
+            </div>
+
+            <label for="aliasInput">Camera Type</label>
+            <select id="aliasInput">
+                <!-- Populated by JS -->
+            </select>
+
+            <button id="joinBtn" class="primary">Join</button>
+            <button id="leaveBtn" class="danger" disabled>Leave</button>
+
+            <button id="audioBtn" class="secondary" disabled>Start Audio</button>
+            <button id="muteBtn" class="secondary" disabled>Mute</button>
+
+            <p class="small-note">
+                Joining the room connects tally and signalling only.<br />
+                Click <strong>Start Audio</strong> when the Director wants to talk.<br />
+                On iPhone/iPad you must use <strong>HTTPS</strong> for microphone access.
+            </p>
+        </section>
+
+        <!-- RIGHT: views -->
+        <section>
+            <div id="directorView" class="card">
+                <h2>Director – Tally &amp; Comms (v5)</h2>
+
+                <div id="participantsDirector" class="participants"></div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Alias</th>
+                            <th>Program</th>
+                            <th>Preview</th>
+                        </tr>
+                    </thead>
+                    <tbody id="directorTallyBody"></tbody>
+                </table>
+            </div>
+
+            <div id="cameraView" class="card">
+                <h2>Camera – Tally &amp; Comms (v5)</h2>
+
+                <div class="tally-indicators">
+                    <div id="previewBox" class="tally-box">
+                        PREVIEW
+                    </div>
+                    <div id="programBox" class="tally-box">
+                        ON AIR
+                    </div>
+                </div>
+
+                <div id="participantsCamera" class="participants"></div>
+
+                <p class="small-note">
+        </section>
+        <!-- Saved Media Section -->
+        <section id="savedMediaSection" class="card" style="display:none; margin-top:20px;">
+            <h2>Received Media</h2>
+            <div id="savedMediaContainer" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
+        </section>
+
+        </section>
+
+        <!-- Media Modal -->
+        <div id="mediaModal"
+            style="display:none; position:fixed; top:8px; left:8px; right:8px; bottom:8px; background:rgba(0,0,0,0.9); z-index:9999; justify-content:center; align-items:center; flex-direction:column;">
+
+            <!-- Floating Audio Controls (bottom-left) -->
+            <div style="position:absolute; bottom:20px; left:20px; display:flex; gap:10px; z-index:10000;">
+                <button id="modalAudioBtn" class="secondary" style="padding:10px 16px;">Start Audio</button>
+                <button id="modalMuteBtn" class="secondary" style="padding:10px 16px;">Mute</button>
+            </div>
+
+            <div
+                style="background:#222; padding:20px; border-radius:8px; max-width:90%; max-height:90%; display:flex; flex-direction:column; align-items:center;">
+                <h3 style="margin-top:0;">Incoming Media</h3>
+                <div id="mediaContent" style="display:flex; justify-content:center; margin-bottom:15px;"></div>
+                <p id="mediaDesc" style="color:#ddd; margin-bottom:20px; font-size:16px; text-align:center;"></p>
+                <div style="display:flex; gap:20px;">
+                    <button id="btnDiscard" class="danger">Discard</button>
+                    <button id="btnSave" class="primary">Save & View</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        console.log("AtemDirector v5 script loaded");
+
+        const protocol = (location.protocol === "https:") ? "wss" : "ws";
+
+        let currentRoomId = null;
+        let currentAlias = null;
+        let currentRole = null;
+
+        let tallySocket = null;
+        let voiceSocket = null;
+
+        let localStream = null;
+        let isMuted = false;
+        let audioConnected = false;
+
+        const peers = {};        // alias -> RTCPeerConnection
+        const remoteAudios = {}; // alias -> HTMLAudioElement
+
+        const tallyStates = {};  // alias -> { pgm, pvw }
+
+        const participants = {}; // alias -> { role, speaking }
+        let knownPeers = [];     // {alias, role}
+
+        let audioContext = null;
+        const analysers = {};    // alias -> { analyser, dataArray }
+
+        const statusDot = document.getElementById("statusDot");
+        const statusLabel = document.getElementById("statusLabel");
+        const joinBtn = document.getElementById("joinBtn");
+        const leaveBtn = document.getElementById("leaveBtn");
+        const audioBtn = document.getElementById("audioBtn");
+        const muteBtn = document.getElementById("muteBtn");
+        const directorView = document.getElementById("directorView");
+        const cameraView = document.getElementById("cameraView");
+        const directorTallyBody = document.getElementById("directorTallyBody");
+        const participantsDirector = document.getElementById("participantsDirector");
+        const participantsCamera = document.getElementById("participantsCamera");
+        const modalAudioBtn = document.getElementById("modalAudioBtn");
+        const modalMuteBtn = document.getElementById("modalMuteBtn");
+
+        function setStatus(connected) {
+            if (connected) {
+                statusDot.style.background = "#4caf50";
+                statusLabel.textContent = "Connected";
+            } else {
+                statusDot.style.background = "#ff5252";
+                statusLabel.textContent = "Disconnected";
+            }
+        }
+
+        function showRoleView() {
+            if (currentRole === "director") {
+                directorView.style.display = "block";
+                cameraView.style.display = "none";
+            } else if (currentRole === "camera") {
+                directorView.style.display = "none";
+                cameraView.style.display = "block";
+            } else {
+                directorView.style.display = "none";
+                cameraView.style.display = "none";
+            }
+        }
+
+        function renderParticipants() {
+            const aliases = Object.keys(participants).sort();
+            [participantsDirector, participantsCamera].forEach(container => {
+                if (!container) return;
+                container.innerHTML = "";
+                aliases.forEach(alias => {
+                    const p = participants[alias];
+                    if (!p) return;
+                    const card = document.createElement("div");
+                    card.className = "participantCard" + (p.speaking ? " speaking" : "");
+                    const nameEl = document.createElement("div");
+                    nameEl.className = "name";
+                    nameEl.textContent = alias;
+                    const roleEl = document.createElement("div");
+                    roleEl.className = "role";
+                    roleEl.textContent = p.role || "";
+                    card.appendChild(nameEl);
+                    card.appendChild(roleEl);
+                    container.appendChild(card);
+                });
+            });
+        }
+
+        function setParticipantSpeaking(alias, speaking) {
+            const p = participants[alias];
+            if (!p) return;
+            if (p.speaking === speaking) return;
+            p.speaking = speaking;
+            renderParticipants();
+        }
+
+        function connectTally() {
+            if (tallySocket) {
+                try { tallySocket.close(); } catch (_) { }
+                tallySocket = null;
+            }
+
+            const url = `${protocol}://${location.host}/ws/tally`;
+            console.log("Connecting tally to", url);
+            tallySocket = new WebSocket(url);
+
+            tallySocket.onopen = () => {
+                console.log("Tally socket open");
+                // Extract base camera name (e.g., "Cam1" from "Cam1 - Roving")
+                // The pattern is: CamX at the start of the alias
+                let tallyAlias = currentAlias;
+                const match = currentAlias.match(/^(Cam\d+)/);
+                if (match) {
+                    tallyAlias = match[1]; // Use just "Cam1", "Cam2", etc.
+                    console.log(`Tally: Using base name "${tallyAlias}" from full alias "${currentAlias}"`);
+                }
+
+                tallySocket.send(JSON.stringify({
+                    type: "join",
+                    alias: tallyAlias
+                }));
+            };
+
+            tallySocket.onmessage = evt => {
+                try {
+                    const msg = JSON.parse(evt.data);
+                    const alias = msg.Alias || msg.alias;
+                    const pgm = (msg.PGM !== undefined) ? msg.PGM : msg.pgm;
+                    const pvw = (msg.PVW !== undefined) ? msg.PVW : msg.pvw;
+
+                    if (!alias) return;
+                    tallyStates[alias] = { pgm: !!pgm, pvw: !!pvw };
+                    updateTallyUI();
+                } catch (err) {
+                    console.error("Tally parse error", err);
+                }
+            };
+
+            tallySocket.onclose = () => {
+                console.log("Tally socket closed");
+            };
+        }
+
+        function updateTallyUI() {
+            if (currentRole === "director") {
+                directorTallyBody.innerHTML = "";
+                Object.keys(tallyStates).sort().forEach(alias => {
+                    const { pgm, pvw } = tallyStates[alias];
+
+                    const tr = document.createElement("tr");
+
+                    const tdAlias = document.createElement("td");
+                    tdAlias.textContent = alias;
+
+                    const tdPgm = document.createElement("td");
+                    const pgmBadge = document.createElement("span");
+                    pgmBadge.className = "badge " + (pgm ? "pgm-on" : "pgm-off");
+                    pgmBadge.textContent = pgm ? "ON" : "OFF";
+                    tdPgm.appendChild(pgmBadge);
+
+                    const tdPvw = document.createElement("td");
+                    const pvwBadge = document.createElement("span");
+                    pvwBadge.className = "badge " + (pvw ? "pvw-on" : "pvw-off");
+                    pvwBadge.textContent = pvw ? "ON" : "OFF";
+                    tdPvw.appendChild(pvwBadge);
+
+                    tr.appendChild(tdAlias);
+                    tr.appendChild(tdPgm);
+                    tr.appendChild(tdPvw);
+                    directorTallyBody.appendChild(tr);
+                });
+            }
+
+            if (currentRole === "camera" && currentAlias) {
+                // Extract base camera name for tally lookup
+                let tallyLookupAlias = currentAlias;
+                const match = currentAlias.match(/^(Cam\d+)/);
+                if (match) {
+                    tallyLookupAlias = match[1];
+                }
+
+                const state = tallyStates[tallyLookupAlias] || { pgm: false, pvw: false };
+                const tallyStatusEl = document.getElementById("tallyStatus");
+
+                // Remove all tally classes from body
+                document.body.classList.remove("tally-preview", "tally-program");
+
+                // Apply appropriate border class to body
+                if (state.pgm) {
+                    document.body.classList.add("tally-program");
+                    if (tallyStatusEl) {
+                        tallyStatusEl.className = "program";
+                        tallyStatusEl.textContent = "ON AIR";
+                    }
+                } else if (state.pvw) {
+                    document.body.classList.add("tally-preview");
+                    if (tallyStatusEl) {
+                        tallyStatusEl.className = "preview";
+                        tallyStatusEl.textContent = "PREVIEW";
+                    }
+                } else {
+                    // Idle state - no border
+                    if (tallyStatusEl) {
+                        tallyStatusEl.className = "";
+                        tallyStatusEl.style.display = "none";
+                    }
+                }
+            }
+        }
+
+        function ensureAudioContext() {
+            if (!audioContext) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) {
+                    audioContext = new AC();
+                }
+            }
+        }
+
+        function startMonitoring(alias, stream) {
+            try {
+                ensureAudioContext();
+                if (!audioContext) return;
+
+                if (audioContext.state === "suspended") {
+                    audioContext.resume().catch(() => { });
+                }
+
+                const source = audioContext.createMediaStreamSource(stream);
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                source.connect(analyser);
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                analysers[alias] = { analyser, dataArray };
+
+                const threshold = 30;
+
+                function loop() {
+                    if (!analysers[alias]) return;
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                    const avg = sum / dataArray.length;
+                    const speaking = avg > threshold;
+                    setParticipantSpeaking(alias, speaking);
+                    requestAnimationFrame(loop);
+                }
+                loop();
+            } catch (err) {
+                console.warn("Audio monitoring error", err);
+            }
+        }
+
+        function addLocalTracksToPeer(pc) {
+            if (!localStream || !pc) return;
+            const senders = pc.getSenders();
+            localStream.getTracks().forEach(track => {
+                const already = senders.find(s => s.track && s.track.kind === track.kind);
+                if (!already) {
+                    console.log("Adding local", track.kind, "track to peer");
+                    pc.addTrack(track, localStream);
+                }
+            });
+        }
+
+        function addLocalTracksToAllPeers() {
+            Object.values(peers).forEach(pc => addLocalTracksToPeer(pc));
+        }
+
+        async function initLocalAudio() {
+            if (localStream) return;
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error(
+                    "Your browser does not expose microphone access here.\n" +
+                    "On phones (iOS/Android) you usually must use HTTPS (https://...) for audio calls."
+                );
+            }
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                setMuted(false);
+                startMonitoring(currentAlias, localStream);
+                addLocalTracksToAllPeers();
+            } catch (err) {
+                throw new Error("Cannot access microphone: " + err.message);
+            }
+        }
+
+        function setMuted(muted) {
+            isMuted = muted;
+            if (localStream) {
+                localStream.getAudioTracks().forEach(t => t.enabled = !muted);
+            }
+            const text = muted ? "Unmute" : "Mute";
+            muteBtn.textContent = text;
+            modalMuteBtn.textContent = text;
+        }
+
+        function stopAudioOnly() {
+            audioConnected = false;
+
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+            }
+
+            Object.keys(peers).forEach(alias => {
+                peers[alias].close();
+                delete peers[alias];
+            });
+
+            Object.values(remoteAudios).forEach(a => a.remove());
+            Object.keys(remoteAudios).forEach(a => delete remoteAudios[a]);
+
+            Object.keys(analysers).forEach(a => delete analysers[a]);
+            Object.keys(participants).forEach(a => {
+                participants[a].speaking = false;
+            });
+            renderParticipants();
+
+            if (audioContext && audioContext.close) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            muteBtn.disabled = true;
+            modalMuteBtn.disabled = true;
+            audioBtn.textContent = "Start Audio";
+            modalAudioBtn.textContent = "Start Audio";
+        }
+
+        function cleanupVoice() {
+            stopAudioOnly();
+            if (voiceSocket) {
+                try { voiceSocket.close(); } catch (_) { }
+                voiceSocket = null;
+            }
+            knownPeers = [];
+        }
+
+        function createPeerConnection(peerAlias) {
+            if (peers[peerAlias]) return peers[peerAlias];
+
+            console.log("createPeerConnection for", peerAlias);
+
+            // IMPORTANT: host-only ICE for local Wi-Fi/hotspot use
+            const pc = new RTCPeerConnection({
+                iceServers: [] // no STUN/TURN => host candidates only
+            });
+
+            addLocalTracksToPeer(pc);
+
+            pc.onicecandidate = event => {
+                if (event.candidate) {
+                    console.log("ICE candidate for", peerAlias, "=>", event.candidate.candidate);
+                } else {
+                    console.log("ICE candidate gathering complete for", peerAlias);
+                }
+                if (event.candidate && voiceSocket && voiceSocket.readyState === WebSocket.OPEN) {
+                    voiceSocket.send(JSON.stringify({
+                        type: "signal",
+                        roomId: currentRoomId,
+                        from: currentAlias,
+                        to: peerAlias,
+                        data: { candidate: event.candidate }
+                    }));
+                }
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                console.log("ICE state for", peerAlias, "=>", pc.iceConnectionState);
+            };
+
+            pc.ontrack = event => {
+                console.log("ontrack from", peerAlias);
+                let audio = remoteAudios[peerAlias];
+                if (!audio) {
+                    audio = document.createElement("audio");
+                    audio.autoplay = true;
+                    audio.playsInline = true;
+                    remoteAudios[peerAlias] = audio;
+                    document.body.appendChild(audio);
+                }
+                audio.srcObject = event.streams[0];
+                audio.play().catch(err => console.warn("audio play failed", err));
+                startMonitoring(peerAlias, event.streams[0]);
+            };
+
+            peers[peerAlias] = pc;
+            return pc;
+        }
+
+        async function startCallTo(peerAlias) {
+            if (!voiceSocket || voiceSocket.readyState !== WebSocket.OPEN) return;
+            if (!localStream) return;
+
+            console.log("startCallTo", peerAlias);
+
+            const pc = createPeerConnection(peerAlias);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            voiceSocket.send(JSON.stringify({
+                type: "signal",
+                roomId: currentRoomId,
+                from: currentAlias,
+                to: peerAlias,
+                data: offer
+            }));
+        }
+
+        // ---- PATCHED: now any participant with audio can (re)start calls ----
+        function startCallsToAllKnownPeers() {
+            if (!localStream) return;
+
+            console.log("Starting calls to peers", knownPeers);
+            knownPeers.forEach(p => {
+                if (!p || !p.alias || p.alias === currentAlias) return;
+                console.log("startCallTo", p.alias);
+                startCallTo(p.alias);
+            });
+        }
+
+        async function handleSignal(msg) {
+            if (msg.to !== currentAlias) return;
+            const peerAlias = msg.from;
+            const data = msg.data || msg.payload || {};
+
+            const pc = createPeerConnection(peerAlias);
+
+            if (data.type === "offer" || data.type === "answer") {
+                const desc = new RTCSessionDescription(data);
+                if (desc.type === "offer") {
+                    console.log("Received offer from", peerAlias);
+                    await pc.setRemoteDescription(desc);
+                    addLocalTracksToPeer(pc);
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    voiceSocket && voiceSocket.send(JSON.stringify({
+                        type: "signal",
+                        roomId: currentRoomId,
+                        from: currentAlias,
+                        to: peerAlias,
+                        data: answer
+                    }));
+                } else if (desc.type === "answer") {
+                    console.log("Received answer from", peerAlias);
+                    await pc.setRemoteDescription(desc);
+                }
+            } else if (data.candidate) {
+                try {
+                    console.log("Adding ICE candidate from", peerAlias, "=>", data.candidate.candidate);
+                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (err) {
+                    console.error("Error adding ICE candidate", err);
+                }
+            }
+        }
+
+        function handlePeerLeft(alias) {
+            const pc = peers[alias];
+            if (pc) {
+                pc.close();
+                delete peers[alias];
+            }
+            const audio = remoteAudios[alias];
+            if (audio) {
+                audio.remove();
+                delete remoteAudios[alias];
+            }
+            delete analysers[alias];
+            setParticipantSpeaking(alias, false);
+            delete participants[alias];
+            renderParticipants();
+        }
+
+        function connectVoice() {
+            cleanupVoice();
+
+            const url = `${protocol}://${location.host}/ws/voice`;
+            console.log("Connecting voice to", url);
+            voiceSocket = new WebSocket(url);
+
+            voiceSocket.onopen = () => {
+                console.log("Voice socket open");
+                const payload = {
+                    type: "join",
+                    roomId: currentRoomId,
+                    alias: currentAlias,
+                    role: currentRole
+                };
+                if (currentRole === "director" && window.getDirectorConfig) {
+                    const cfg = window.getDirectorConfig();
+                    if (cfg) payload.cameraConfig = cfg;
+                }
+                voiceSocket.send(JSON.stringify(payload));
+            };
+
+            voiceSocket.onmessage = async evt => {
+                const msg = JSON.parse(evt.data);
+                switch (msg.type) {
+                    case "peers":
+                        console.log("peers", msg.peers);
+                        knownPeers = Array.isArray(msg.peers) ? msg.peers.slice() : [];
+                        if (Array.isArray(msg.peers)) {
+                            msg.peers.forEach(p => {
+                                if (!participants[p.alias]) {
+                                    participants[p.alias] = { role: p.role || "camera", speaking: false };
+                                }
+                            });
+                            renderParticipants();
+                        }
+                        // Only the director auto-calls when peers list arrives.
+                        if (currentRole === "director" && localStream) {
+                            startCallsToAllKnownPeers();
+                        }
+                        break;
+                    case "peer-joined": {
+                        console.log("peer-joined", msg.alias, msg.role);
+                        const peer = { alias: msg.alias, role: msg.role || "camera" };
+                        knownPeers.push(peer);
+                        participants[peer.alias] = { role: peer.role, speaking: false };
+                        renderParticipants();
+                        // Only the director auto-calls new peers.
+                        if (currentRole === "director" && localStream && peer.alias !== currentAlias) {
+                            await startCallTo(peer.alias);
+                        }
+                        break;
+                    }
+                    case "peer-left":
+                        console.log("peer-left", msg.alias);
+                        handlePeerLeft(msg.alias);
+                        break;
+                    case "signal":
+                        await handleSignal(msg);
+                        break;
+                    case "media-share":
+                        handleMediaShare(msg);
+                        break;
+                }
+            };
+
+            voiceSocket.onclose = () => {
+                console.log("Voice socket closed");
+            };
+        }
+
+        // ---- PATCHED: both director and camera renegotiate after getting mic ----
+        async function connectAudio() {
+            if (audioConnected) return;
+            try {
+                await initLocalAudio();
+            } catch (err) {
+                alert(err.message || "Cannot start audio");
+                return;
+            }
+
+            audioConnected = true;
+            audioBtn.textContent = "Stop Audio";
+            modalAudioBtn.textContent = "Stop Audio";
+            muteBtn.disabled = false;
+            modalMuteBtn.disabled = false;
+
+            // Whoever just enabled audio (director or camera) now initiates
+            // or renegotiates calls to all known peers.
+            startCallsToAllKnownPeers();
+        }
+
+        let currentMediaMsg = null;
+
+        function handleMediaShare(msg) {
+            currentMediaMsg = msg; // Store for saving
+            const modal = document.getElementById("mediaModal");
+            const content = document.getElementById("mediaContent");
+            const desc = document.getElementById("mediaDesc");
+
+            content.innerHTML = "";
+            desc.textContent = msg.description || "";
+
+            const element = createMediaElement(msg);
+            if (element) {
+                // For modal preview, limit size
+                if (element.tagName === "IMG" || element.tagName === "VIDEO") {
+                    element.style.maxWidth = "100%";
+                    element.style.maxHeight = "50vh";
+                }
+                content.appendChild(element);
+
+                // Explicitly play video after it's in the DOM - iOS OPTIMIZED
+                if (element.tagName === "VIDEO") {
+                    console.log("Video element created, attempting iOS-friendly autoplay...");
+
+                    // Critical: Load the video first (required for mobile)
+                    element.load();
+
+                    // Use loadeddata instead of canplay for more reliable iOS playback
+                    element.addEventListener('loadeddata', function () {
+                        console.log("Video data loaded, attempting play...");
+
+                        // Play the video (must stay muted for iOS autoplay)
+                        element.play().then(() => {
+                            console.log("Video autoplay successful! (staying muted for iOS compatibility)");
+                            // NOTE: We keep it muted because iOS will pause if we try to unmute programmatically
+                            // User can unmute using the video controls if needed
+                        }).catch(err => {
+                            console.error("Video play failed:", err);
+                        });
+                    }, { once: true });
+                }
+            }
+
+            modal.style.display = "flex";
+        }
+
+        function createMediaElement(msg) {
+            if (msg.mediaType === "Image") {
+                const img = document.createElement("img");
+                img.src = msg.url;
+                img.style.border = "2px solid #444";
+                img.style.borderRadius = "4px";
+                return img;
+            } else if (msg.mediaType === "Video") {
+                const vid = document.createElement("video");
+                vid.src = msg.url;
+                vid.controls = true;
+                vid.muted = true; // MUST start muted for autoplay to work
+                vid.playsInline = true; // Required for iOS
+                vid.preload = "auto"; // Preload the video
+                // Don't use autoplay attribute - handle manually for mobile
+                return vid;
+            } else if (msg.mediaType === "Youtube") {
+                const iframe = document.createElement("iframe");
+                iframe.width = "400";
+                iframe.height = "225";
+                let embedUrl = msg.url;
+                if (msg.url.includes("watch?v=")) {
+                    const v = msg.url.split("v=")[1].split("&")[0];
+                    embedUrl = "https://www.youtube.com/embed/" + v + "?autoplay=1";
+                }
+                iframe.src = embedUrl;
+                iframe.frameBorder = "0";
+                iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+                iframe.allowFullscreen = true;
+                return iframe;
+            }
+            return null;
+        }
+
+        document.getElementById("btnDiscard").addEventListener("click", () => {
+            document.getElementById("mediaModal").style.display = "none";
+            document.getElementById("mediaContent").innerHTML = "";
+            currentMediaMsg = null;
+        });
+
+        document.getElementById("btnSave").addEventListener("click", () => {
+            if (!currentMediaMsg) return;
+
+            const section = document.getElementById("savedMediaSection");
+            const container = document.getElementById("savedMediaContainer");
+
+            section.style.display = "block";
+
+            const wrapper = document.createElement("div");
+            wrapper.className = "card";
+            wrapper.style.marginBottom = "0";
+            wrapper.style.display = "flex";
+            wrapper.style.flexDirection = "column";
+            wrapper.style.alignItems = "center";
+            wrapper.style.padding = "10px";
+
+            const el = createMediaElement(currentMediaMsg);
+            // Size for gallery
+            if (el.tagName === "IMG") {
+                el.style.maxWidth = "300px";
+            } else if (el.tagName === "VIDEO") {
+                el.style.maxWidth = "300px";
+            }
+
+            wrapper.appendChild(el);
+
+            const txt = document.createElement("span");
+            txt.textContent = currentMediaMsg.description || "";
+            txt.style.marginTop = "8px";
+            txt.style.fontSize = "12px";
+            txt.style.color = "#aaa";
+            wrapper.appendChild(txt);
+
+            // Add close button for saved item
+            const removeBtn = document.createElement("button");
+            removeBtn.className = "danger";
+            removeBtn.textContent = "Remove";
+            removeBtn.style.marginTop = "5px";
+            removeBtn.style.fontSize = "10px";
+            removeBtn.onclick = () => {
+                wrapper.remove();
+                if (container.children.length === 0) section.style.display = "none";
+            };
+            wrapper.appendChild(removeBtn);
+
+            container.appendChild(wrapper);
+
+            // Close modal
+            document.getElementById("mediaModal").style.display = "none";
+            document.getElementById("mediaContent").innerHTML = "";
+            currentMediaMsg = null;
+        });
+
+        joinBtn.addEventListener("click", () => {
+            const role = document.getElementById("roleSelect").value;
+            const room = document.getElementById("roomInput").value.trim();
+            const alias = document.getElementById("aliasInput").value.trim();
+
+            if (!room || !alias) {
+                alert("Please enter Room ID and Alias.");
+                return;
+            }
+
+            // Persist to LocalStorage
+            localStorage.setItem("atem_role", role);
+            localStorage.setItem("atem_room", room);
+            localStorage.setItem("atem_alias", alias);
+            localStorage.setItem("atem_auto_join", "true");
+
+            joinRoom(role, room, alias);
+        });
+
+        function joinRoom(role, room, alias) {
+            currentRole = role;
+            currentRoomId = room;
+            currentAlias = alias;
+
+            // Update UI inputs in case called from auto-join
+            document.getElementById("roleSelect").value = role;
+            updateAliasOptions(role, alias); // Ensure options exist before setting value
+            document.getElementById("roomInput").value = room;
+            // document.getElementById("aliasInput").value = alias; // Handled by updateAliasOptions
+
+            console.log("Join clicked", { role, room, alias });
+
+            Object.keys(tallyStates).forEach(k => delete tallyStates[k]);
+            Object.keys(participants).forEach(k => delete participants[k]);
+            participants[currentAlias] = { role: currentRole, speaking: false };
+            renderParticipants();
+            updateTallyUI();
+
+            showRoleView();
+            setStatus(true);
+
+            joinBtn.disabled = true;
+            leaveBtn.disabled = false;
+            audioBtn.disabled = false;
+            modalAudioBtn.disabled = false;
+            muteBtn.disabled = true;
+            modalMuteBtn.disabled = true;
+
+            connectTally();
+            connectVoice();
+        }
+
+        leaveBtn.addEventListener("click", () => {
+            console.log("Leave clicked");
+            // Clear Persistence
+            localStorage.removeItem("atem_auto_join");
+
+            if (tallySocket) {
+                try { tallySocket.close(); } catch (_) { }
+                tallySocket = null;
+            }
+            cleanupVoice();
+
+            currentRole = null;
+            currentRoomId = null;
+            currentAlias = null;
+
+            Object.keys(tallyStates).forEach(k => delete tallyStates[k]);
+            Object.keys(participants).forEach(k => delete participants[k]);
+            renderParticipants();
+            directorTallyBody.innerHTML = "";
+
+            previewBox.classList.remove("preview-on");
+            programBox.classList.remove("program-on");
+
+            joinBtn.disabled = false;
+            leaveBtn.disabled = true;
+            audioBtn.disabled = true;
+            modalAudioBtn.disabled = true;
+            muteBtn.disabled = true;
+            modalMuteBtn.disabled = true;
+            audioBtn.textContent = "Start Audio";
+            modalAudioBtn.textContent = "Start Audio";
+
+            showRoleView();
+            setStatus(false);
+        });
+
+        audioBtn.addEventListener("click", async () => {
+            console.log("Audio button clicked, connected =", audioConnected);
+            if (!audioConnected) {
+                await connectAudio();
+            } else {
+                stopAudioOnly();
+            }
+        });
+
+        muteBtn.addEventListener("click", () => {
+            setMuted(!isMuted);
+        });
+
+        // Sync Modal Buttons
+        modalAudioBtn.addEventListener("click", () => {
+            audioBtn.click();
+        });
+
+        modalMuteBtn.addEventListener("click", () => {
+            muteBtn.click();
+        });
+
+        const roleSelect = document.getElementById("roleSelect");
+        const aliasSelect = document.getElementById("aliasInput");
+        const roomSelect = document.getElementById("roomInput");
+        const configSection = document.getElementById("configSection");
+        const configInput = document.getElementById("cameraConfigInput");
+        const genBtn = document.getElementById("genBtn");
+        const genCount = document.getElementById("genCount");
+
+        // Generator for Camera names
+        genBtn.addEventListener("click", () => {
+            const count = parseInt(genCount.value) || 4;
+            let lines = configInput.value.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+
+            // If empty, just fill
+            if (lines.length === 0) {
+                for (let i = 1; i <= count; i++) lines.push("Cam" + i);
+            } else {
+                // Smart Append: Only add if we need more
+                const currentLen = lines.length;
+                if (count > currentLen) {
+                    for (let i = currentLen + 1; i <= count; i++) {
+                        lines.push("Cam" + i); // Simple incremental naming
+                    }
+                }
+            }
+            configInput.value = lines.join("\n");
+        });
+
+        // Polling for Room Info
+        let pollInterval = null;
+
+        async function updateRoomInfo() {
+            const role = roleSelect.value;
+            const room = roomSelect.value;
+
+            if (role === "director") {
+                // Director Mode: Static single option
+                configSection.style.display = "block";
+                aliasSelect.innerHTML = '<option value="Director">Director</option>';
+                aliasSelect.value = "Director";
+                return;
+            }
+
+            // Camera Mode: Hide config, Poll Server
+            configSection.style.display = "none";
+
+            try {
+                const res = await fetch(`/api/room-info/${room}`);
+                const data = await res.json();
+
+                const currentVal = aliasSelect.value; // Try to preserve selection
+                aliasSelect.innerHTML = "";
+
+                if (!data.exists) {
+                    const opt = document.createElement("option");
+                    opt.textContent = "Waiting for Director...";
+                    opt.disabled = true;
+                    opt.selected = true;
+                    aliasSelect.appendChild(opt);
+                } else {
+                    let hasAvailable = false;
+                    data.roles.forEach(r => {
+                        const opt = document.createElement("option");
+                        opt.value = r.name;
+                        opt.textContent = r.name + (r.taken ? " (Taken)" : "");
+                        if (r.taken) {
+                            opt.disabled = true;
+                            if (r.name === localStorage.getItem("atem_alias") && localStorage.getItem("atem_room") === room) {
+                                opt.disabled = false; // Allow reclaiming own alias
+                                opt.textContent = r.name + " (You?)";
+                            }
+                        } else {
+                            hasAvailable = true;
+                        }
+                        aliasSelect.appendChild(opt);
+                    });
+
+                    if (currentVal && !aliasSelect.querySelector(`option[value='${currentVal}']`)?.disabled) {
+                        aliasSelect.value = currentVal;
+                    }
+                }
+            } catch (err) {
+                console.error("Poll error", err);
+            }
+        }
+
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            updateRoomInfo(); // Immediate run
+            pollInterval = setInterval(updateRoomInfo, 2000);
+        }
+
+        roleSelect.addEventListener("change", updateRoomInfo);
+        roomSelect.addEventListener("change", updateRoomInfo);
+
+        // Initial
+        startPolling();
+
+        // Helper for auto-join (legacy support for joinRoom calling it)
+        function updateAliasOptions(role, selectedAlias) {
+            updateRoomInfo().then(() => {
+                if (selectedAlias && !role.includes("director")) {
+                    const opt = aliasSelect.querySelector(`option[value='${selectedAlias}']`);
+                    if (opt && !opt.disabled) aliasSelect.value = selectedAlias;
+                }
+            });
+        }
+
+        // Expose config getter
+        window.getDirectorConfig = function () {
+            if (roleSelect.value !== "director") return null;
+            return configInput.value.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+        };
+
+        setStatus(false);
+
+        // Auto-Join Check
+        if (localStorage.getItem("atem_auto_join") === "true") {
+            const r = localStorage.getItem("atem_role");
+            const rm = localStorage.getItem("atem_room");
+            const a = localStorage.getItem("atem_alias");
+
+            if (r && rm && a) {
+                console.log("Auto-joining room...");
+                joinRoom(r, rm, a);
+            }
+        }
+    </script>
+</body>
+
+</html>

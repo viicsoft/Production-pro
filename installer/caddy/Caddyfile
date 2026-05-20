@@ -1,0 +1,10 @@
+{
+	admin off
+	auto_https off
+}
+
+{{IP_ADDRESS}}:8443 {
+	tls internal
+	reverse_proxy localhost:5160
+}
+

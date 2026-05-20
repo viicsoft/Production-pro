@@ -1,0 +1,90 @@
+<UserControl x:Class="Desktop.PalettesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#1A1A1A"
+             Foreground="#CCC">
+    
+    <UserControl.Resources>
+        <Style x:Key="DarkExpanderStyle" TargetType="Expander">
+            <Setter Property="Background" Value="#333"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#444"/>
+            <Setter Property="Padding" Value="5"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="5">
+            
+            <Expander Header="COLOR GENERATORS" IsExpanded="True" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
+                <Border Background="#222" BorderBrush="#333" BorderThickness="1,0,1,1" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="COLOR 1" Foreground="#FFF" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                                <TextBlock Text="HUE" FontSize="10" Foreground="#888"/>
+                                <Slider Minimum="0" Maximum="360" Value="0" Margin="0,5,0,0"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                                <TextBlock Text="SATURATION" FontSize="10" Foreground="#888"/>
+                                <Slider Minimum="0" Maximum="1" Value="1" Margin="0,5,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                        
+                        <TextBlock Text="COLOR 2" Foreground="#FFF" FontWeight="Bold" Margin="0,0,0,5"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                                <TextBlock Text="HUE" FontSize="10" Foreground="#888"/>
+                                <Slider Minimum="0" Maximum="360" Value="240" Margin="0,5,0,0"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                                <TextBlock Text="SATURATION" FontSize="10" Foreground="#888"/>
+                                <Slider Minimum="0" Maximum="1" Value="1" Margin="0,5,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Expander>
+
+            <Expander Header="UPSTREAM KEY 1" IsExpanded="False" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
+                <Border Background="#222" BorderBrush="#333" BorderThickness="1,0,1,1" Padding="10">
+                    <TextBlock Text="LUMA / CHROMA / PATTERN / DVE CONTROLS" Foreground="#888" HorizontalAlignment="Center"/>
+                </Border>
+            </Expander>
+
+            <Expander Header="UPSTREAM KEY 2" IsExpanded="False" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
+                <Border Background="#222" BorderBrush="#333" BorderThickness="1,0,1,1" Padding="10">
+                    <TextBlock Text="LUMA / CHROMA / PATTERN / DVE CONTROLS" Foreground="#888" HorizontalAlignment="Center"/>
+                </Border>
+            </Expander>
+
+            <Expander Header="TRANSITIONS" IsExpanded="False" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
+                <Border Background="#222" BorderBrush="#333" BorderThickness="1,0,1,1" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="RATE" Foreground="#888" FontSize="10"/>
+                        <TextBox Text="1.0" Width="50" HorizontalAlignment="Left" Background="#111" Foreground="White" BorderThickness="0" Margin="0,5,0,15"/>
+                        
+                        <TextBlock Text="WIPE PATTERN" Foreground="#888" FontSize="10" Margin="0,0,0,5"/>
+                        <ComboBox Background="#333" Foreground="Black" Width="120" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="Circle"/>
+                            <ComboBoxItem Content="Diamond"/>
+                            <ComboBoxItem Content="Square"/>
+                            <ComboBoxItem Content="Diagonal"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Border>
+            </Expander>
+            
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
