@@ -762,7 +762,12 @@
         // Check URL for join parameters
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('r') && urlParams.has('p')) {
-            roomId = urlParams.get('r');
+            const newRoom = urlParams.get('r');
+            if (newRoom !== localStorage.getItem('atem_room')) {
+                localStorage.removeItem('atem_cam');
+                myCam = null;
+            }
+            roomId = newRoom;
             pin = urlParams.get('p');
             localStorage.setItem('atem_room', roomId);
             localStorage.setItem('atem_pin', pin);
