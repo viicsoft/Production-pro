@@ -192,21 +192,27 @@ namespace Desktop
         {
             CameraList.Children.Clear();
             var inputs = PwaServer.Instance.GetActiveInputs?.Invoke();
+            var connectedCams = PwaServer.Instance.ConnectedCameras;
+            
             if (inputs != null)
             {
                 foreach (dynamic inp in inputs)
                 {
                     int i = inp.id;
                     string label = inp.label;
+                    bool isConnected = connectedCams.Contains(i.ToString());
+                    var dotColor = isConnected ? Brushes.Lime : new SolidColorBrush(Color.FromRgb(0xFF, 0xA5, 0x00)); // Green or Amber
+                    
                     var stack = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
                     var cb = new CheckBox { Tag = i, VerticalAlignment = VerticalAlignment.Center };
-                    var dot = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = Brushes.Lime, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+                    var dot = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = dotColor, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+                    dot.Tag = i; // Tag for updating later
                     var tb = new TextBlock { Text = label, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-    
+
                     stack.Children.Add(cb);
                     stack.Children.Add(dot);
                     stack.Children.Add(tb);
-    
+
                     CameraList.Children.Add(stack);
                 }
             }
@@ -215,16 +221,32 @@ namespace Desktop
                 // Fallback
                 for (int i = 1; i <= 4; i++)
                 {
+                    bool isConnected = connectedCams.Contains(i.ToString());
+                    var dotColor = isConnected ? Brushes.Lime : new SolidColorBrush(Color.FromRgb(0xFF, 0xA5, 0x00));
+                    
                     var stack = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 5, 0, 5) };
                     var cb = new CheckBox { Tag = i, VerticalAlignment = VerticalAlignment.Center };
-                    var dot = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = Brushes.Lime, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+                    var dot = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = dotColor, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+                    dot.Tag = i;
                     var tb = new TextBlock { Text = $"CAM {i} (Op {i})", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
-    
+
                     stack.Children.Add(cb);
                     stack.Children.Add(dot);
                     stack.Children.Add(tb);
-    
+
                     CameraList.Children.Add(stack);
+                }
+            }
+        }
+
+        public void UpdateCameraDots(HashSet<string> connectedCams)
+        {
+            foreach (StackPanel stack in CameraList.Children)
+            {
+                if (stack.Children.Count >= 2 && stack.Children[1] is Border dot && dot.Tag is int camId)
+                {
+                    bool isConnected = connectedCams.Contains(camId.ToString());
+                    dot.Background = isConnected ? Brushes.Lime : new SolidColorBrush(Color.FromRgb(0xFF, 0xA5, 0x00));
                 }
             }
         }
@@ -474,7 +496,6 @@ namespace Desktop
             }
 
             await PwaServer.Instance.BroadcastReminderAsync(ReminderBox.Text, selectedCams);
-            MessageBox.Show($"Sent Reminder to CAM {string.Join(", ", selectedCams)}", "AtemDirector");
             ReminderBox.Text = "";
         }
 
@@ -500,7 +521,6 @@ namespace Desktop
             }
 
             await PwaServer.Instance.BroadcastSuggestionAsync(_selectedSuggestion, selectedCams);
-            MessageBox.Show($"Sent '{_selectedSuggestion.Title}' to CAM {string.Join(", ", selectedCams)}", "AtemDirector");
             
             // Clear selection
             foreach (StackPanel sp in CameraList.Children)

@@ -137,6 +137,19 @@ namespace Desktop
                         if (TxtCrewCount != null) TxtCrewCount.Text = $"Crew: {count}";
                     });
                 };
+
+                PwaServer.Instance.OnConnectedCamerasChanged += (connectedCams) =>
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        if (TxtCrewCount != null) TxtCrewCount.Text = $"Crew: {connectedCams.Count}";
+                        // Update camera dots in ShotSuggestionsView
+                        if (PanelShotSuggestions?.Content is ShotSuggestionsView ssv)
+                        {
+                            ssv.UpdateCameraDots(connectedCams);
+                        }
+                    });
+                };
                 
                 PwaServer.Instance.GetActiveInputs = () => _config.ActiveInputs.OrderBy(id => id).Select(id => new { id = id, label = _config.GetLabel(id) });
                 _ = PwaServer.Instance.StartAsync(8080);
@@ -162,6 +175,7 @@ namespace Desktop
                     };
                     relay.OnRemoteMessage += (msg) =>
                     {
+                        PwaServer.Instance.HandleRelayMessage(msg);
                         if (msg.Contains("crew-connected") || msg.Contains("get_inputs"))
                         {
                             _ = PwaServer.Instance.BroadcastInputsAsync();
@@ -199,6 +213,7 @@ namespace Desktop
                 };
                 relay.OnRemoteMessage += (msg) =>
                 {
+                    PwaServer.Instance.HandleRelayMessage(msg);
                     if (msg.Contains("crew-connected") || msg.Contains("get_inputs"))
                     {
                         _ = PwaServer.Instance.BroadcastInputsAsync();
@@ -237,6 +252,13 @@ namespace Desktop
                 IntercomWebView.CoreWebView2.WebMessageReceived += (s, e) =>
                 {
                     var msg = e.TryGetWebMessageAsString();
+                    if (msg.StartsWith("log:"))
+                    {
+                        var logMsg = $"[{DateTime.Now:HH:mm:ss.fff}] [DirectorWebView] {msg.Substring(4)}";
+                        Console.WriteLine(logMsg);
+                        System.IO.File.AppendAllText("intercom_debug.log", logMsg + Environment.NewLine);
+                        return;
+                    }
                     if (msg == "intercom_connected")
                     {
                         Dispatcher.Invoke(() =>
@@ -258,7 +280,10 @@ namespace Desktop
                 };
 
                 // The server binds to port 8080 by default in StartAsync()
-                IntercomWebView.Source = new Uri($"http://127.0.0.1:8080/director-intercom.html?roomName={RoomManager.ActiveRoom?.RoomId ?? "intercom"}");
+                var activeRoom = RoomManager.ActiveRoom;
+                var intercomRoomId = activeRoom?.RoomId ?? "intercom";
+                var intercomPin = activeRoom?.Pin ?? "0000";
+                IntercomWebView.Source = new Uri($"http://127.0.0.1:8080/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}");
             }
             catch (Exception ex)
             {
@@ -754,6 +779,12 @@ namespace Desktop
         private bool _isIntercomActive = false;
         private async void BtnToggleIntercom_Click(object sender, RoutedEventArgs e)
         {
+            if (IntercomWebView?.CoreWebView2 == null)
+            {
+                System.Windows.MessageBox.Show("Intercom is still initializing. Please wait a moment and try again.", "Intercom");
+                return;
+            }
+
             _isIntercomActive = !_isIntercomActive;
             
             if (_isIntercomActive)
@@ -1321,7 +1352,7 @@ namespace Desktop
             string joinUrl;
             if (RoomManager.ActiveRoom.NetworkMode == NetworkMode.Online)
             {
-                joinUrl = $"https://vidikom.app/?r={RoomManager.ActiveRoom.RoomId}&p={RoomManager.ActiveRoom.Pin}";
+                joinUrl = $"https://vidikom.app/crew?r={RoomManager.ActiveRoom.RoomId}&p={RoomManager.ActiveRoom.Pin}";
             }
             else
             {
@@ -1360,7 +1391,7 @@ namespace Desktop
                 string joinUrl;
                 if (RoomManager.ActiveRoom.NetworkMode == NetworkMode.Online)
                 {
-                    joinUrl = $"https://vidikom.app/?r={RoomManager.ActiveRoom.RoomId}&p={RoomManager.ActiveRoom.Pin}";
+                    joinUrl = $"https://vidikom.app/crew?r={RoomManager.ActiveRoom.RoomId}&p={RoomManager.ActiveRoom.Pin}";
                 }
                 else
                 {

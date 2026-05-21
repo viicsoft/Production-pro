@@ -2,59 +2,122 @@
 <html>
 <head>
     <title>Director Intercom</title>
-    <!-- Use UMD build of livekit-client -->
     <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
 </head>
 <body>
+    <div id="audio-container"></div>
     <script>
-        let room;
+        // LiveKit-based Intercom for Director
+        // Replaces old custom WebRTC mesh with LiveKit SFU
+
+        let lkRoom = null;
+
+        function log(msg) {
+            const fullMsg = '[Director Intercom] ' + msg;
+            console.log(fullMsg);
+            postToWpf('log:' + msg);
+        }
+
+        function postToWpf(msg) {
+            try {
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage(msg);
+                }
+            } catch (e) {}
+        }
 
         async function connectIntercom() {
+            log('Starting LiveKit intercom...');
             try {
-                // Fetch JWT token from our local embedded server
+                // Parse roomName from URL params
                 const urlParams = new URLSearchParams(window.location.search);
-                const roomName = urlParams.get('roomName') || 'intercom';
-                const res = await fetch(`/api/intercom/token?identity=Director&name=Director&roomName=${roomName}`);
+                const roomName = urlParams.get('roomName') || urlParams.get('roomId') || 'intercom';
+                const identity = 'director';
+
+                // Fetch LiveKit JWT token from local API
+                log('Fetching token for identity: ' + identity + ', room: ' + roomName);
+                const res = await fetch(`/api/intercom/token?identity=${encodeURIComponent(identity)}&name=Director&roomName=${encodeURIComponent(roomName)}`);
+                if (!res.ok) {
+                    throw new Error('Token fetch failed: ' + res.status + ' ' + res.statusText);
+                }
                 const data = await res.json();
-                
-                // The URL is our Contabo VPS for online roaming
-                const wsUrl = 'wss://vidikom.app:7880';
-                
-                // LivekitClient is available globally from the UMD build
-                room = new LivekitClient.Room({
+                const token = data.token;
+                log('Got LiveKit token');
+
+                // Create LiveKit Room
+                lkRoom = new LivekitClient.Room({
                     adaptiveStream: false,
                     dynacast: false
                 });
 
-                // Set up event listeners for incoming audio
-                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                // Handle remote audio tracks (crew members)
+                lkRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    log('Track subscribed from ' + participant.identity + ' kind: ' + track.kind);
                     if (track.kind === LivekitClient.Track.Kind.Audio) {
-                        // Attach the audio track to the DOM so it plays
-                        const element = track.attach();
-                        document.body.appendChild(element);
+                        const audioEl = track.attach();
+                        audioEl.id = 'lk-audio-' + participant.identity;
+                        document.getElementById('audio-container').appendChild(audioEl);
+                        audioEl.play().catch(e => {
+                            log('Autoplay blocked for ' + participant.identity + ': ' + e.message);
+                        });
                     }
                 });
 
-                // Connect to the room
-                await room.connect(wsUrl, data.token);
-                
-                // Publish local microphone
-                await room.localParticipant.setMicrophoneEnabled(true);
-                
-                // Notify WPF that connection succeeded
-                window.chrome.webview.postMessage("intercom_connected");
+                lkRoom.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                    log('Track unsubscribed from ' + participant.identity);
+                    track.detach().forEach(el => el.remove());
+                });
+
+                lkRoom.on(LivekitClient.RoomEvent.Connected, () => {
+                    log('Connected to LiveKit room');
+                    postToWpf('intercom_connected');
+                });
+
+                lkRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
+                    log('Disconnected from LiveKit');
+                    postToWpf('intercom_disconnected');
+                });
+
+                lkRoom.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+                    log('Participant joined: ' + participant.identity);
+                });
+
+                lkRoom.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+                    log('Participant left: ' + participant.identity);
+                    const el = document.getElementById('lk-audio-' + participant.identity);
+                    if (el) el.remove();
+                });
+
+                // Connect to LiveKit server
+                const wsUrl = 'wss://vidikom.app:7880';
+                log('Connecting to ' + wsUrl);
+                await lkRoom.connect(wsUrl, token);
+
+                // Publish Director's microphone
+                log('Publishing microphone...');
+                await lkRoom.localParticipant.setMicrophoneEnabled(true, {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleRate: 48000,
+                    channelCount: 1
+                });
+                log('Microphone published successfully');
+
             } catch (err) {
-                console.error(err);
-                window.chrome.webview.postMessage("intercom_error");
+                log('Error: ' + err.message);
+                postToWpf('intercom_error');
             }
         }
 
-        async function disconnectIntercom() {
-            if (room) {
-                room.disconnect();
-                room = null;
-                window.chrome.webview.postMessage("intercom_disconnected");
+        function disconnectIntercom() {
+            if (lkRoom) {
+                lkRoom.disconnect();
+                lkRoom = null;
             }
+            // Remove all audio elements
+            document.querySelectorAll('[id^="lk-audio-"]').forEach(el => el.remove());
+            postToWpf('intercom_disconnected');
         }
     </script>
 </body>

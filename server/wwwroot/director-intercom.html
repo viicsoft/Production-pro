@@ -2,59 +2,187 @@
 <html>
 <head>
     <title>Director Intercom</title>
-    <!-- Use UMD build of livekit-client -->
-    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
 </head>
 <body>
+    <div id="audio-container"></div>
     <script>
-        let room;
+        // WebRTC Intercom for Director
+        // Uses the existing WebSocket connection for signaling
+        // Director is the "hub" - each crew member connects to the director via a peer connection.
+
+        let ws = null;
+        let localStream = null;
+        const peers = {}; // clientId -> RTCPeerConnection
+        const audioElements = {}; // clientId -> HTMLAudioElement
+        const iceServers = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ];
+
+        function log(msg) {
+            console.log('[Director Intercom] ' + msg);
+        }
 
         async function connectIntercom() {
+            log('Starting intercom...');
             try {
-                // Fetch JWT token from our local embedded server
+                // Get microphone
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                log('Microphone acquired');
+
+                // Connect to the same WebSocket the main app uses (LAN mode)
                 const urlParams = new URLSearchParams(window.location.search);
-                const roomName = urlParams.get('roomName') || 'intercom';
-                const res = await fetch(`/api/intercom/token?identity=Director&name=Director&roomName=${roomName}`);
-                const data = await res.json();
-                
-                // The URL is our Contabo VPS for online roaming
-                const wsUrl = 'wss://vidikom.app:7880';
-                
-                // LivekitClient is available globally from the UMD build
-                room = new LivekitClient.Room({
-                    adaptiveStream: false,
-                    dynacast: false
-                });
+                const roomId = urlParams.get('roomId') || '';
+                const pin = urlParams.get('pin') || '';
+                const roomName = urlParams.get('roomName') || '';
 
-                // Set up event listeners for incoming audio
-                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                    if (track.kind === LivekitClient.Track.Kind.Audio) {
-                        // Attach the audio track to the DOM so it plays
-                        const element = track.attach();
-                        document.body.appendChild(element);
-                    }
-                });
+                // Determine WS URL
+                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = location.host || 'localhost:8080';
+                const wsUrl = `${proto}//${host}/ws?roomId=${roomId}&pin=${pin}`;
 
-                // Connect to the room
-                await room.connect(wsUrl, data.token);
-                
-                // Publish local microphone
-                await room.localParticipant.setMicrophoneEnabled(true);
-                
-                // Notify WPF that connection succeeded
-                window.chrome.webview.postMessage("intercom_connected");
+                ws = new WebSocket(wsUrl);
+                ws.onopen = () => {
+                    log('WebSocket connected');
+                    // Announce ourselves as director intercom
+                    ws.send(JSON.stringify({ type: 'intercom-director-ready' }));
+                    window.chrome.webview.postMessage('intercom_connected');
+                };
+
+                ws.onmessage = (e) => {
+                    let data;
+                    try { data = JSON.parse(e.data); } catch { return; }
+                    handleSignaling(data);
+                };
+
+                ws.onclose = () => {
+                    log('WebSocket closed');
+                    window.chrome.webview.postMessage('intercom_disconnected');
+                };
+
+                ws.onerror = (err) => {
+                    log('WebSocket error: ' + err);
+                    window.chrome.webview.postMessage('intercom_error');
+                };
             } catch (err) {
-                console.error(err);
-                window.chrome.webview.postMessage("intercom_error");
+                log('Error: ' + err.message);
+                window.chrome.webview.postMessage('intercom_error');
             }
         }
 
-        async function disconnectIntercom() {
-            if (room) {
-                room.disconnect();
-                room = null;
-                window.chrome.webview.postMessage("intercom_disconnected");
+        async function handleSignaling(data) {
+            if (data.type === 'intercom-offer') {
+                // A crew member wants to connect
+                const clientId = data.clientId;
+                log('Received offer from ' + clientId);
+                await handleOffer(clientId, data.offer);
+            } else if (data.type === 'intercom-ice') {
+                const clientId = data.clientId;
+                if (peers[clientId]) {
+                    try {
+                        await peers[clientId].addIceCandidate(new RTCIceCandidate(data.candidate));
+                    } catch (e) {
+                        log('ICE add failed: ' + e.message);
+                    }
+                }
+            } else if (data.type === 'intercom-leave') {
+                closePeer(data.clientId);
             }
+        }
+
+        async function handleOffer(clientId, offer) {
+            // Close existing peer if any
+            closePeer(clientId);
+
+            const pc = new RTCPeerConnection({ iceServers });
+            peers[clientId] = pc;
+
+            // Add our mic tracks
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+            }
+
+            // Handle incoming audio from crew
+            pc.ontrack = (event) => {
+                log('Got remote track from ' + clientId);
+                let audioEl = audioElements[clientId];
+                if (!audioEl) {
+                    audioEl = document.createElement('audio');
+                    audioEl.autoplay = true;
+                    audioEl.id = 'audio-' + clientId;
+                    document.getElementById('audio-container').appendChild(audioEl);
+                    audioElements[clientId] = audioEl;
+                }
+                audioEl.srcObject = event.streams[0];
+            };
+
+            // Send ICE candidates to the crew member
+            pc.onicecandidate = (event) => {
+                if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'intercom-ice',
+                        targetClientId: clientId,
+                        candidate: event.candidate.toJSON()
+                    }));
+                }
+            };
+
+            pc.onconnectionstatechange = () => {
+                log('Peer ' + clientId + ' state: ' + pc.connectionState);
+                if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+                    closePeer(clientId);
+                }
+            };
+
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'intercom-answer',
+                        targetClientId: clientId,
+                        answer: answer
+                    }));
+                }
+                log('Sent answer to ' + clientId);
+            } catch (e) {
+                log('Error handling offer: ' + e.message);
+                closePeer(clientId);
+            }
+        }
+
+        function closePeer(clientId) {
+            if (peers[clientId]) {
+                peers[clientId].close();
+                delete peers[clientId];
+            }
+            if (audioElements[clientId]) {
+                audioElements[clientId].remove();
+                delete audioElements[clientId];
+            }
+        }
+
+        function disconnectIntercom() {
+            // Close all peers
+            for (const id of Object.keys(peers)) {
+                closePeer(id);
+            }
+            // Stop local stream
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+            }
+            // Close WS
+            if (ws) {
+                ws.onclose = null;
+                ws.close();
+                ws = null;
+            }
+            window.chrome.webview.postMessage('intercom_disconnected');
         }
     </script>
 </body>

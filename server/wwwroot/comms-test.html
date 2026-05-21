@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comms Diagnostics - Step 1 & 2</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1e1e1e;
+            color: #fff;
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 20px;
+        }
+        button:hover { background: #0056b3; }
+        .panel {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        #meter-container {
+            width: 100%;
+            height: 30px;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        #meter-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4caf50, #ffeb3b, #f44336);
+            transition: width 0.05s ease-out;
+        }
+        pre {
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .status { font-weight: bold; }
+        .success { color: #4caf50; }
+        .error { color: #f44336; }
+        .warning { color: #ffeb3b; }
+    </style>
+</head>
+<body>
+    <h2>Comms Diagnostics</h2>
+    
+    <div class="panel">
+        <h3>Step 1: Local Microphone Capture</h3>
+        <button id="btn-test-mic">Test Microphone</button>
+        <div id="mic-status" class="status">Waiting to test...</div>
+        <div id="meter-container"><div id="meter-fill"></div></div>
+        <pre id="mic-logs">Logs will appear here...</pre>
+    </div>
+
+    <div class="panel">
+        <h3>Step 2: Local Loopback</h3>
+        <button id="btn-loopback" disabled>Test Loopback</button>
+        <div id="loopback-status" class="status">Requires mic capture first.</div>
+        <audio id="local-audio" controls style="width: 100%; margin-top: 10px; display: none;"></audio>
+    </div>
+
+    <script>
+        let localStream = null;
+        let audioContext = null;
+        let analyser = null;
+        let animationFrame = null;
+
+        const logMic = (msg) => {
+            const el = document.getElementById('mic-logs');
+            if (el.innerText === 'Logs will appear here...') el.innerText = '';
+            el.innerText += `\n[${new Date().toISOString().split('T')[1].slice(0, -1)}] ${msg}`;
+            el.scrollTop = el.scrollHeight;
+        };
+
+        const updateStatus = (id, text, type) => {
+            const el = document.getElementById(id);
+            el.innerText = text;
+            el.className = `status ${type}`;
+        };
+
+        document.getElementById('btn-test-mic').addEventListener('click', async () => {
+            try {
+                logMic('Requesting getUserMedia...');
+                updateStatus('mic-status', 'Requesting permissions...', 'warning');
+
+                const constraints = {
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 48000,
+                        channelCount: 1
+                    },
+                    video: false
+                };
+                
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                const track = localStream.getAudioTracks()[0];
+                
+                logMic(`Permission GRANTED`);
+                logMic(`Track ID: ${track.id}`);
+                logMic(`Track Kind: ${track.kind}`);
+                logMic(`Track ReadyState: ${track.readyState}`);
+                logMic(`Track Enabled: ${track.enabled}`);
+                logMic(`Track Muted: ${track.muted}`);
+
+                const settings = track.getSettings();
+                logMic(`Settings: sampleRate=${settings.sampleRate}, echoCancellation=${settings.echoCancellation}, noiseSuppression=${settings.noiseSuppression}`);
+
+                // Check for headset vs speaker (heuristic based on label)
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInput = devices.find(d => d.kind === 'audioinput' && d.label === track.label);
+                if (audioInput) {
+                    logMic(`Device Label: ${audioInput.label}`);
+                    if (audioInput.label.toLowerCase().includes('speaker')) {
+                        logMic(`WARNING: Using a speakerphone mic may cause echo. Headset recommended.`);
+                    }
+                }
+
+                if (track.muted) {
+                    updateStatus('mic-status', 'Track is muted by system!', 'error');
+                } else {
+                    updateStatus('mic-status', 'Microphone Active', 'success');
+                    document.getElementById('btn-loopback').disabled = false;
+                    document.getElementById('loopback-status').innerText = 'Ready to test loopback.';
+                }
+
+                // Setup WebAudio meter
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(localStream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                const meterFill = document.getElementById('meter-fill');
+
+                const updateMeter = () => {
+                    analyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for(let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const average = sum / dataArray.length;
+                    // Map 0-255 to 0-100%
+                    const percent = Math.min(100, Math.max(0, (average / 128) * 100));
+                    meterFill.style.width = `${percent}%`;
+                    animationFrame = requestAnimationFrame(updateMeter);
+                };
+                updateMeter();
+
+            } catch (err) {
+                logMic(`ERROR: ${err.name} - ${err.message}`);
+                updateStatus('mic-status', `Failed: ${err.message}`, 'error');
+                if (err.name === 'NotAllowedError') {
+                    alert('Microphone permission denied. Please enable microphone access in your browser settings.');
+                }
+            }
+        });
+
+        document.getElementById('btn-loopback').addEventListener('click', async () => {
+            const audioElement = document.getElementById('local-audio');
+            audioElement.style.display = 'block';
+            audioElement.srcObject = localStream;
+            
+            try {
+                logMic('Attempting loopback play()...');
+                await audioElement.play();
+                updateStatus('loopback-status', 'Loopback Playing - You should hear yourself!', 'success');
+                logMic('play() succeeded.');
+            } catch (err) {
+                logMic(`Loopback ERROR: ${err.message}`);
+                updateStatus('loopback-status', `Play blocked: ${err.message}`, 'error');
+                alert('Audio playback blocked by autoplay policy. Please interact with the page and try again.');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -21,6 +21,11 @@ namespace Desktop
     {
         private WebApplication? _app;
         private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
+        private WebSocket? _directorIntercomWs;
+        
+        // Track local and remote cameras
+        private readonly ConcurrentDictionary<Guid, string> _clientCameras = new();
+        private readonly ConcurrentDictionary<string, string> _remoteCrewCameras = new();
 
         public static PwaServer Instance { get; } = new PwaServer();
 
@@ -32,20 +37,11 @@ namespace Desktop
 
         public async Task StartAsync(int port = 8080)
         {
-            // Generate simple 4-digit PIN for pairing
             PinCode = new Random().Next(1000, 9999).ToString();
-
             var builder = WebApplication.CreateBuilder();
-            
-            // Fix path when running from outside the project dir
             builder.Environment.WebRootPath = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
-            
-            // Serve static files from 'wwwroot'
             builder.Services.AddControllers();
-
-            // Bind to all local interfaces
             builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-
             _app = builder.Build();
 
             _app.UseWebSockets();
@@ -53,10 +49,7 @@ namespace Desktop
             var wwwroot = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
             if (System.IO.Directory.Exists(wwwroot))
             {
-                _app.UseStaticFiles(new StaticFileOptions
-                {
-                    FileProvider = new PhysicalFileProvider(wwwroot)
-                });
+                _app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(wwwroot) });
             }
             
             var mediaDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector", "media");
@@ -89,16 +82,13 @@ namespace Desktop
                     }
                 };
 
-                string token = JWT.Encode(payload, Encoding.UTF8.GetBytes("devsecret"), JwsAlgorithm.HS256);
+                string token = Jose.JWT.Encode(payload, Encoding.UTF8.GetBytes("devsecret"), Jose.JwsAlgorithm.HS256);
                 return Results.Ok(new { token });
             });
 
             _app.MapGet("/api/inputs", () =>
             {
-                if (GetActiveInputs != null)
-                {
-                    return Results.Ok(GetActiveInputs());
-                }
+                if (GetActiveInputs != null) return Results.Ok(GetActiveInputs());
                 return Results.Ok(new object[0]);
             });
 
@@ -106,22 +96,32 @@ namespace Desktop
             {
                 if (context.WebSockets.IsWebSocketRequest)
                 {
-                    // Basic auth via RoomId and PIN
                     var roomId = context.Request.Query["roomId"].ToString();
                     var pin = context.Request.Query["pin"].ToString();
-                    
                     var activeRoom = RoomManager.ActiveRoom;
+                    
                     if (activeRoom == null || activeRoom.RoomId != roomId || activeRoom.Pin != pin)
                     {
-                        context.Response.StatusCode = 401; // Unauthorized
+                        context.Response.StatusCode = 401;
                         return;
                     }
 
                     using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
                     var clientId = Guid.NewGuid();
                     _clients.TryAdd(clientId, webSocket);
-                    OnCrewCountChanged?.Invoke(_clients.Count);
                     
+                    // Send inputs on connect
+                    try
+                    {
+                        if (GetActiveInputs != null)
+                        {
+                            var inputsPayload = new { type = "inputs", inputs = GetActiveInputs() };
+                            var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(inputsPayload));
+                            await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                        }
+                    }
+                    catch { }
+
                     try
                     {
                         await HandleWebSocketLoop(clientId, webSocket);
@@ -129,12 +129,39 @@ namespace Desktop
                     finally
                     {
                         _clients.TryRemove(clientId, out _);
-                        OnCrewCountChanged?.Invoke(_clients.Count);
+                        _clientCameras.TryRemove(clientId, out _);
+                        NotifyConnectedCameras();
                     }
                 }
                 else
                 {
-                    context.Response.StatusCode = 400; // Bad Request
+                    context.Response.StatusCode = 400;
+                }
+            });
+
+            _app.Map("/ws/intercom", async context =>
+            {
+                if (context.WebSockets.IsWebSocketRequest)
+                {
+                    using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+                    var clientId = Guid.NewGuid();
+                    _clients.TryAdd(clientId, webSocket);
+                    Console.WriteLine($"[PwaServer] Director intercom WebSocket connected: {clientId}");
+
+                    try
+                    {
+                        await HandleWebSocketLoop(clientId, webSocket);
+                    }
+                    finally
+                    {
+                        _clients.TryRemove(clientId, out _);
+                        if (_directorIntercomWs == webSocket) _directorIntercomWs = null;
+                        Console.WriteLine($"[PwaServer] Director intercom WebSocket disconnected");
+                    }
+                }
+                else
+                {
+                    context.Response.StatusCode = 400;
                 }
             });
 
@@ -142,10 +169,11 @@ namespace Desktop
         }
 
         public event Action<int>? OnCrewCountChanged;
+        public event Action<HashSet<string>>? OnConnectedCamerasChanged;
 
         private async Task HandleWebSocketLoop(Guid clientId, WebSocket webSocket)
         {
-            var buffer = new byte[1024 * 4];
+            var buffer = new byte[1024 * 64];
             while (webSocket.State == WebSocketState.Open)
             {
                 var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
@@ -155,34 +183,145 @@ namespace Desktop
                     break;
                 }
 
-                // Handle incoming messages (acknowledgments, etc.)
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                OnMessageReceived(clientId, message);
+                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                if (json.Contains("intercom"))
+                {
+                    System.IO.File.AppendAllText("intercom_debug.log", $"[{DateTime.Now:HH:mm:ss.fff}] [PwaServer] Local client {clientId}: {json}{Environment.NewLine}");
+                }
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("type", out var typeProp))
+                    {
+                        var type = typeProp.GetString();
+                        if (type == "identity" && root.TryGetProperty("cam", out var camProp))
+                        {
+                            var cam = camProp.GetString() ?? camProp.ToString();
+                            if (!string.IsNullOrEmpty(cam))
+                            {
+                                _clientCameras[clientId] = cam;
+                                NotifyConnectedCameras();
+                            }
+                        }
+                        else if (type == "ping" && root.TryGetProperty("id", out var idProp))
+                        {
+                            if (_clients.TryGetValue(clientId, out var ws) && ws.State == WebSocketState.Open)
+                            {
+                                var pong = JsonSerializer.Serialize(new { type = "pong", id = idProp.GetString() });
+                                _ = ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(pong)), WebSocketMessageType.Text, true, CancellationToken.None);
+                            }
+                        }
+                        else if (type == "intercom-director-ready")
+                        {
+                            _directorIntercomWs = _clients.GetValueOrDefault(clientId);
+                        }
+                        else if (type == "intercom-offer" || type == "intercom-leave")
+                        {
+                            ForwardToDirectorIntercom(json);
+                        }
+                        else if (type == "intercom-answer")
+                        {
+                            BroadcastToAllCrewAndRelay(json);
+                        }
+                        else if (type == "intercom-ice")
+                        {
+                            if (root.TryGetProperty("targetIntercomId", out _)) BroadcastToAllCrewAndRelay(json);
+                            else ForwardToDirectorIntercom(json);
+                        }
+                    }
+                }
+                catch { }
             }
         }
 
-        private void OnMessageReceived(Guid clientId, string json)
+        private void ForwardToDirectorIntercom(string json)
         {
-            // To be implemented: dispatch to desktop UI
-            Console.WriteLine($"Received from {clientId}: {json}");
+            if (_directorIntercomWs != null && _directorIntercomWs.State == WebSocketState.Open)
+            {
+                var bytes = Encoding.UTF8.GetBytes(json);
+                _ = _directorIntercomWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            }
         }
 
-        /// <summary>
-        /// Set a relay client for Online Mode. When set, all broadcasts are also forwarded to the cloud relay.
-        /// </summary>
+        private void BroadcastToAllCrewAndRelay(string json)
+        {
+            var bytes = Encoding.UTF8.GetBytes(json);
+            var segment = new ArraySegment<byte>(bytes);
+
+            foreach (var kvp in _clients)
+            {
+                var ws = kvp.Value;
+                if (ws != _directorIntercomWs && ws.State == WebSocketState.Open)
+                {
+                    _ = ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                }
+            }
+
+            if (Relay != null && Relay.IsConnected)
+            {
+                _ = Relay.SendAsync(json);
+            }
+        }
+
+        public void HandleRelayMessage(string json)
+        {
+            try
+            {
+                if (json.Contains("intercom"))
+                {
+                    System.IO.File.AppendAllText("intercom_debug.log", $"[{DateTime.Now:HH:mm:ss.fff}] [PwaServer RelayIn]: {json}{Environment.NewLine}");
+                }
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;
+
+                if (type == "crew-connected")
+                {
+                    var cam = root.TryGetProperty("cam", out var cp) ? (cp.GetString() ?? cp.ToString()) : null;
+                    var clientId = root.TryGetProperty("clientId", out var cid) ? cid.GetString() : null;
+                    if (!string.IsNullOrEmpty(cam) && !string.IsNullOrEmpty(clientId))
+                    {
+                        _remoteCrewCameras[clientId] = cam;
+                        NotifyConnectedCameras();
+                    }
+                }
+                else if (type == "crew-disconnected")
+                {
+                    var clientId = root.TryGetProperty("clientId", out var cid) ? cid.GetString() : null;
+                    if (!string.IsNullOrEmpty(clientId))
+                    {
+                        _remoteCrewCameras.TryRemove(clientId, out _);
+                        NotifyConnectedCameras();
+                    }
+                }
+                else if (type == "intercom-offer" || type == "intercom-ice" || type == "intercom-leave")
+                {
+                    ForwardToDirectorIntercom(json);
+                }
+            }
+            catch { }
+        }
+
+        private void NotifyConnectedCameras()
+        {
+            var cameras = new HashSet<string>(_clientCameras.Values);
+            foreach (var cam in _remoteCrewCameras.Values) cameras.Add(cam);
+            OnConnectedCamerasChanged?.Invoke(cameras);
+            OnCrewCountChanged?.Invoke(cameras.Count);
+        }
+
+        public HashSet<string> ConnectedCameras => new HashSet<string>(_clientCameras.Values.Concat(_remoteCrewCameras.Values));
+
         public RelayClient? Relay { get; set; }
+        private static readonly System.Net.Http.HttpClient _httpClient = new System.Net.Http.HttpClient();
 
         public async Task BroadcastTallyAsync(SwitcherState state)
         {
-            var payload = new
-            {
-                type = "tally",
-                mes = state.MEs
-            };
-            await BroadcastJsonAsync(payload);
+            await BroadcastJsonAsync(new { type = "tally", mes = state.MEs });
         }
-
-        private static readonly System.Net.Http.HttpClient _httpClient = new System.Net.Http.HttpClient();
 
         public async Task BroadcastSuggestionAsync(ShotSuggestion suggestion, IEnumerable<int> targetCameras)
         {
@@ -195,88 +334,40 @@ namespace Desktop
                     try
                     {
                         using var content = new System.Net.Http.MultipartFormDataContent();
-                        using var fileStream = System.IO.File.OpenRead(suggestion.MediaPath);
-                        var fileContent = new System.Net.Http.StreamContent(fileStream);
+                        var fs = new System.IO.FileStream(suggestion.MediaPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+                        var fileContent = new System.Net.Http.StreamContent(fs);
+                        
                         var ext = System.IO.Path.GetExtension(fileName).ToLowerInvariant();
-                        var mimeType = ext switch {
-                            ".jpg" or ".jpeg" => "image/jpeg",
-                            ".png" => "image/png",
-                            ".mp4" => "video/mp4",
-                            ".webm" => "video/webm",
-                            _ => "application/octet-stream"
-                        };
+                        var mimeType = ext switch { ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".mp4" => "video/mp4", ".webm" => "video/webm", _ => "application/octet-stream" };
                         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
                         content.Add(fileContent, "file", fileName);
 
                         var uri = new Uri(Relay.RelayUrl);
-                        var baseUri = uri.Scheme == "wss" ? "https://" : "http://";
-                        baseUri += uri.Authority;
-                        var uploadUri = baseUri + "/api/upload-media";
+                        var uploadUri = (uri.Scheme == "wss" ? "https://" : "http://") + uri.Authority + "/api/upload-media";
                         var response = await _httpClient.PostAsync(uploadUri, content);
                         if (response.IsSuccessStatusCode)
                         {
                             var resultStr = await response.Content.ReadAsStringAsync();
-                            var resultJson = System.Text.Json.JsonDocument.Parse(resultStr);
-                            var mediaUrl = resultJson.RootElement.GetProperty("mediaUrl").GetString();
-                            sugToBroadcast = suggestion with { MediaUrl = mediaUrl };
+                            sugToBroadcast = suggestion with { MediaUrl = JsonDocument.Parse(resultStr).RootElement.GetProperty("mediaUrl").GetString() };
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Failed to upload media: {ex.Message}");
-                    }
+                    catch { }
                 }
                 
-                // Fallback to local URL if upload failed or offline
                 if (string.IsNullOrEmpty(sugToBroadcast.MediaUrl))
                 {
                     sugToBroadcast = suggestion with { MediaUrl = $"/api/suggestions/media/{fileName}" };
                 }
             }
-
-            var payload = new
-            {
-                type = "suggestion",
-                targetCameras = targetCameras,
-                suggestion = sugToBroadcast
-            };
-            await BroadcastJsonAsync(payload);
+            await BroadcastJsonAsync(new { type = "suggestion", targetCameras, suggestion = sugToBroadcast });
         }
 
-        public async Task BroadcastReminderAsync(string text, IEnumerable<int> targetCameras)
-        {
-            var payload = new
-            {
-                type = "reminder",
-                targetCameras = targetCameras,
-                text = text
-            };
-            await BroadcastJsonAsync(payload);
-        }
-
-        public async Task BroadcastGradeAsync(int targetCamera, string grade, string feedback)
-        {
-            var payload = new
-            {
-                type = "grade",
-                targetCameras = new[] { targetCamera },
-                grade = grade,
-                feedback = feedback
-            };
-            await BroadcastJsonAsync(payload);
-        }
-
+        public async Task BroadcastReminderAsync(string text, IEnumerable<int> targetCameras) => await BroadcastJsonAsync(new { type = "reminder", targetCameras, text });
+        public async Task BroadcastGradeAsync(int targetCamera, string grade, string feedback) => await BroadcastJsonAsync(new { type = "grade", targetCameras = new[] { targetCamera }, grade, feedback });
+        
         public async Task BroadcastInputsAsync()
         {
-            if (GetActiveInputs != null)
-            {
-                var payload = new
-                {
-                    type = "inputs",
-                    inputs = GetActiveInputs()
-                };
-                await BroadcastJsonAsync(payload);
-            }
+            if (GetActiveInputs != null) await BroadcastJsonAsync(new { type = "inputs", inputs = GetActiveInputs() });
         }
 
         private async Task BroadcastJsonAsync(object data)
@@ -285,48 +376,20 @@ namespace Desktop
             var bytes = Encoding.UTF8.GetBytes(json);
             var segment = new ArraySegment<byte>(bytes);
 
-            // Broadcast to local LAN clients
             foreach (var kvp in _clients)
             {
-                var ws = kvp.Value;
-                if (ws.State == WebSocketState.Open)
+                if (kvp.Value.State == WebSocketState.Open)
                 {
-                    try
-                    {
-                        await ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
-                    }
-                    catch { /* Handle disconnected client */ }
+                    try { await kvp.Value.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None); } catch { }
                 }
             }
 
-            // Also forward to cloud relay if Online Mode is active
-            if (Relay != null && Relay.IsConnected)
-            {
-                try
-                {
-                    await Relay.SendAsync(json);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[PwaServer] Relay forward failed: {ex.Message}");
-                }
-            }
+            if (Relay != null && Relay.IsConnected) _ = Relay.SendAsync(json);
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (Relay != null)
-            {
-                await Relay.DisposeAsync();
-                Relay = null;
-            }
-            
-            if (_app != null)
-            {
-                await _app.StopAsync();
-                await _app.DisposeAsync();
-                _app = null;
-            }
+            if (_app != null) await _app.StopAsync();
         }
     }
 }

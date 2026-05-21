@@ -482,7 +482,7 @@
                         <div class="vad-bar" style="height:6px"></div>
                     </div>
                     <button id="inline-mic-btn" class="mic-toggle-btn muted" onclick="toggleIntercom()">
-                        <i data-lucide="mic-off"></i> TAP TO TALK
+                        <i data-lucide="mic-off"></i> JOIN INTERCOM
                     </button>
                 </div>
                 
@@ -507,7 +507,7 @@
                 <div class="comms-full-footer">
                     <button id="full-mic-btn" class="mic-toggle-btn large muted" onclick="toggleIntercom()">
                         <i data-lucide="mic-off"></i> 
-                        <span>Muted<br><small>Tap to talk</small></span>
+                        <span>Disconnected<br><small>Tap to join</small></span>
                     </button>
                 </div>
             </div>
@@ -898,6 +898,11 @@
         function connectWs() {
             showScreen('main');
             
+            // Auto-connect intercom when joining the room
+            if (!intercomConnected) {
+                toggleIntercom();
+            }
+            
             // Determine connection mode
             const isOnline = location.host.includes('vidikom.app') || location.host.includes('github.io');
             
@@ -912,7 +917,7 @@
                         type: 'crew-join', 
                         roomId: roomId, 
                         pin: pin, 
-                        cam: myCam 
+                        cam: myCam ? myCam.toString() : ""
                     }));
                 };
             } else {
@@ -927,7 +932,7 @@
                     document.querySelector('.signal-status').style.color = "var(--text-secondary)";
                     document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-green)";
                     if (myCam) {
-                        ws.send(JSON.stringify({ type: 'identity', cam: myCam }));
+                        ws.send(JSON.stringify({ type: 'identity', cam: myCam.toString() }));
                     }
                 };
             }
@@ -985,57 +990,135 @@
             };
         }
 
-        // ---- Legacy Intercom Logic (Preserved) ----
-        let livekitRoom = null;
+        // ---- Intercom (LiveKit) ----
+        let lkRoom = null;
         let isMicMuted = true;
+        let intercomConnected = false;
+
+        function disconnectIntercom() {
+            if (lkRoom) {
+                lkRoom.disconnect();
+                lkRoom = null;
+            }
+            document.querySelectorAll('[id^="lk-audio-"]').forEach(el => el.remove());
+            
+            intercomConnected = false;
+            isMicMuted = true;
+            
+            document.getElementById('comms-status-text').innerText = "Disconnected";
+            document.getElementById('comms-status-text').style.color = "var(--text-secondary)";
+            updateMicUI();
+        }
 
         async function toggleIntercom() {
             const inlineBtn = document.getElementById('inline-mic-btn');
             const fullBtn = document.getElementById('full-mic-btn');
             const statusText = document.getElementById('comms-status-text');
             
-            if (!livekitRoom) {
+            if (!intercomConnected) {
+                // First tap: connect to LiveKit
                 inlineBtn.innerHTML = '<i data-lucide="loader"></i> CONNECTING...';
                 fullBtn.innerHTML = '<i data-lucide="loader"></i> <span>Connecting...</span>';
                 statusText.innerText = "Connecting...";
+                lucide.createIcons();
                 
                 try {
-                    const res = await fetch(`/api/intercom/token?identity=Cam${myCam}&name=Camera%20${myCam}&roomName=${roomId}`);
-                    const data = await res.json();
+                    // Determine token endpoint
+                    const isOnline = location.host.includes('vidikom.app');
+                    const tokenBaseUrl = isOnline ? '' : `http://${location.host}`;
+                    const identity = 'crew-cam-' + myCam;
+                    const lkRoomName = roomId || 'intercom';
                     
-                    const wsUrl = 'wss://vidikom.app:7880';
-                    livekitRoom = new LivekitClient.Room({ adaptiveStream: false, dynacast: false });
-
-                    livekitRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                    // Fetch LiveKit JWT token
+                    console.log('[Intercom] Fetching token for', identity, 'room:', lkRoomName);
+                    const res = await fetch(`${tokenBaseUrl}/api/intercom/token?identity=${encodeURIComponent(identity)}&name=${encodeURIComponent('Cam ' + myCam)}&roomName=${encodeURIComponent(lkRoomName)}`);
+                    if (!res.ok) throw new Error('Token fetch failed: ' + res.status);
+                    const tokenData = await res.json();
+                    const token = tokenData.token;
+                    console.log('[Intercom] Got LiveKit token');
+                    
+                    // Create LiveKit Room
+                    lkRoom = new LivekitClient.Room({
+                        adaptiveStream: false,
+                        dynacast: false
+                    });
+                    
+                    // Handle remote audio tracks
+                    lkRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                        console.log('[Intercom] Track subscribed from', participant.identity, 'kind:', track.kind);
                         if (track.kind === LivekitClient.Track.Kind.Audio) {
-                            const el = track.attach();
-                            document.body.appendChild(el);
+                            const audioEl = track.attach();
+                            audioEl.id = 'lk-audio-' + participant.identity;
+                            document.body.appendChild(audioEl);
+                            audioEl.play().catch(e => {
+                                console.warn('[Intercom] Autoplay blocked:', e.message);
+                            });
                         }
                     });
-
-                    await livekitRoom.connect(wsUrl, data.token);
-                    await livekitRoom.localParticipant.setMicrophoneEnabled(true);
                     
-                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => {
-                        if (pub.track) pub.track.mute();
+                    lkRoom.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                        console.log('[Intercom] Track unsubscribed from', participant.identity);
+                        track.detach().forEach(el => el.remove());
                     });
                     
+                    lkRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
+                        console.log('[Intercom] Disconnected from LiveKit');
+                        intercomConnected = false;
+                        isMicMuted = true;
+                        statusText.innerText = "Disconnected";
+                        statusText.style.color = "var(--tally-red)";
+                        updateMicUI();
+                    });
+                    
+                    lkRoom.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+                        console.log('[Intercom] Participant joined:', participant.identity);
+                    });
+                    
+                    lkRoom.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+                        console.log('[Intercom] Participant left:', participant.identity);
+                        const el = document.getElementById('lk-audio-' + participant.identity);
+                        if (el) el.remove();
+                    });
+                    
+                    // Connect to LiveKit server
+                    const wsUrl = 'wss://vidikom.app:7880';
+                    console.log('[Intercom] Connecting to', wsUrl);
+                    await lkRoom.connect(wsUrl, token);
+                    console.log('[Intercom] Connected to LiveKit room');
+                    
+                    // Publish microphone (starts enabled then mute)
+                    await lkRoom.localParticipant.setMicrophoneEnabled(true, {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 48000,
+                        channelCount: 1
+                    });
+                    console.log('[Intercom] Microphone published');
+                    
+                    // Mute by default
+                    await lkRoom.localParticipant.setMicrophoneEnabled(false);
+                    
+                    intercomConnected = true;
                     isMicMuted = true;
-                    statusText.innerText = "Connected";
+                    
+                    statusText.innerText = "Connected (muted)";
                     statusText.style.color = "var(--tally-green)";
                     updateMicUI();
+                    
                 } catch (e) {
-                    console.error("Intercom failed", e);
-                    livekitRoom = null;
-                    statusText.innerText = "Disconnected";
-                    updateMicUI(); // Will revert to default
+                    console.error('[Intercom] Connection failed:', e);
+                    disconnectIntercom();
+                    statusText.innerText = "Failed";
+                    updateMicUI();
                 }
             } else {
+                // Toggle mute/unmute
                 if (isMicMuted) {
-                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => { if (pub.track) pub.track.unmute(); });
+                    await lkRoom.localParticipant.setMicrophoneEnabled(true);
                     isMicMuted = false;
                 } else {
-                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => { if (pub.track) pub.track.mute(); });
+                    await lkRoom.localParticipant.setMicrophoneEnabled(false);
                     isMicMuted = true;
                 }
                 updateMicUI();
@@ -1047,7 +1130,7 @@
             const fullBtn = document.getElementById('full-mic-btn');
             const vad = document.getElementById('inline-vad');
             
-            if (!livekitRoom) {
+            if (!intercomConnected) {
                 inlineBtn.className = 'mic-toggle-btn muted';
                 inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> JOIN INTERCOM';
                 fullBtn.className = 'mic-toggle-btn large muted';

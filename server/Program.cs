@@ -575,7 +575,7 @@ namespace AtemDirector.Server
                     {
                         var roomId = root.GetProperty("roomId").GetString() ?? "";
                         var pin = root.GetProperty("pin").GetString() ?? "";
-                        var cam = root.TryGetProperty("cam", out var c) ? c.GetString() ?? "" : "";
+                        var cam = root.TryGetProperty("cam", out var c) ? c.ToString() : "";
 
                         // Validate room exists and PIN matches
                         if (!RelayRooms.TryGetValue(roomId, out var room) || room.Pin != pin)

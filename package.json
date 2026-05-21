@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "livekit-client": "^2.19.0"
+    "livekit-client": "^2.19.0",
+    "ws": "^8.20.1"
   }
 }

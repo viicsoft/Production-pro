@@ -42,9 +42,13 @@
         .text-muted { color: var(--text-secondary); }
 
         /* Legacy Pairing Screens (Temporarily styled) */
-        #pairing-screen, #camera-select-screen { 
+        #pairing-screen { 
             display: flex; flex-direction: column; align-items: center; justify-content: center; 
             height: 100vh; padding: 20px; text-align: center; 
+        }
+        #camera-select-screen { 
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start; 
+            height: 100vh; padding: 40px 20px; text-align: center; overflow-y: auto;
         }
         input { font-size: 24px; padding: 10px; text-align: center; width: 150px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #333; background: #222; color: white; }
         .btn-primary { font-size: 18px; padding: 15px 30px; background: var(--accent-blue); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
@@ -388,10 +392,10 @@
 
     <div id="camera-select-screen" class="hidden">
         <h2 style="margin-bottom:30px">Select Your Camera</h2>
-        <button class="cam-btn" onclick="selectCamera(1)">CAM 1</button>
-        <button class="cam-btn" onclick="selectCamera(2)">CAM 2</button>
-        <button class="cam-btn" onclick="selectCamera(3)">CAM 3</button>
-        <button class="cam-btn" onclick="selectCamera(4)">CAM 4</button>
+        <div id="camera-buttons-container">
+            <!-- Buttons dynamically generated here -->
+            <p>Loading available cameras...</p>
+        </div>
     </div>
 
     <!-- Main App Layout (Hidden until paired) -->
@@ -415,6 +419,9 @@
                         CH 3 – PROD <i data-lucide="chevron-down" style="width:14px;height:14px;margin-left:4px;"></i>
                     </div>
                     
+                    <button class="mute-all-btn" onclick="toggleFullscreen()" id="fs-btn">
+                        <i data-lucide="maximize" id="fs-icon" style="width:14px;height:14px;margin-right:4px;"></i> FS
+                    </button>
                     <button class="mute-all-btn">
                         <i data-lucide="mic-off" style="width:14px;height:14px;margin-right:4px;"></i> MUTE ALL
                     </button>
@@ -441,8 +448,11 @@
                         <i data-lucide="chevron-left" style="width:16px;height:16px;"></i> PREV
                     </button>
                     
-                    <div id="current-shot-title" class="shot-title">
-                        Waiting for suggestions...
+                    <div id="current-shot-container" style="flex:1; display:flex; flex-direction:column; align-items:center;">
+                        <div id="current-shot-media" style="width:100%; max-height:200px; overflow:hidden; border-radius:8px; margin-bottom:8px; display:none; justify-content:center;"></div>
+                        <div id="current-shot-title" class="shot-title" style="text-align:center;">
+                            Waiting for suggestions...
+                        </div>
                     </div>
                     
                     <button class="nav-pill-btn" onclick="nextSuggestion()">
@@ -472,7 +482,7 @@
                         <div class="vad-bar" style="height:6px"></div>
                     </div>
                     <button id="inline-mic-btn" class="mic-toggle-btn muted" onclick="toggleIntercom()">
-                        <i data-lucide="mic-off"></i> TAP TO TALK
+                        <i data-lucide="mic-off"></i> JOIN INTERCOM
                     </button>
                 </div>
                 
@@ -497,7 +507,7 @@
                 <div class="comms-full-footer">
                     <button id="full-mic-btn" class="mic-toggle-btn large muted" onclick="toggleIntercom()">
                         <i data-lucide="mic-off"></i> 
-                        <span>Muted<br><small>Tap to talk</small></span>
+                        <span>Disconnected<br><small>Tap to join</small></span>
                     </button>
                 </div>
             </div>
@@ -626,10 +636,24 @@
 
         function updateShotDirectionUI() {
             const titleEl = document.getElementById('current-shot-title');
+            const mediaEl = document.getElementById('current-shot-media');
             if (suggestionQueue.length === 0 || currentSuggestionIndex === -1) {
                 titleEl.innerText = "Waiting for suggestions...";
+                mediaEl.style.display = 'none';
             } else {
-                titleEl.innerText = suggestionQueue[currentSuggestionIndex].title;
+                const shot = suggestionQueue[currentSuggestionIndex];
+                titleEl.innerText = shot.title;
+                if (shot.mediaUrl) {
+                    mediaEl.style.display = 'flex';
+                    if (shot.mediaType === 'video') {
+                        mediaEl.innerHTML = `<video src="${shot.mediaUrl}" autoplay loop muted playsinline style="max-width:100%; max-height:200px; object-fit:contain;"></video>`;
+                    } else {
+                        mediaEl.innerHTML = `<img src="${shot.mediaUrl}" alt="Shot thumb" style="max-width:100%; max-height:200px; object-fit:contain;" />`;
+                    }
+                } else {
+                    mediaEl.style.display = 'none';
+                    mediaEl.innerHTML = '';
+                }
             }
             renderCarousel();
         }
@@ -662,8 +686,12 @@
                 };
                 
                 let mediaHtml = '<i data-lucide="image" style="width:32px;height:32px;opacity:0.3;"></i>';
-                if (shot.mediaUrl && shot.mediaType === 'Image') {
-                    mediaHtml = `<img src="/api/suggestions/media/${shot.mediaUrl}" alt="Shot thumb" loading="lazy" />`;
+                if (shot.mediaUrl) {
+                    if (shot.mediaType === 'video') {
+                        mediaHtml = `<video src="${shot.mediaUrl}" autoplay loop muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>`;
+                    } else {
+                        mediaHtml = `<img src="${shot.mediaUrl}" alt="Shot thumb" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />`;
+                    }
                 }
 
                 card.innerHTML = `
@@ -747,7 +775,7 @@
             connectWs();
         } else if (roomId && pin) {
             // Have room details, but no camera selected yet
-            showScreen('select');
+            fetchCamerasAndShowSelect();
         } else {
             showScreen('pairing');
         }
@@ -773,14 +801,69 @@
                 setCameraLabel(myCam);
                 connectWs();
             } else {
-                showScreen('select');
+                fetchCamerasAndShowSelect();
             }
         };
 
-        function selectCamera(num) {
+        function fetchCamerasAndShowSelect() {
+            showScreen('select');
+            const isOnline = location.host.includes('vidikom.app') || location.host.includes('github.io');
+            
+            if (isOnline) {
+                let tempWs = new WebSocket(`wss://${location.host}/ws/room`);
+                tempWs.onopen = () => {
+                    tempWs.send(JSON.stringify({ 
+                        type: 'crew-join', 
+                        roomId: roomId, 
+                        pin: pin, 
+                        cam: 'Setup' 
+                    }));
+                };
+                tempWs.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'inputs') {
+                            renderCameraButtons(data.inputs);
+                            tempWs.close();
+                        } else if (data.type === 'error') {
+                            alert(data.message || "Invalid room or PIN");
+                            tempWs.close();
+                            leaveRoom();
+                        }
+                    } catch (e) {}
+                };
+            } else {
+                const proto = location.protocol === 'https:' ? 'https:' : 'http:';
+                const host = location.host || 'localhost:8080';
+                fetch(`${proto}//${host}/api/inputs`)
+                    .then(res => res.json())
+                    .then(inputs => renderCameraButtons(inputs))
+                    .catch(e => console.error('Failed to fetch inputs', e));
+            }
+        }
+
+        function renderCameraButtons(inputs) {
+            const container = document.getElementById('camera-buttons-container');
+            container.innerHTML = ''; // clear loading text
+
+            if (!inputs || inputs.length === 0) {
+                container.innerHTML = '<p>No active cameras found.</p>';
+                return;
+            }
+
+            inputs.forEach(inp => {
+                const btn = document.createElement('button');
+                btn.className = 'cam-btn';
+                btn.textContent = inp.label || `CAM ${inp.id}`;
+                btn.onclick = () => selectCamera(inp.id, inp.label);
+                container.appendChild(btn);
+            });
+        }
+
+        function selectCamera(num, label) {
             myCam = num;
             localStorage.setItem('atem_cam', myCam);
-            setCameraLabel(myCam);
+            setCameraLabel(label || `CAM ${num}`);
             connectWs();
         }
 
@@ -809,11 +892,16 @@
             }
             localStorage.removeItem('atem_cam');
             myCam = '';
-            showScreen('select');
+            fetchCamerasAndShowSelect();
         }
 
         function connectWs() {
             showScreen('main');
+            
+            // Auto-connect intercom when joining the room
+            if (!intercomConnected) {
+                toggleIntercom();
+            }
             
             // Determine connection mode
             const isOnline = location.host.includes('vidikom.app') || location.host.includes('github.io');
@@ -829,7 +917,7 @@
                         type: 'crew-join', 
                         roomId: roomId, 
                         pin: pin, 
-                        cam: myCam 
+                        cam: myCam ? myCam.toString() : ""
                     }));
                 };
             } else {
@@ -844,7 +932,7 @@
                     document.querySelector('.signal-status').style.color = "var(--text-secondary)";
                     document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-green)";
                     if (myCam) {
-                        ws.send(JSON.stringify({ type: 'identity', cam: myCam }));
+                        ws.send(JSON.stringify({ type: 'identity', cam: myCam.toString() }));
                     }
                 };
             }
@@ -899,76 +987,138 @@
                     alert("Director reminder: " + data.text);
                     if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
                 }
-                else if (data.type === 'grade' && data.targetCameras.includes(parseInt(myCam))) {
-                    const gradeBox = document.createElement('div');
-                    gradeBox.style.cssText = `
-                        position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
-                        background: ${data.grade === 'A' ? 'var(--tally-green)' : data.grade === 'B' ? '#4CAF50' : data.grade === 'C' ? '#FFC107' : data.grade === 'D' ? '#FF9800' : 'var(--tally-red)'};
-                        color: white; padding: 15px 25px; border-radius: 8px; z-index: 10000;
-                        box-shadow: 0 4px 15px rgba(0,0,0,0.4); text-align: center;
-                        font-family: 'Inter', sans-serif; min-width: 250px;
-                        animation: slideDown 0.3s ease-out;
-                    `;
-                    gradeBox.innerHTML = `<div style="font-size: 24px; font-weight: bold; margin-bottom: 5px;">Grade: ${data.grade}</div>
-                                          <div style="font-size: 14px;">${data.feedback}</div>`;
-                    document.body.appendChild(gradeBox);
-                    setTimeout(() => gradeBox.remove(), 8000);
-                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-                }
             };
         }
 
-        // ---- Legacy Intercom Logic (Preserved) ----
-        let livekitRoom = null;
+        // ---- Intercom (LiveKit) ----
+        let lkRoom = null;
         let isMicMuted = true;
+        let intercomConnected = false;
+
+        function disconnectIntercom() {
+            if (lkRoom) {
+                lkRoom.disconnect();
+                lkRoom = null;
+            }
+            document.querySelectorAll('[id^="lk-audio-"]').forEach(el => el.remove());
+            
+            intercomConnected = false;
+            isMicMuted = true;
+            
+            document.getElementById('comms-status-text').innerText = "Disconnected";
+            document.getElementById('comms-status-text').style.color = "var(--text-secondary)";
+            updateMicUI();
+        }
 
         async function toggleIntercom() {
             const inlineBtn = document.getElementById('inline-mic-btn');
             const fullBtn = document.getElementById('full-mic-btn');
             const statusText = document.getElementById('comms-status-text');
             
-            if (!livekitRoom) {
+            if (!intercomConnected) {
+                // First tap: connect to LiveKit
                 inlineBtn.innerHTML = '<i data-lucide="loader"></i> CONNECTING...';
                 fullBtn.innerHTML = '<i data-lucide="loader"></i> <span>Connecting...</span>';
                 statusText.innerText = "Connecting...";
+                lucide.createIcons();
                 
                 try {
-                    const res = await fetch(`/api/intercom/token?identity=Cam${myCam}&name=Camera%20${myCam}`);
-                    const data = await res.json();
+                    // Determine token endpoint
+                    const isOnline = location.host.includes('vidikom.app');
+                    const tokenBaseUrl = isOnline ? '' : `http://${location.host}`;
+                    const identity = 'crew-cam-' + myCam;
+                    const lkRoomName = roomId || 'intercom';
                     
-                    const wsUrl = 'wss://vidikom.app:7880';
-                    livekitRoom = new LivekitClient.Room({ adaptiveStream: false, dynacast: false });
-
-                    livekitRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                    // Fetch LiveKit JWT token
+                    console.log('[Intercom] Fetching token for', identity, 'room:', lkRoomName);
+                    const res = await fetch(`${tokenBaseUrl}/api/intercom/token?identity=${encodeURIComponent(identity)}&name=${encodeURIComponent('Cam ' + myCam)}&roomName=${encodeURIComponent(lkRoomName)}`);
+                    if (!res.ok) throw new Error('Token fetch failed: ' + res.status);
+                    const tokenData = await res.json();
+                    const token = tokenData.token;
+                    console.log('[Intercom] Got LiveKit token');
+                    
+                    // Create LiveKit Room
+                    lkRoom = new LivekitClient.Room({
+                        adaptiveStream: false,
+                        dynacast: false
+                    });
+                    
+                    // Handle remote audio tracks
+                    lkRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                        console.log('[Intercom] Track subscribed from', participant.identity, 'kind:', track.kind);
                         if (track.kind === LivekitClient.Track.Kind.Audio) {
-                            const el = track.attach();
-                            document.body.appendChild(el);
+                            const audioEl = track.attach();
+                            audioEl.id = 'lk-audio-' + participant.identity;
+                            document.body.appendChild(audioEl);
+                            audioEl.play().catch(e => {
+                                console.warn('[Intercom] Autoplay blocked:', e.message);
+                            });
                         }
                     });
-
-                    await livekitRoom.connect(wsUrl, data.token);
-                    await livekitRoom.localParticipant.setMicrophoneEnabled(true);
                     
-                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => {
-                        if (pub.track) pub.track.mute();
+                    lkRoom.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                        console.log('[Intercom] Track unsubscribed from', participant.identity);
+                        track.detach().forEach(el => el.remove());
                     });
                     
+                    lkRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
+                        console.log('[Intercom] Disconnected from LiveKit');
+                        intercomConnected = false;
+                        isMicMuted = true;
+                        statusText.innerText = "Disconnected";
+                        statusText.style.color = "var(--tally-red)";
+                        updateMicUI();
+                    });
+                    
+                    lkRoom.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+                        console.log('[Intercom] Participant joined:', participant.identity);
+                    });
+                    
+                    lkRoom.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+                        console.log('[Intercom] Participant left:', participant.identity);
+                        const el = document.getElementById('lk-audio-' + participant.identity);
+                        if (el) el.remove();
+                    });
+                    
+                    // Connect to LiveKit server
+                    const wsUrl = 'wss://vidikom.app:7880';
+                    console.log('[Intercom] Connecting to', wsUrl);
+                    await lkRoom.connect(wsUrl, token);
+                    console.log('[Intercom] Connected to LiveKit room');
+                    
+                    // Publish microphone (starts enabled then mute)
+                    await lkRoom.localParticipant.setMicrophoneEnabled(true, {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 48000,
+                        channelCount: 1
+                    });
+                    console.log('[Intercom] Microphone published');
+                    
+                    // Mute by default
+                    await lkRoom.localParticipant.setMicrophoneEnabled(false);
+                    
+                    intercomConnected = true;
                     isMicMuted = true;
-                    statusText.innerText = "Connected";
+                    
+                    statusText.innerText = "Connected (muted)";
                     statusText.style.color = "var(--tally-green)";
                     updateMicUI();
+                    
                 } catch (e) {
-                    console.error("Intercom failed", e);
-                    livekitRoom = null;
-                    statusText.innerText = "Disconnected";
-                    updateMicUI(); // Will revert to default
+                    console.error('[Intercom] Connection failed:', e);
+                    disconnectIntercom();
+                    statusText.innerText = "Failed";
+                    updateMicUI();
                 }
             } else {
+                // Toggle mute/unmute
                 if (isMicMuted) {
-                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => { if (pub.track) pub.track.unmute(); });
+                    await lkRoom.localParticipant.setMicrophoneEnabled(true);
                     isMicMuted = false;
                 } else {
-                    livekitRoom.localParticipant.audioTrackPublications.forEach(pub => { if (pub.track) pub.track.mute(); });
+                    await lkRoom.localParticipant.setMicrophoneEnabled(false);
                     isMicMuted = true;
                 }
                 updateMicUI();
@@ -980,7 +1130,7 @@
             const fullBtn = document.getElementById('full-mic-btn');
             const vad = document.getElementById('inline-vad');
             
-            if (!livekitRoom) {
+            if (!intercomConnected) {
                 inlineBtn.className = 'mic-toggle-btn muted';
                 inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> JOIN INTERCOM';
                 fullBtn.className = 'mic-toggle-btn large muted';
@@ -1052,6 +1202,29 @@
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.error(err));
         }
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+                document.getElementById('bottom-nav').style.display = 'none';
+                document.getElementById('fs-btn').innerHTML = '<i data-lucide="minimize" id="fs-icon" style="width:14px;height:14px;margin-right:4px;"></i> EXIT FS';
+                lucide.createIcons();
+            } else {
+                document.exitFullscreen();
+                document.getElementById('bottom-nav').style.display = 'flex';
+                document.getElementById('fs-btn').innerHTML = '<i data-lucide="maximize" id="fs-icon" style="width:14px;height:14px;margin-right:4px;"></i> FS';
+                lucide.createIcons();
+            }
+        }
+        
+        document.addEventListener('fullscreenchange', (event) => {
+            if (!document.fullscreenElement) {
+                document.getElementById('bottom-nav').style.display = 'flex';
+                document.getElementById('fs-btn').innerHTML = '<i data-lucide="maximize" id="fs-icon" style="width:14px;height:14px;margin-right:4px;"></i> FS';
+                lucide.createIcons();
+            }
+        });
     </script>
 </body>
 </html>
