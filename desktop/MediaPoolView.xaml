@@ -1,51 +1,55 @@
 <UserControl x:Class="Desktop.MediaPoolView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="#1B1B1B" Foreground="#CCC">
+             Background="#141416" Foreground="#E4E4E7">
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="180"/>
+            <ColumnDefinition Width="220"/>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="200"/>
+            <ColumnDefinition Width="240"/>
         </Grid.ColumnDefinitions>
 
         <!-- LEFT: LOCAL LIBRARY -->
-        <Border Grid.Column="0" Background="#252525" BorderBrush="#333" BorderThickness="0,0,1,0">
-            <Grid>
+        <Border Grid.Column="0" Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="0,0,1,0">
+            <Grid Margin="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="130"/>
+                    <RowDefinition Height="160"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="Local Library" Foreground="#CCC" FontWeight="Bold" FontSize="12" Margin="10,10,10,5"/>
+                <TextBlock Text="LOCAL LIBRARY" Foreground="#FF9800" FontWeight="Bold" FontSize="11" Margin="4,4,4,8"/>
 
-                <TreeView x:Name="FolderTree" Grid.Row="1" Background="Transparent" BorderThickness="0" Foreground="#CCC" Margin="5,0"
-                          SelectedItemChanged="FolderTree_SelectedItemChanged"/>
+                <TreeView x:Name="FolderTree" Grid.Row="1" Background="#1A1A1E" BorderThickness="1" BorderBrush="#2C2C32"
+                          Foreground="#E4E4E7" Margin="0,0,0,8" SelectedItemChanged="FolderTree_SelectedItemChanged"/>
 
-                <Border Grid.Row="2" Height="1" Background="#333" Margin="5,0"/>
+                <Border Grid.Row="2" Height="1" Background="#3D3D44" Margin="0,0,0,8"/>
 
                 <!-- File list from selected folder -->
-                <ListBox x:Name="FileList" Grid.Row="3" Background="Transparent" BorderThickness="0" Foreground="#CCC"
-                         MaxHeight="120" Margin="5,5" SelectionChanged="FileList_SelectionChanged"
-                         MouseDoubleClick="FileList_MouseDoubleClick">
+                <ListBox x:Name="FileList" Grid.Row="3" Background="#1A1A1E" BorderThickness="1" BorderBrush="#2C2C32"
+                         Foreground="#E4E4E7" MaxHeight="130" Margin="0,0,0,8" SelectionChanged="FileList_SelectionChanged"
+                         MouseDoubleClick="FileList_MouseDoubleClick" MouseMove="FileList_MouseMove">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <TextBlock Text="{Binding Name}" FontSize="10" Foreground="#AAA"/>
+                            <StackPanel Orientation="Horizontal" Margin="2,1">
+                                <TextBlock Text="{Binding Tag}" FontSize="10" Margin="0,0,6,0"/>
+                                <TextBlock Text="{Binding Name}" FontSize="11" Foreground="#CCC" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
 
                 <!-- Preview -->
-                <StackPanel Grid.Row="4" Margin="10,5">
-                    <TextBlock Text="Preview" Foreground="#888" FontSize="10" Margin="0,0,0,5"/>
-                    <Border Background="#111" CornerRadius="4" Height="90">
-                        <Grid>
-                            <TextBlock x:Name="PreviewPlaceholder" Text="No Selection" Foreground="#555" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <Image x:Name="PreviewImage" Stretch="Uniform" Margin="2" Visibility="Collapsed"/>
+                <StackPanel Grid.Row="4" Margin="0,4,0,0">
+                    <TextBlock Text="PREVIEW" Foreground="#888890" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>
+                    <Border Background="#141416" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="4" Height="125">
+                        <Grid ClipToBounds="True">
+                            <TextBlock x:Name="PreviewPlaceholder" Text="No Selection" Foreground="#666670" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Image x:Name="PreviewImage" Stretch="Uniform" Margin="4" Visibility="Collapsed"/>
+                            <MediaElement x:Name="PreviewVideo" Stretch="Uniform" Margin="4" Visibility="Collapsed" LoadedBehavior="Play" UnloadedBehavior="Manual" IsMuted="True" MediaEnded="MediaElement_MediaEnded"/>
                         </Grid>
                     </Border>
                 </StackPanel>
@@ -53,65 +57,191 @@
         </Border>
 
         <!-- CENTER: CLIPS + STILLS -->
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="10">
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                    <TextBlock Text="Clip 1" Foreground="#CCC" FontWeight="Bold" FontSize="11" Margin="0,0,15,0"/>
-                    <TextBlock Text="0/100 Frames" Foreground="#666" FontSize="10"/>
-                    <TextBlock Text="Clip 2" Foreground="#CCC" FontWeight="Bold" FontSize="11" Margin="40,0,15,0"/>
-                    <TextBlock Text="0/300 Frames" Foreground="#666" FontSize="10"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
-                    <Border Background="#2A2A2A" CornerRadius="4" Width="130" Height="75" Margin="0,0,8,0"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="🎬" FontSize="22" HorizontalAlignment="Center"/><TextBlock Text="Empty" Foreground="#555" FontSize="9" HorizontalAlignment="Center"/></StackPanel></Border>
-                    <Border Background="#2A2A2A" CornerRadius="4" Width="130" Height="75" Margin="0,0,8,0"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="🎵" FontSize="22" HorizontalAlignment="Center"/><TextBlock Text="Audio" Foreground="#555" FontSize="9" HorizontalAlignment="Center"/></StackPanel></Border>
-                    <Border Background="#2A2A2A" CornerRadius="4" Width="130" Height="75" Margin="0,0,8,0"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="🎬" FontSize="22" HorizontalAlignment="Center"/><TextBlock Text="Empty" Foreground="#555" FontSize="9" HorizontalAlignment="Center"/></StackPanel></Border>
-                    <Border Background="#2A2A2A" CornerRadius="4" Width="130" Height="75"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="🎵" FontSize="22" HorizontalAlignment="Center"/><TextBlock Text="Audio" Foreground="#555" FontSize="9" HorizontalAlignment="Center"/></StackPanel></Border>
-                </StackPanel>
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="12">
+            <StackPanel>
+                <!-- Clips Section -->
+                <TextBlock Text="CLIPS &amp; VIDEOS" Foreground="#FF9800" FontWeight="Bold" FontSize="11" Margin="0,0,0,8"/>
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock Text="Stills" Foreground="#CCC" FontWeight="Bold" FontSize="11" Margin="0,0,0,8"/>
+                    <!-- Clip 1 -->
+                    <Border x:Name="Clip1Border" Grid.Column="0" Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="5" Margin="0,0,6,0" Padding="8" AllowDrop="True">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,6">
+                                <TextBlock x:Name="Clip1Title" Text="Clip 1" Foreground="#FFF" FontWeight="Bold" FontSize="11" HorizontalAlignment="Left"/>
+                                <TextBlock x:Name="Clip1Subtext" Text="Empty Video Slot" Foreground="#888890" FontSize="10" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Border Background="#141416" CornerRadius="4" Height="90" ClipToBounds="True">
+                                <Grid>
+                                    <StackPanel x:Name="Clip1Placeholder" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <TextBlock Text="🎬" FontSize="24" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Drag / Drop Video Here" Foreground="#666" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <Image x:Name="Clip1Image" Stretch="Uniform" Margin="2" Visibility="Collapsed"/>
+                                    <MediaElement x:Name="Clip1Video" Stretch="Uniform" Margin="2" Visibility="Collapsed" LoadedBehavior="Play" UnloadedBehavior="Manual" IsMuted="True" MediaEnded="MediaElement_MediaEnded"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
 
-                <UniformGrid x:Name="StillsGrid" Columns="4"/>
+                    <!-- Clip 2 -->
+                    <Border x:Name="Clip2Border" Grid.Column="1" Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="5" Margin="6,0,0,0" Padding="8" AllowDrop="True">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,6">
+                                <TextBlock x:Name="Clip2Title" Text="Clip 2" Foreground="#FFF" FontWeight="Bold" FontSize="11" HorizontalAlignment="Left"/>
+                                <TextBlock x:Name="Clip2Subtext" Text="Empty Audio / Video Slot" Foreground="#888890" FontSize="10" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Border Background="#141416" CornerRadius="4" Height="90" ClipToBounds="True">
+                                <Grid>
+                                    <StackPanel x:Name="Clip2Placeholder" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <TextBlock Text="🎵" FontSize="24" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Drag / Drop Media Here" Foreground="#666" FontSize="10" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <Image x:Name="Clip2Image" Stretch="Uniform" Margin="2" Visibility="Collapsed"/>
+                                    <MediaElement x:Name="Clip2Video" Stretch="Uniform" Margin="2" Visibility="Collapsed" LoadedBehavior="Play" UnloadedBehavior="Manual" IsMuted="True" MediaEnded="MediaElement_MediaEnded"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Grid>
 
-                <Button Content="Capture Still" HorizontalAlignment="Right" Margin="0,10" Padding="15,6"
-                        Background="#333" Foreground="#CCC" BorderBrush="#555" BorderThickness="1" Cursor="Hand"
-                        Click="CaptureStill_Click"/>
+                <!-- Stills Section -->
+                <Grid Margin="0,0,0,8">
+                    <TextBlock Text="STILLS &amp; MEDIA SLOTS (20 SLOTS)" Foreground="#FF9800" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                    <Button Content="📸 CAPTURE STILL" HorizontalAlignment="Right" Padding="12,5"
+                            Background="#FF9800" Foreground="#111113" FontWeight="Bold" FontSize="10"
+                            BorderThickness="0" Cursor="Hand" Click="CaptureStill_Click">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="3"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+                </Grid>
+
+                <UniformGrid x:Name="StillsGrid" Columns="4" Margin="0,0,0,10"/>
             </StackPanel>
         </ScrollViewer>
 
         <!-- RIGHT: MEDIA PLAYERS -->
-        <Border Grid.Column="2" Background="#252525" BorderBrush="#333" BorderThickness="1,0,0,0">
+        <Border Grid.Column="2" Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="1,0,0,0">
             <StackPanel Margin="10">
-                <TextBlock Text="Media Players" Foreground="#CCC" FontWeight="Bold" FontSize="12" Margin="0,5,0,15"/>
+                <TextBlock Text="MEDIA PLAYERS" Foreground="#FF9800" FontWeight="Bold" FontSize="11" Margin="0,4,0,12"/>
 
-                <StackPanel Margin="0,0,0,15">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                        <Border Width="16" Height="16" CornerRadius="8" Background="#FFA500" Margin="0,0,8,0">
-                            <TextBlock Text="1" Foreground="White" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <TextBlock x:Name="Player1Label" Text="Empty" Foreground="#CCC" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <Border Background="#111" CornerRadius="4" Height="80" Margin="0,0,0,5">
-                        <Grid>
-                            <TextBlock x:Name="Player1Placeholder" Text="No Media" Foreground="#444" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <Image x:Name="Player1Image" Stretch="Uniform" Margin="2" Visibility="Collapsed"/>
+                <!-- Media Player 1 -->
+                <Border x:Name="Player1Border" Background="#25252B" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="5" Margin="0,0,0,12" Padding="8" AllowDrop="True">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <Border Width="18" Height="18" CornerRadius="9" Background="#FF9800" Margin="0,0,6,0">
+                                    <TextBlock Text="1" Foreground="#111113" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock x:Name="Player1Label" Text="Empty" Foreground="#E4E4E7" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="110"/>
+                            </StackPanel>
+                            <TextBlock x:Name="Player1Time" Text="00:00 / 00:00" Foreground="#888890" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                         </Grid>
-                    </Border>
-                </StackPanel>
 
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                        <Border Width="16" Height="16" CornerRadius="8" Background="#FFA500" Margin="0,0,8,0">
-                            <TextBlock Text="2" Foreground="White" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- Screen Area -->
+                        <Border Background="#141416" BorderBrush="#333338" BorderThickness="1" CornerRadius="4" Height="125" ClipToBounds="True">
+                            <Grid>
+                                <TextBlock x:Name="Player1Placeholder" Text="Drop Media Here" Foreground="#555560" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Image x:Name="Player1Image" Stretch="Uniform" Margin="4" Visibility="Collapsed"/>
+                                <MediaElement x:Name="Player1Video" Stretch="Uniform" Margin="4" Visibility="Collapsed" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" IsMuted="False" MediaEnded="MediaElement_MediaEnded" MediaOpened="Player1Video_MediaOpened" MediaFailed="Player1Video_MediaFailed"/>
+                            </Grid>
                         </Border>
-                        <TextBlock x:Name="Player2Label" Text="Empty" Foreground="#CCC" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+
+                        <!-- Scrubber Slider -->
+                        <Slider x:Name="Player1Slider" Margin="0,6,0,4" Minimum="0" Maximum="100" Value="0" IsSnapToTickEnabled="False"
+                                PreviewMouseLeftButtonDown="Player1Slider_PreviewMouseLeftButtonDown"
+                                PreviewMouseLeftButtonUp="Player1Slider_PreviewMouseLeftButtonUp"
+                                ValueChanged="Player1Slider_ValueChanged" Height="16"/>
+
+                        <!-- Transport Control Bar -->
+                        <Border Background="#18181C" CornerRadius="4" Padding="3" Margin="0,2,0,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <!-- Rewind -->
+                                <Button x:Name="Player1RewindBtn" Content="⏪" Width="32" Height="26" Margin="2,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Rewind (-5s)" Click="Player1_Rewind_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Play / Pause -->
+                                <Button x:Name="Player1PlayPauseBtn" Content="▶" Width="38" Height="26" Margin="2,0" Background="#FF9800" Foreground="#111" FontSize="12" FontWeight="Bold" BorderThickness="0" Cursor="Hand" ToolTip="Play / Pause" Click="Player1_PlayPause_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Stop -->
+                                <Button x:Name="Player1StopBtn" Content="⏹" Width="32" Height="26" Margin="2,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Stop" Click="Player1_Stop_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Fast Forward -->
+                                <Button x:Name="Player1FFBtn" Content="⏩" Width="32" Height="26" Margin="2,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Fast Forward (+5s)" Click="Player1_FastForward_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Mute -->
+                                <Button x:Name="Player1MuteBtn" Content="🔊" Width="32" Height="26" Margin="6,0,0,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Mute / Unmute" Click="Player1_Mute_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
-                    <Border Background="#111" CornerRadius="4" Height="80">
-                        <Grid>
-                            <TextBlock x:Name="Player2Placeholder" Text="No Media" Foreground="#444" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <Image x:Name="Player2Image" Stretch="Uniform" Margin="2" Visibility="Collapsed"/>
+                </Border>
+
+                <!-- Media Player 2 -->
+                <Border x:Name="Player2Border" Background="#25252B" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="5" Padding="8" AllowDrop="True">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <Border Width="18" Height="18" CornerRadius="9" Background="#FF9800" Margin="0,0,6,0">
+                                    <TextBlock Text="2" Foreground="#111113" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock x:Name="Player2Label" Text="Empty" Foreground="#E4E4E7" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="110"/>
+                            </StackPanel>
+                            <TextBlock x:Name="Player2Time" Text="00:00 / 00:00" Foreground="#888890" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                         </Grid>
-                    </Border>
-                </StackPanel>
+
+                        <!-- Screen Area -->
+                        <Border Background="#141416" BorderBrush="#333338" BorderThickness="1" CornerRadius="4" Height="125" ClipToBounds="True">
+                            <Grid>
+                                <TextBlock x:Name="Player2Placeholder" Text="Drop Media Here" Foreground="#555560" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Image x:Name="Player2Image" Stretch="Uniform" Margin="4" Visibility="Collapsed"/>
+                                <MediaElement x:Name="Player2Video" Stretch="Uniform" Margin="4" Visibility="Collapsed" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True" IsMuted="False" MediaEnded="MediaElement_MediaEnded" MediaOpened="Player2Video_MediaOpened" MediaFailed="Player2Video_MediaFailed"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Scrubber Slider -->
+                        <Slider x:Name="Player2Slider" Margin="0,6,0,4" Minimum="0" Maximum="100" Value="0" IsSnapToTickEnabled="False"
+                                PreviewMouseLeftButtonDown="Player2Slider_PreviewMouseLeftButtonDown"
+                                PreviewMouseLeftButtonUp="Player2Slider_PreviewMouseLeftButtonUp"
+                                ValueChanged="Player2Slider_ValueChanged" Height="16"/>
+
+                        <!-- Transport Control Bar -->
+                        <Border Background="#18181C" CornerRadius="4" Padding="3" Margin="0,2,0,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <!-- Rewind -->
+                                <Button x:Name="Player2RewindBtn" Content="⏪" Width="32" Height="26" Margin="2,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Rewind (-5s)" Click="Player2_Rewind_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Play / Pause -->
+                                <Button x:Name="Player2PlayPauseBtn" Content="▶" Width="38" Height="26" Margin="2,0" Background="#FF9800" Foreground="#111" FontSize="12" FontWeight="Bold" BorderThickness="0" Cursor="Hand" ToolTip="Play / Pause" Click="Player2_PlayPause_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Stop -->
+                                <Button x:Name="Player2StopBtn" Content="⏹" Width="32" Height="26" Margin="2,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Stop" Click="Player2_Stop_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Fast Forward -->
+                                <Button x:Name="Player2FFBtn" Content="⏩" Width="32" Height="26" Margin="2,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Fast Forward (+5s)" Click="Player2_FastForward_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                                <!-- Mute -->
+                                <Button x:Name="Player2MuteBtn" Content="🔊" Width="32" Height="26" Margin="6,0,0,0" Background="#2A2A32" Foreground="#FFF" FontSize="11" BorderThickness="0" Cursor="Hand" ToolTip="Mute / Unmute" Click="Player2_Mute_Click">
+                                    <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="3"/></Style></Button.Resources>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </Border>
     </Grid>

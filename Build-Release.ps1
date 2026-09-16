@@ -40,21 +40,35 @@ Set-Location ".."
 
 # Copy Caddy
 Write-Host "[4/5] Copying Caddy..." -ForegroundColor Yellow
-if (Test-Path "C:\caddy\caddy.exe") {
-    Copy-Item "C:\caddy\caddy.exe" ".\publish\caddy\caddy.exe"
-} else {
-    Write-Host "Warning: Caddy.exe not found at C:\caddy\caddy.exe" -ForegroundColor Yellow
+$caddyFound = $false
+$caddyCandidates = @(
+    ".\installer\caddy\caddy.exe",
+    "C:\Program Files\AtemDirector\caddy\caddy.exe",
+    "C:\caddy\caddy.exe"
+)
+
+foreach ($path in $caddyCandidates) {
+    if (Test-Path $path) {
+        Copy-Item $path ".\publish\caddy\caddy.exe" -Force
+        $caddyFound = $true
+        Write-Host "Copied caddy.exe from: $path" -ForegroundColor Green
+        break
+    }
+}
+
+if (-not $caddyFound) {
+    Write-Host "Warning: Caddy.exe not found in known locations!" -ForegroundColor Yellow
     Write-Host "Please copy caddy.exe manually to .\publish\caddy\" -ForegroundColor Yellow
 }
 
-# Create Caddyfile template
-$caddyTemplate = @"
-https://{`$ATEM_IP}:8443 {
+# Create Universal Caddyfile (listens on port 8443 across all local network interfaces without prompting)
+$caddyConfig = @"
+:8443 {
     tls internal
-    reverse_proxy 127.0.0.1:5160
+    reverse_proxy 127.0.0.1:8080
 }
 "@
-$caddyTemplate | Set-Content ".\publish\caddy\Caddyfile.template"
+$caddyConfig | Set-Content ".\publish\caddy\Caddyfile"
 
 # Copy ATEM SDK DLLs
 Write-Host "[5/5] Copying ATEM SDK DLLs..." -ForegroundColor Yellow

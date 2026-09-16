@@ -37,7 +37,25 @@ namespace AtemDirector.Server
             new ConcurrentDictionary<WebSocket, VoiceClient>();
 
         // ---------- ROOM RELAY state (Online Mode) ----------
-        public record RelayRoom(string RoomId, string Pin, string ProductionName, WebSocket DirectorWs, string? InputsJson);
+        public class RelayRoom
+        {
+            public string RoomId { get; set; }
+            public string Pin { get; set; }
+            public string ProductionName { get; set; }
+            public WebSocket DirectorWs { get; set; }
+            public string? InputsJson { get; set; }
+            public Dictionary<int, Core.CameraRoleMetadata> CameraRoles { get; set; } = new();
+            public DateTime LastDirectorSuggestion { get; set; } = DateTime.MinValue;
+
+            public RelayRoom(string roomId, string pin, string productionName, WebSocket directorWs, string? inputsJson)
+            {
+                RoomId = roomId;
+                Pin = pin;
+                ProductionName = productionName;
+                DirectorWs = directorWs;
+                InputsJson = inputsJson;
+            }
+        }
         public static readonly ConcurrentDictionary<string, RelayRoom> RelayRooms = new();
         // roomId -> (clientId -> WebSocket)
         public static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, WebSocket>> RelayCrews = new();
@@ -106,6 +124,8 @@ namespace AtemDirector.Server
                     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 });
             
+            builder.Services.AddHostedService<AiDirectorService>();
+
             // Relax Antiforgery for local IP access
             builder.Services.AddAntiforgery(options =>
             {
@@ -126,7 +146,7 @@ namespace AtemDirector.Server
                 
                 if (!db.AdminUsers.Any())
                 {
-                    db.AdminUsers.Add(new Data.AdminUser { Email = "admin@viicsoft.com", Password = "admin" });
+                    db.AdminUsers.Add(new Data.AdminUser { Email = "admin@vidikom.com", Password = "admin" });
                     db.SaveChanges();
                 }
             }
@@ -142,6 +162,13 @@ namespace AtemDirector.Server
             app.UseWebSockets();
 
             app.MapRazorPages();
+
+            app.MapGet("/crew", (HttpContext context) =>
+            {
+                context.Response.ContentType = "text/html; charset=utf-8";
+                var filePath = Path.Combine(app.Environment.WebRootPath, "crew.html");
+                return context.Response.SendFileAsync(filePath);
+            });
             
             // endpoints used by the web UI + desktop app
             app.Map("/ws/tally", HandleTallyAsync);
@@ -461,6 +488,14 @@ namespace AtemDirector.Server
                     var root    = doc.RootElement;
                     var msgType = root.GetProperty("type").GetString();
 
+                    if (string.Equals(msgType, "ping", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var pingId = root.TryGetProperty("id", out var idElem) ? idElem.GetString() ?? "" : "";
+                        var pongBytes = JsonSerializer.SerializeToUtf8Bytes(new { type = "pong", id = pingId });
+                        await SafeSendAsync(ws, pongBytes, context.RequestAborted);
+                        continue;
+                    }
+
                     if (!string.Equals(msgType, "signal", StringComparison.OrdinalIgnoreCase))
                         continue;
 
@@ -553,6 +588,18 @@ namespace AtemDirector.Server
                         var pin = root.GetProperty("pin").GetString() ?? "";
                         var prodName = root.TryGetProperty("productionName", out var pn) ? pn.GetString() ?? "" : "";
                         var inputsJson = root.TryGetProperty("inputs", out var inp) ? inp.GetRawText() : null;
+                        
+                        var cameraRoles = new Dictionary<int, Core.CameraRoleMetadata>();
+                        if (root.TryGetProperty("cameraRoles", out var crProp) && crProp.ValueKind == JsonValueKind.Object)
+                        {
+                            try
+                            {
+                                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                                var parsedRoles = JsonSerializer.Deserialize<Dictionary<int, Core.CameraRoleMetadata>>(crProp.GetRawText(), opts);
+                                if (parsedRoles != null) cameraRoles = parsedRoles;
+                            }
+                            catch { }
+                        }
 
                         if (string.IsNullOrEmpty(roomId) || string.IsNullOrEmpty(pin))
                         {
@@ -562,14 +609,41 @@ namespace AtemDirector.Server
 
                         // Register room
                         var room = new RelayRoom(roomId, pin, prodName, ws, inputsJson);
+                        room.CameraRoles = cameraRoles;
+                        room.LastDirectorSuggestion = DateTime.UtcNow; // Reset on join
                         RelayRooms[roomId] = room;
-                        RelayCrews.GetOrAdd(roomId, _ => new ConcurrentDictionary<string, WebSocket>());
+                        var existingCrews = RelayCrews.GetOrAdd(roomId, _ => new ConcurrentDictionary<string, WebSocket>());
 
                         myRoomId = roomId;
                         isDirector = true;
 
-                        Console.WriteLine($"[Relay] Director registered room {roomId}");
+                        Console.WriteLine($"[Relay] Director registered room {roomId} with pin '{pin}'. Found {existingCrews.Count} waiting crew.");
                         await SendJsonAsync(ws, new { type = "room-registered", roomId }, context.RequestAborted);
+
+                        // Broadcast inputs to all connected/waiting crew
+                        if (inputsJson != null)
+                        {
+                            var inputMsg = $"{{\"type\":\"inputs\",\"inputs\":{inputsJson}}}";
+                            var inputMsgBytes = Encoding.UTF8.GetBytes(inputMsg);
+                            foreach (var kvp in existingCrews)
+                            {
+                                if (kvp.Value.State == WebSocketState.Open)
+                                {
+                                    _ = SafeSendAsync(kvp.Value, inputMsgBytes, CancellationToken.None);
+                                }
+                            }
+                        }
+
+                        // Notify director of any already connected crew
+                        foreach (var kvp in existingCrews)
+                        {
+                            if (kvp.Value.State == WebSocketState.Open)
+                            {
+                                var notifyBytes = JsonSerializer.SerializeToUtf8Bytes(
+                                    new { type = "crew-connected", clientId = kvp.Key, cam = "" });
+                                _ = SafeSendAsync(ws, notifyBytes, CancellationToken.None);
+                            }
+                        }
                     }
                     else if (type == "crew-join")
                     {
@@ -577,10 +651,18 @@ namespace AtemDirector.Server
                         var pin = root.GetProperty("pin").GetString() ?? "";
                         var cam = root.TryGetProperty("cam", out var c) ? c.ToString() : "";
 
-                        // Validate room exists and PIN matches
-                        if (!RelayRooms.TryGetValue(roomId, out var room) || room.Pin != pin)
+                        // Allow crew to connect even if director is still connecting/reconnecting
+                        Console.WriteLine($"[Relay] crew-join attempt: roomId={roomId} pin={pin} cam={cam}");
+                        bool isWaitingForDirector = false;
+                        if (!RelayRooms.TryGetValue(roomId, out var room))
                         {
-                            await SendJsonAsync(ws, new { type = "error", message = "Invalid room or PIN" }, context.RequestAborted);
+                            Console.WriteLine($"[Relay] Room {roomId} not registered yet; holding crew in waiting room.");
+                            isWaitingForDirector = true;
+                        }
+                        else if (!string.IsNullOrEmpty(room.Pin) && !string.IsNullOrEmpty(pin) && room.Pin != pin)
+                        {
+                            Console.WriteLine($"[Relay] FAIL: pin mismatch for room {roomId}. Expected='{room.Pin}' Got='{pin}'");
+                            await SendJsonAsync(ws, new { type = "error", message = "Invalid room PIN" }, context.RequestAborted);
                             return;
                         }
 
@@ -591,22 +673,25 @@ namespace AtemDirector.Server
                         var crews = RelayCrews.GetOrAdd(roomId, _ => new ConcurrentDictionary<string, WebSocket>());
                         crews[myClientId] = ws;
 
-                        Console.WriteLine($"[Relay] Crew {myClientId} (cam {cam}) joined room {roomId}");
-                        await SendJsonAsync(ws, new { type = "joined", roomId }, context.RequestAborted);
+                        Console.WriteLine($"[Relay] Crew {myClientId} (cam {cam}) joined room {roomId} (waiting: {isWaitingForDirector})");
+                        await SendJsonAsync(ws, new { type = "joined", roomId, waiting = isWaitingForDirector }, context.RequestAborted);
                         
-                        if (room.InputsJson != null)
+                        if (!isWaitingForDirector && room != null)
                         {
-                            var inputMsg = $"{{\"type\":\"inputs\",\"inputs\":{room.InputsJson}}}";
-                            var inputMsgBytes = Encoding.UTF8.GetBytes(inputMsg);
-                            await SafeSendAsync(ws, inputMsgBytes, context.RequestAborted);
-                        }
+                            if (room.InputsJson != null)
+                            {
+                                var inputMsg = $"{{\"type\":\"inputs\",\"inputs\":{room.InputsJson}}}";
+                                var inputMsgBytes = Encoding.UTF8.GetBytes(inputMsg);
+                                await SafeSendAsync(ws, inputMsgBytes, context.RequestAborted);
+                            }
 
-                        // Notify director that a crew member joined
-                        if (room.DirectorWs.State == WebSocketState.Open)
-                        {
-                            var notifyBytes = JsonSerializer.SerializeToUtf8Bytes(
-                                new { type = "crew-connected", clientId = myClientId, cam });
-                            await SafeSendAsync(room.DirectorWs, notifyBytes, context.RequestAborted);
+                            // Notify director that a crew member joined
+                            if (room.DirectorWs.State == WebSocketState.Open)
+                            {
+                                var notifyBytes = JsonSerializer.SerializeToUtf8Bytes(
+                                    new { type = "crew-connected", clientId = myClientId, cam });
+                                await SafeSendAsync(room.DirectorWs, notifyBytes, context.RequestAborted);
+                            }
                         }
                     }
                     else
@@ -624,10 +709,32 @@ namespace AtemDirector.Server
 
                     if (myRoomId == null) break;
 
+                    // Handle Ping directly at relay level
+                    if (msgText.Contains("\"type\":\"ping\"") || msgText.Contains("\"type\": \"ping\""))
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(msgText);
+                            if (doc.RootElement.TryGetProperty("id", out var idProp))
+                            {
+                                var pongBytes = Encoding.UTF8.GetBytes($"{{\"type\":\"pong\",\"id\":\"{idProp.GetString()}\"}}");
+                                await SafeSendAsync(ws, pongBytes, context.RequestAborted);
+                                continue;
+                            }
+                        }
+                        catch { }
+                    }
+
                     var msgBytes = Encoding.UTF8.GetBytes(msgText);
 
                     if (isDirector)
                     {
+                        // Update last suggestion time to prevent server from auto-generating one
+                        if (msgText.Contains("\"type\":\"suggestion\"") && RelayRooms.TryGetValue(myRoomId, out var r))
+                        {
+                            r.LastDirectorSuggestion = DateTime.UtcNow;
+                        }
+
                         // Director → forward to all crew in this room
                         if (RelayCrews.TryGetValue(myRoomId, out var crews))
                         {

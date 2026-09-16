@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Crew PWA</title>
-    <link rel="manifest" href="manifest.json">
-    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="lucide.min.js"></script>
     <style>
         /* Stage 1: Design Tokens & Base Theme */
         :root {
@@ -437,6 +435,9 @@
                     <!-- Video preview placeholder for Stage 9 -->
                     <video id="tally-video" class="hidden" autoplay playsinline muted></video>
                     
+                    <!-- Suggestion media overlay inside tally card -->
+                    <div id="suggestion-preview" style="position:absolute; inset:0; top:40px; bottom:50px; display:none; align-items:center; justify-content:center; z-index:1; overflow:hidden;"></div>
+                    
                     <div class="tally-card-footer">
                         <span id="tally-state-text" class="tally-state-text">STANDBY</span>
                     </div>
@@ -449,7 +450,6 @@
                     </button>
                     
                     <div id="current-shot-container" style="flex:1; display:flex; flex-direction:column; align-items:center;">
-                        <div id="current-shot-media" style="width:100%; max-height:200px; overflow:hidden; border-radius:8px; margin-bottom:8px; display:none; justify-content:center;"></div>
                         <div id="current-shot-title" class="shot-title" style="text-align:center;">
                             Waiting for suggestions...
                         </div>
@@ -457,6 +457,13 @@
                     
                     <button class="nav-pill-btn" onclick="nextSuggestion()">
                         NEXT <i data-lucide="chevron-right" style="width:16px;height:16px;"></i>
+                    </button>
+                </div>
+
+                <!-- Shot Suggestion Acknowledge Button -->
+                <div style="display:flex; justify-content:center; margin-bottom:14px;">
+                    <button id="btn-ack-shot" class="nav-pill-btn" onclick="ackCurrentShot()" style="background:#10B981; color:white; padding:8px 22px; font-size:13px; font-weight:bold; border-radius:20px; border:none; display:none; cursor:pointer;">
+                        <i data-lucide="check" style="width:16px;height:16px;margin-right:6px;"></i> ACKNOWLEDGE SHOT
                     </button>
                 </div>
 
@@ -589,29 +596,40 @@
         let suggestionQueue = [];
         let currentSuggestionIndex = -1;
 
+        function getActiveShotTitle() {
+            if (suggestionQueue.length > 0 && currentSuggestionIndex >= 0) {
+                return suggestionQueue[currentSuggestionIndex].title;
+            }
+            return null;
+        }
+
         function updateTallyUI(isPgm, isPvw) {
             const card = document.getElementById('tally-card');
             const badge = document.getElementById('tally-state-badge');
             const text = document.getElementById('tally-state-text');
+            const shotTitle = getActiveShotTitle();
             
             card.classList.remove('tally-pgm', 'tally-pvw', 'tally-standby');
-            
+            let activeShotTitle = null;
+            if (suggestionQueue.length > 0 && currentSuggestionIndex >= 0) {
+                activeShotTitle = suggestionQueue[currentSuggestionIndex].title;
+            }
+
             if (isPgm) {
                 card.classList.add('tally-pgm');
                 badge.innerText = "LIVE";
                 badge.style.display = "inline-block";
-                text.innerText = "TALLY RED";
+                text.innerText = activeShotTitle || shotTitle || "TALLY RED";
                 if (navigator.vibrate) navigator.vibrate(200);
             } else if (isPvw) {
                 card.classList.add('tally-pvw');
                 badge.innerText = "PREVIEW";
                 badge.style.display = "inline-block";
-                text.innerText = "TALLY GREEN";
-                if (navigator.vibrate) navigator.vibrate(50);
+                text.innerText = activeShotTitle || shotTitle || "PREVIEW";
             } else {
                 card.classList.add('tally-standby');
                 badge.style.display = "none";
-                text.innerText = "STANDBY";
+                text.innerText = activeShotTitle || "STANDBY";
             }
         }
 
@@ -636,26 +654,40 @@
 
         function updateShotDirectionUI() {
             const titleEl = document.getElementById('current-shot-title');
-            const mediaEl = document.getElementById('current-shot-media');
+            const previewEl = document.getElementById('suggestion-preview');
+            const tallyText = document.getElementById('tally-state-text');
+            const ackBtn = document.getElementById('btn-ack-shot');
+
             if (suggestionQueue.length === 0 || currentSuggestionIndex === -1) {
                 titleEl.innerText = "Waiting for suggestions...";
-                mediaEl.style.display = 'none';
+                previewEl.style.display = 'none';
+                previewEl.innerHTML = '';
+                if (ackBtn) ackBtn.style.display = 'none';
             } else {
                 const shot = suggestionQueue[currentSuggestionIndex];
                 titleEl.innerText = shot.title;
+                // Update tally footer with shot title
+                tallyText.innerText = shot.title;
+                if (ackBtn) {
+                    ackBtn.style.display = 'inline-flex';
+                    ackBtn.innerHTML = '<i data-lucide="check" style="width:16px;height:16px;margin-right:6px;"></i> ACKNOWLEDGE SHOT';
+                    ackBtn.style.background = '#10B981';
+                    ackBtn.disabled = false;
+                }
                 if (shot.mediaUrl) {
-                    mediaEl.style.display = 'flex';
+                    previewEl.style.display = 'flex';
                     if (shot.mediaType === 'video') {
-                        mediaEl.innerHTML = `<video src="${shot.mediaUrl}" autoplay loop muted playsinline style="max-width:100%; max-height:200px; object-fit:contain;"></video>`;
+                        previewEl.innerHTML = `<video src="${shot.mediaUrl}" autoplay loop muted playsinline style="width:100%; height:100%; object-fit:cover;"></video>`;
                     } else {
-                        mediaEl.innerHTML = `<img src="${shot.mediaUrl}" alt="Shot thumb" style="max-width:100%; max-height:200px; object-fit:contain;" />`;
+                        previewEl.innerHTML = `<img src="${shot.mediaUrl}" alt="Shot" style="width:100%; height:100%; object-fit:cover;" />`;
                     }
                 } else {
-                    mediaEl.style.display = 'none';
-                    mediaEl.innerHTML = '';
+                    previewEl.style.display = 'none';
+                    previewEl.innerHTML = '';
                 }
             }
             renderCarousel();
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
         }
 
         function renderCarousel() {
@@ -694,11 +726,13 @@
                     }
                 }
 
+                let aiBadge = shot.isAiGenerated ? `<span style="background:var(--accent-blue);color:white;font-size:9px;padding:2px 4px;border-radius:4px;margin-left:4px;font-weight:bold;">AI</span>` : '';
+
                 card.innerHTML = `
                     <div class="suggestion-queue-num">Q${index + 1}</div>
                     <div class="suggestion-thumb">${mediaHtml}</div>
                     <div class="suggestion-details">
-                        <div class="suggestion-card-title">${shot.title}</div>
+                        <div class="suggestion-card-title">${shot.title}${aiBadge}</div>
                         <div class="suggestion-card-category">${shot.category || 'Standard'}</div>
                     </div>
                 `;
@@ -717,7 +751,7 @@
                         <div class="suggestion-queue-num" style="font-size:8px;top:2px;left:2px;">Q${index + 1}</div>
                     </div>
                     <div class="suggestion-list-info">
-                        <div class="suggestion-list-title">${shot.title}</div>
+                        <div class="suggestion-list-title">${shot.title}${aiBadge}</div>
                         <div class="suggestion-list-cat">${shot.category || 'Standard'}</div>
                     </div>
                 `;
@@ -736,9 +770,38 @@
             }
         }
 
-        function sendSuggestionAck() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'ack', camera: myCam }));
+        function sendSuggestionAck(shotId) {
+            if (!shotId && suggestionQueue.length > 0 && currentSuggestionIndex >= 0) {
+                shotId = suggestionQueue[currentSuggestionIndex].id;
+            }
+            if (ws && ws.readyState === WebSocket.OPEN && myCam) {
+                ws.send(JSON.stringify({ 
+                    type: 'ack', 
+                    camera: parseInt(myCam) || myCam,
+                    shotId: shotId || null 
+                }));
+            }
+        }
+
+        function ackCurrentShot() {
+            const btn = document.getElementById('btn-ack-shot');
+            if (suggestionQueue.length > 0 && currentSuggestionIndex >= 0) {
+                const shot = suggestionQueue[currentSuggestionIndex];
+                sendSuggestionAck(shot.id);
+                if (btn) {
+                    btn.innerHTML = '<i data-lucide="check-check" style="width:16px;height:16px;margin-right:6px;"></i> ACKNOWLEDGED';
+                    btn.style.background = '#059669';
+                    btn.disabled = true;
+                    if (window.lucide && lucide.createIcons) lucide.createIcons();
+                    setTimeout(() => {
+                        if (btn) {
+                            btn.innerHTML = '<i data-lucide="check" style="width:16px;height:16px;margin-right:6px;"></i> ACKNOWLEDGE SHOT';
+                            btn.style.background = '#10B981';
+                            btn.disabled = false;
+                            if (window.lucide && lucide.createIcons) lucide.createIcons();
+                        }
+                    }, 3000);
+                }
             }
         }
 
@@ -785,7 +848,7 @@
             showScreen('pairing');
         }
 
-        document.getElementById('pair-btn').onclick = () => {
+        document.getElementById('pair-btn').onclick = async () => {
             const rInput = document.getElementById('room-input').value.replace(/\s/g, '');
             const pInput = document.getElementById('pin-input').value.replace(/\s/g, '');
             
@@ -793,6 +856,23 @@
                 document.getElementById('pair-error').textContent = "Please enter valid Room Number and PIN.";
                 document.getElementById('pair-error').classList.remove('hidden');
                 return;
+            }
+
+            const proto = location.protocol === 'https:' ? 'https:' : 'http:';
+            const host = location.host || 'localhost:8080';
+
+            try {
+                const valRes = await fetch(`${proto}//${host}/api/room/validate?roomId=${encodeURIComponent(rInput)}&pin=${encodeURIComponent(pInput)}`);
+                if (valRes.ok) {
+                    const valData = await valRes.json();
+                    if (!valData.valid) {
+                        document.getElementById('pair-error').textContent = valData.message || "Invalid Room or PIN.";
+                        document.getElementById('pair-error').classList.remove('hidden');
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.warn('Room validation network check error:', err);
             }
             
             roomId = rInput;
@@ -812,39 +892,20 @@
 
         function fetchCamerasAndShowSelect() {
             showScreen('select');
-            const isOnline = location.host.includes('vidikom.app') || location.host.includes('github.io');
-            
-            if (isOnline) {
-                let tempWs = new WebSocket(`wss://${location.host}/ws/room`);
-                tempWs.onopen = () => {
-                    tempWs.send(JSON.stringify({ 
-                        type: 'crew-join', 
-                        roomId: roomId, 
-                        pin: pin, 
-                        cam: 'Setup' 
-                    }));
-                };
-                tempWs.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.type === 'inputs') {
-                            renderCameraButtons(data.inputs);
-                            tempWs.close();
-                        } else if (data.type === 'error') {
-                            alert(data.message || "Invalid room or PIN");
-                            tempWs.close();
-                            leaveRoom();
-                        }
-                    } catch (e) {}
-                };
-            } else {
-                const proto = location.protocol === 'https:' ? 'https:' : 'http:';
-                const host = location.host || 'localhost:8080';
-                fetch(`${proto}//${host}/api/inputs`)
-                    .then(res => res.json())
-                    .then(inputs => renderCameraButtons(inputs))
-                    .catch(e => console.error('Failed to fetch inputs', e));
-            }
+            const proto = location.protocol === 'https:' ? 'https:' : 'http:';
+            const host = location.host || 'localhost:8080';
+            fetch(`${proto}//${host}/api/inputs`)
+                .then(res => res.json())
+                .then(inputs => renderCameraButtons(inputs))
+                .catch(e => {
+                    console.error('Failed to fetch inputs', e);
+                    renderCameraButtons([
+                        { id: 1, label: 'CAM 1' },
+                        { id: 2, label: 'CAM 2' },
+                        { id: 3, label: 'CAM 3' },
+                        { id: 4, label: 'CAM 4' }
+                    ]);
+                });
         }
 
         function renderCameraButtons(inputs) {
@@ -949,182 +1010,235 @@
                 setTimeout(connectWs, 2000); // Auto-reconnect
             };
 
-            ws.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                
-                // Handle relay lifecycle messages
-                if (data.type === 'joined') {
-                    document.querySelector('.signal-status').innerText = "Online";
-                    document.querySelector('.signal-status').style.color = "var(--tally-green)";
-                    document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-green)";
-                    return;
-                }
-                if (data.type === 'error') {
-                    document.querySelector('.signal-status').innerText = data.message || "Error";
-                    document.querySelector('.signal-status').style.color = "var(--tally-red)";
-                    document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-red)";
-                    // Show error and go back to pairing screen
-                    alert(data.message || "Connection error");
-                    leaveRoom();
-                    return;
-                }
-                if (data.type === 'room-ended') {
-                    alert("The director has ended this room session.");
-                    leaveRoom();
-                    return;
-                }
-                
-                if (data.type === 'tally') {
-                    const me = data.mes && data.mes[0];
-                    if (me) {
-                        const isPgm = me.program && me.program.includes(parseInt(myCam));
-                        const isPvw = me.preview && me.preview.includes(parseInt(myCam));
-                        updateTallyUI(isPgm, isPvw);
+            ws.onmessage = async (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    
+                    // Handle relay lifecycle messages
+                    if (data.type === 'joined') {
+                        const sigStatus = document.querySelector('.signal-status');
+                        if (sigStatus) {
+                            sigStatus.innerText = "Online";
+                            sigStatus.style.color = "var(--tally-green)";
+                        }
+                        const sigSvg = document.querySelector('.signal-indicator svg');
+                        if (sigSvg) sigSvg.style.stroke = "var(--tally-green)";
+                        return;
                     }
-                }
-                else if (data.type === 'suggestion' && data.targetCameras.includes(parseInt(myCam))) {
-                    suggestionQueue.push(data.suggestion);
-                    currentSuggestionIndex = suggestionQueue.length - 1; // Auto-advance to newest
-                    updateShotDirectionUI();
-                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-                }
-                else if (data.type === 'reminder' && data.targetCameras.includes(parseInt(myCam))) {
-                    alert("Director reminder: " + data.text);
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+                    if (data.type === 'error') {
+                        const sigStatus = document.querySelector('.signal-status');
+                        if (sigStatus) {
+                            sigStatus.innerText = data.message || "Error";
+                            sigStatus.style.color = "var(--tally-red)";
+                        }
+                        const sigSvg = document.querySelector('.signal-indicator svg');
+                        if (sigSvg) sigSvg.style.stroke = "var(--tally-red)";
+                        alert(data.message || "Connection error");
+                        leaveRoom();
+                        return;
+                    }
+                    if (data.type === 'room-ended') {
+                        alert("The director has ended this room session.");
+                        leaveRoom();
+                        return;
+                    }
+                    
+                    if (data.type === 'tally') {
+                        const me = data.mes && data.mes[0];
+                        if (me) {
+                            const isPgm = me.program && me.program.includes(parseInt(myCam));
+                            const isPvw = me.preview && me.preview.includes(parseInt(myCam));
+                            updateTallyUI(isPgm, isPvw);
+                        }
+                    }
+                    else if (data.type === 'suggestion' && (!data.targetCameras || data.targetCameras.includes(parseInt(myCam)))) {
+                        suggestionQueue.push(data.suggestion);
+                        currentSuggestionIndex = suggestionQueue.length - 1; // Auto-advance to newest
+                        updateShotDirectionUI();
+                        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                    }
+                    else if (data.type === 'reminder' && (!data.targetCameras || data.targetCameras.includes(parseInt(myCam)))) {
+                        alert("Director reminder: " + data.text);
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+                    }
+                    else if (data.type === 'intercom-answer') {
+                        console.log('[Intercom] Received answer from Director');
+                        if (pc) {
+                            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                        }
+                    }
+                    else if (data.type === 'intercom-ice') {
+                        if (pc && data.candidate) {
+                            try {
+                                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                            } catch (err) {
+                                console.warn('[Intercom] ICE candidate error:', err);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error handling WS message:', err);
                 }
             };
         }
 
-        // ---- Intercom (LiveKit) ----
-        let lkRoom = null;
+        // ---- Native WebRTC Intercom ----
+        let pc = null;
+        let localStream = null;
         let isMicMuted = true;
         let intercomConnected = false;
+        let isConnecting = false;
 
         function disconnectIntercom() {
-            if (lkRoom) {
-                lkRoom.disconnect();
-                lkRoom = null;
+            if (pc) {
+                try { pc.close(); } catch (e) {}
+                pc = null;
             }
-            document.querySelectorAll('[id^="lk-audio-"]').forEach(el => el.remove());
-            
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+            }
+            const audioEl = document.getElementById('director-audio');
+            if (audioEl) audioEl.remove();
+
+            if (ws && ws.readyState === WebSocket.OPEN && myCam) {
+                ws.send(JSON.stringify({ type: 'intercom-leave', cam: myCam.toString() }));
+            }
+
             intercomConnected = false;
+            isConnecting = false;
             isMicMuted = true;
-            
-            document.getElementById('comms-status-text').innerText = "Disconnected";
-            document.getElementById('comms-status-text').style.color = "var(--text-secondary)";
+
+            const statusText = document.getElementById('comms-status-text');
+            if (statusText) {
+                statusText.innerText = "Disconnected";
+                statusText.style.color = "var(--text-secondary)";
+            }
             updateMicUI();
         }
 
         async function toggleIntercom() {
-            const inlineBtn = document.getElementById('inline-mic-btn');
-            const fullBtn = document.getElementById('full-mic-btn');
             const statusText = document.getElementById('comms-status-text');
-            
+
             if (!intercomConnected) {
-                // First tap: connect to LiveKit
-                inlineBtn.innerHTML = '<i data-lucide="loader"></i> CONNECTING...';
-                fullBtn.innerHTML = '<i data-lucide="loader"></i> <span>Connecting...</span>';
-                statusText.innerText = "Connecting...";
-                lucide.createIcons();
-                
+                if (isConnecting) return;
+                isConnecting = true;
+                updateMicUI();
+
                 try {
-                    // Determine token endpoint
-                    const isOnline = location.host.includes('vidikom.app');
-                    const tokenBaseUrl = isOnline ? '' : `http://${location.host}`;
-                    const identity = 'crew-cam-' + myCam;
-                    const lkRoomName = roomId || 'intercom';
-                    
-                    // Fetch LiveKit JWT token
-                    console.log('[Intercom] Fetching token for', identity, 'room:', lkRoomName);
-                    const res = await fetch(`${tokenBaseUrl}/api/intercom/token?identity=${encodeURIComponent(identity)}&name=${encodeURIComponent('Cam ' + myCam)}&roomName=${encodeURIComponent(lkRoomName)}`);
-                    if (!res.ok) throw new Error('Token fetch failed: ' + res.status);
-                    const tokenData = await res.json();
-                    const token = tokenData.token;
-                    console.log('[Intercom] Got LiveKit token');
-                    
-                    // Create LiveKit Room
-                    lkRoom = new LivekitClient.Room({
-                        adaptiveStream: false,
-                        dynacast: false
+                    console.log('[Intercom] Requesting microphone access...');
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            sampleRate: 48000,
+                            channelCount: 1
+                        },
+                        video: false
                     });
-                    
-                    // Handle remote audio tracks
-                    lkRoom.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                        console.log('[Intercom] Track subscribed from', participant.identity, 'kind:', track.kind);
-                        if (track.kind === LivekitClient.Track.Kind.Audio) {
-                            const audioEl = track.attach();
-                            audioEl.id = 'lk-audio-' + participant.identity;
-                            document.body.appendChild(audioEl);
-                            audioEl.play().catch(e => {
-                                console.warn('[Intercom] Autoplay blocked:', e.message);
-                            });
-                        }
-                    });
-                    
-                    lkRoom.on(LivekitClient.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-                        console.log('[Intercom] Track unsubscribed from', participant.identity);
-                        track.detach().forEach(el => el.remove());
-                    });
-                    
-                    lkRoom.on(LivekitClient.RoomEvent.Disconnected, () => {
-                        console.log('[Intercom] Disconnected from LiveKit');
-                        intercomConnected = false;
-                        isMicMuted = true;
-                        statusText.innerText = "Disconnected";
-                        statusText.style.color = "var(--tally-red)";
-                        updateMicUI();
-                    });
-                    
-                    lkRoom.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
-                        console.log('[Intercom] Participant joined:', participant.identity);
-                    });
-                    
-                    lkRoom.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
-                        console.log('[Intercom] Participant left:', participant.identity);
-                        const el = document.getElementById('lk-audio-' + participant.identity);
-                        if (el) el.remove();
-                    });
-                    
-                    // Connect to LiveKit server
-                    const wsUrl = 'wss://vidikom.app:7880';
-                    console.log('[Intercom] Connecting to', wsUrl);
-                    await lkRoom.connect(wsUrl, token);
-                    console.log('[Intercom] Connected to LiveKit room');
-                    
-                    // Publish microphone (starts enabled then mute)
-                    await lkRoom.localParticipant.setMicrophoneEnabled(true, {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                        sampleRate: 48000,
-                        channelCount: 1
-                    });
-                    console.log('[Intercom] Microphone published');
-                    
-                    // Mute by default
-                    await lkRoom.localParticipant.setMicrophoneEnabled(false);
-                    
-                    intercomConnected = true;
+
+                    // Start with mic muted
+                    localStream.getAudioTracks().forEach(track => { track.enabled = false; });
                     isMicMuted = true;
-                    
-                    statusText.innerText = "Connected (muted)";
-                    statusText.style.color = "var(--tally-green)";
+
+                    console.log('[Intercom] Microphone access granted');
+
+                    // Create RTCPeerConnection
+                    pc = new RTCPeerConnection({
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun1.l.google.com:19302' }
+                        ]
+                    });
+
+                    // Add local audio tracks to peer connection
+                    localStream.getAudioTracks().forEach(track => {
+                        pc.addTrack(track, localStream);
+                    });
+
+                    // Handle incoming Director audio track
+                    pc.ontrack = (event) => {
+                        console.log('[Intercom] Director audio track received');
+                        let audioEl = document.getElementById('director-audio');
+                        if (!audioEl) {
+                            audioEl = document.createElement('audio');
+                            audioEl.id = 'director-audio';
+                            audioEl.autoplay = true;
+                            audioEl.playsInline = true;
+                            document.body.appendChild(audioEl);
+                        }
+                        audioEl.srcObject = event.streams[0] || new MediaStream([event.track]);
+                        audioEl.play().catch(e => console.warn('[Intercom] Autoplay blocked:', e.message));
+                    };
+
+                    // Send ICE candidates to Director
+                    pc.onicecandidate = (event) => {
+                        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'intercom-ice',
+                                cam: myCam ? myCam.toString() : '',
+                                candidate: event.candidate
+                            }));
+                        }
+                    };
+
+                    pc.onconnectionstatechange = () => {
+                        console.log('[Intercom] Peer connection state:', pc.connectionState);
+                        if (pc.connectionState === 'connected') {
+                            intercomConnected = true;
+                            isConnecting = false;
+                            if (statusText) {
+                                statusText.innerText = isMicMuted ? "Connected (muted)" : "Connected (LIVE)";
+                                statusText.style.color = "var(--tally-green)";
+                            }
+                            updateMicUI();
+                        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                            disconnectIntercom();
+                        }
+                    };
+
+                    // Create offer and send to Director
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'intercom-offer',
+                            cam: myCam ? myCam.toString() : '',
+                            sdp: offer
+                        }));
+                        console.log('[Intercom] Sent offer to Director');
+                    }
+
+                    intercomConnected = true;
+                    isConnecting = false;
+                    if (statusText) {
+                        statusText.innerText = "Connected (muted)";
+                        statusText.style.color = "var(--tally-green)";
+                    }
                     updateMicUI();
-                    
+
                 } catch (e) {
                     console.error('[Intercom] Connection failed:', e);
                     disconnectIntercom();
-                    statusText.innerText = "Failed";
+                    if (statusText) {
+                        statusText.innerText = "Mic error: " + (e.name === 'NotAllowedError' ? "Permission denied" : e.message);
+                        statusText.style.color = "var(--tally-red)";
+                    }
                     updateMicUI();
                 }
             } else {
-                // Toggle mute/unmute
-                if (isMicMuted) {
-                    await lkRoom.localParticipant.setMicrophoneEnabled(true);
-                    isMicMuted = false;
-                } else {
-                    await lkRoom.localParticipant.setMicrophoneEnabled(false);
-                    isMicMuted = true;
+                // Toggle mic mute/unmute
+                isMicMuted = !isMicMuted;
+                if (localStream) {
+                    localStream.getAudioTracks().forEach(track => {
+                        track.enabled = !isMicMuted;
+                    });
+                }
+                if (statusText) {
+                    statusText.innerText = isMicMuted ? "Connected (muted)" : "Connected (LIVE)";
+                    statusText.style.color = isMicMuted ? "var(--tally-green)" : "var(--tally-red)";
                 }
                 updateMicUI();
             }
@@ -1135,26 +1249,50 @@
             const fullBtn = document.getElementById('full-mic-btn');
             const vad = document.getElementById('inline-vad');
             
-            if (!intercomConnected) {
-                inlineBtn.className = 'mic-toggle-btn muted';
-                inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> JOIN INTERCOM';
-                fullBtn.className = 'mic-toggle-btn large muted';
-                fullBtn.innerHTML = '<i data-lucide="mic-off"></i> <span>Disconnected<br><small>Tap to join</small></span>';
-                vad.classList.add('hidden');
+            if (isConnecting) {
+                if (inlineBtn) {
+                    inlineBtn.className = 'mic-toggle-btn muted';
+                    inlineBtn.innerHTML = '<i data-lucide="loader"></i> CONNECTING...';
+                }
+                if (fullBtn) {
+                    fullBtn.className = 'mic-toggle-btn large muted';
+                    fullBtn.innerHTML = '<i data-lucide="loader"></i> <span>Connecting...<br><small>Please wait</small></span>';
+                }
+                if (vad) vad.classList.add('hidden');
+            } else if (!intercomConnected) {
+                if (inlineBtn) {
+                    inlineBtn.className = 'mic-toggle-btn muted';
+                    inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> JOIN INTERCOM';
+                }
+                if (fullBtn) {
+                    fullBtn.className = 'mic-toggle-btn large muted';
+                    fullBtn.innerHTML = '<i data-lucide="mic-off"></i> <span>Disconnected<br><small>Tap to join</small></span>';
+                }
+                if (vad) vad.classList.add('hidden');
             } else if (isMicMuted) {
-                inlineBtn.className = 'mic-toggle-btn muted';
-                inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> TAP TO TALK';
-                fullBtn.className = 'mic-toggle-btn large muted';
-                fullBtn.innerHTML = '<i data-lucide="mic-off"></i> <span>Muted<br><small>Tap to talk</small></span>';
-                vad.classList.add('hidden');
+                if (inlineBtn) {
+                    inlineBtn.className = 'mic-toggle-btn muted';
+                    inlineBtn.innerHTML = '<i data-lucide="mic-off"></i> TAP TO TALK';
+                }
+                if (fullBtn) {
+                    fullBtn.className = 'mic-toggle-btn large muted';
+                    fullBtn.innerHTML = '<i data-lucide="mic-off"></i> <span>Muted<br><small>Tap to talk</small></span>';
+                }
+                if (vad) vad.classList.add('hidden');
             } else {
-                inlineBtn.className = 'mic-toggle-btn live';
-                inlineBtn.innerHTML = '<i data-lucide="mic"></i> LIVE';
-                fullBtn.className = 'mic-toggle-btn large live';
-                fullBtn.innerHTML = '<i data-lucide="mic"></i> <span>Live<br><small>Tap to mute</small></span>';
-                vad.classList.remove('hidden');
+                if (inlineBtn) {
+                    inlineBtn.className = 'mic-toggle-btn live';
+                    inlineBtn.innerHTML = '<i data-lucide="mic"></i> LIVE';
+                }
+                if (fullBtn) {
+                    fullBtn.className = 'mic-toggle-btn large live';
+                    fullBtn.innerHTML = '<i data-lucide="mic"></i> <span>Live<br><small>Tap to mute</small></span>';
+                }
+                if (vad) vad.classList.remove('hidden');
             }
-            lucide.createIcons();
+            if (window.lucide && lucide.createIcons) {
+                lucide.createIcons();
+            }
         }
 
         // ---- Settings & Polish (Stage 7 & 8) ----

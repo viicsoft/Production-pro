@@ -12,15 +12,19 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>icon.ico</ApplicationIcon>
+    <NoWarn>$(NoWarn);CS8625;CS1998;CS8618;CS0618;CS8602;CS0414</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Google.Cloud.Speech.V1" Version="3.9.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2420.47" />
     <PackageReference Include="jose-jwt" Version="4.1.0" />
+    <PackageReference Include="NAudio" Version="2.3.0" />
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260427" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260302" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="Velopack" Version="0.0.1298" />
   </ItemGroup>
 
   <ItemGroup>
@@ -49,5 +53,7 @@
     <Content Include="lib\BMDSwitcherAPI64.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <InternalsVisibleTo Include="AtemDirector.Tests" />
+    <InternalsVisibleTo Include="Desktop.Tests" />
   </ItemGroup>
 </Project>

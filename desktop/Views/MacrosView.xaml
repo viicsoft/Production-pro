@@ -1,0 +1,424 @@
+<UserControl x:Class="Desktop.Views.MacrosView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="750" d:DesignWidth="1150"
+             Background="#141416"
+             Foreground="#E4E4E7"
+             FontFamily="Segoe UI">
+
+    <UserControl.Resources>
+        <!-- Card Container Style -->
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#1E1E22"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+
+        <!-- Nested Inner Box Style -->
+        <Style x:Key="InnerCardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#141416"/>
+            <Setter Property="BorderBrush" Value="#2C2C32"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+
+        <!-- Primary Action Button (Run Macro) -->
+        <Style x:Key="RunButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#00C853"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#00E676"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#009624"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Stop Action Button (Stop Macro) -->
+        <Style x:Key="StopButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#2A2A30"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderBrush" Value="#44444C"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#D32F2F"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#EF5350"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#B71C1C"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Record Action Button (Red Glow) -->
+        <Style x:Key="RecordMacroButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#D32F2F"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#EF5350"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#B71C1C"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Secondary Outline Button Style -->
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#222226"/>
+            <Setter Property="Foreground" Value="#E4E4E7"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#2A2A30"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#FF9800"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- 0: Header -->
+            <RowDefinition Height="Auto"/>  <!-- 1: Live Status Banner -->
+            <RowDefinition Height="*"/>     <!-- 2: Main Body Split View -->
+        </Grid.RowDefinitions>
+
+        <!-- ================================================================= -->
+        <!-- 0. TOP HEADER BAR                                                 -->
+        <!-- ================================================================= -->
+        <Border Grid.Row="0" Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="0,0,0,1" Padding="20,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="32" Height="32" Background="#2A2A30" CornerRadius="6" BorderBrush="#3D3D44" BorderThickness="1" Margin="0,0,12,0" VerticalAlignment="Center">
+                        <!-- Macro Lightning / Automation Icon -->
+                        <Path Data="M 17,2 L 7,16 L 15,16 L 13,28 L 23,14 L 15,14 Z" 
+                              Fill="#FF9800" HorizontalAlignment="Center" VerticalAlignment="Center" Width="16" Height="20" Stretch="Fill"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="MACRO AUTOMATION &amp; SEQUENCE CONTROL" Foreground="#FF9800" FontWeight="Bold" FontSize="13"/>
+                        <TextBlock Text="Record, playback, loop, and manage operator sequences across 100 switcher memory slots (00–99)" Foreground="#A1A1AA" FontSize="11" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Header Status Pill -->
+                <Border x:Name="PillHeaderStatus" Grid.Column="1" Background="#2A2A30" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="14" Padding="12,5" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="DotHeaderStatus" Width="8" Height="8" Fill="#71717A" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="TxtHeaderStatus" Text="MACROS IDLE" Foreground="#A1A1AA" FontSize="11" FontWeight="Bold"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ================================================================= -->
+        <!-- 1. LIVE MACRO STATUS BANNER                                       -->
+        <!-- ================================================================= -->
+        <Border x:Name="PnlStatusBanner" Grid.Row="1" Background="#1A1A1E" BorderBrush="#2C2C32" BorderThickness="0,0,0,1" Padding="20,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtStatusBannerIcon" Text="⚡" FontSize="16" Foreground="#71717A" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="TxtStatusHeadline" Text="No macro currently executing" Foreground="#E4E4E7" FontWeight="Bold" FontSize="12"/>
+                            <Border x:Name="BadgeLoopIndicator" Background="#332814" BorderBrush="#B37400" BorderThickness="1" CornerRadius="3" Padding="6,1" Margin="10,0,0,0" Visibility="Collapsed">
+                                <TextBlock Text="LOOPING" Foreground="#FF9800" FontSize="9" FontWeight="Bold"/>
+                            </Border>
+                            <Border x:Name="BadgeWaitingUser" Background="#331414" BorderBrush="#EF5350" BorderThickness="1" CornerRadius="3" Padding="6,1" Margin="6,0,0,0" Visibility="Collapsed">
+                                <TextBlock Text="WAITING FOR USER" Foreground="#EF5350" FontSize="9" FontWeight="Bold"/>
+                            </Border>
+                        </StackPanel>
+                        <TextBlock x:Name="TxtStatusDetails" Text="Select a configured macro slot from the pool to run or record operator actions." Foreground="#71717A" FontSize="11" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Quick Action Buttons in Banner -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnBannerStopMacro" Content="■ STOP MACRO" Style="{StaticResource StopButtonStyle}" Padding="14,6" Margin="0,0,8,0" IsEnabled="False" Click="BtnStopMacro_Click"/>
+                    <Button x:Name="BtnBannerStopRecord" Content="⏹ STOP RECORDING" Style="{StaticResource StopButtonStyle}" Padding="14,6" IsEnabled="False" Click="BtnStopRecord_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================================================================= -->
+        <!-- 2. MAIN BODY: 100 SLOTS GRID & DETAIL CONTROL PANEL               -->
+        <!-- ================================================================= -->
+        <Grid Grid.Row="2" Margin="20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>      <!-- Left: 100 Macro Slots Grid -->
+                <ColumnDefinition Width="380"/>    <!-- Right: Macro Inspector & Controls -->
+            </Grid.ColumnDefinitions>
+
+            <!-- ================= LEFT: 100 SLOTS POOL ================= -->
+            <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}" Margin="0,0,16,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>  <!-- Search & Filters -->
+                        <RowDefinition Height="*"/>     <!-- Slots Scroll Area -->
+                        <RowDefinition Height="Auto"/>  <!-- Slot Summary Footer -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Filter / Search Bar -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Grid Grid.Column="0">
+                            <TextBox x:Name="TxtMacroSearch" 
+                                     Text="" 
+                                     Padding="8,5" 
+                                     FontSize="12" 
+                                     TextChanged="TxtMacroSearch_TextChanged"/>
+                            <TextBlock x:Name="TxtMacroSearchPlaceholder" 
+                                       Text="🔍 Filter macros..." 
+                                       Foreground="#71717A" 
+                                       FontSize="11" 
+                                       Margin="10,0,0,0" 
+                                       VerticalAlignment="Center" 
+                                       IsHitTestVisible="False"/>
+                        </Grid>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
+                            <RadioButton x:Name="RadioFilterAll" Content="All (100)" IsChecked="True" Foreground="#E4E4E7" FontSize="11" Margin="0,0,10,0" VerticalAlignment="Center" Checked="FilterRadio_Checked"/>
+                            <RadioButton x:Name="RadioFilterConfigured" Content="Configured Only" Foreground="#E4E4E7" FontSize="11" Margin="0,0,10,0" VerticalAlignment="Center" Checked="FilterRadio_Checked"/>
+                            <RadioButton x:Name="RadioFilterEmpty" Content="Empty Slots" Foreground="#E4E4E7" FontSize="11" VerticalAlignment="Center" Checked="FilterRadio_Checked"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Border Grid.Row="0" Height="1" Background="#2C2C32" VerticalAlignment="Bottom"/>
+
+                    <!-- Scrollable 100 Slots ItemsControl -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,8">
+                        <ItemsControl x:Name="LstMacroSlots">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="2"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border x:Name="SlotCard" 
+                                            Background="{Binding CardBackground}" 
+                                            BorderBrush="{Binding CardBorderBrush}" 
+                                            BorderThickness="1" 
+                                            CornerRadius="4" 
+                                            Margin="4" 
+                                            Padding="10,8" 
+                                            Cursor="Hand"
+                                            MouseLeftButtonDown="SlotCard_MouseLeftButtonDown"
+                                            Tag="{Binding Index}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="40"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Slot Number Badge -->
+                                            <Border Grid.Column="0" Background="{Binding BadgeBackground}" CornerRadius="3" Width="32" Height="32" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding SlotDisplayNumber}" Foreground="{Binding BadgeForeground}" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+
+                                            <!-- Slot Name & Description -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0">
+                                                <TextBlock Text="{Binding Name}" Foreground="{Binding NameForeground}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding DescriptionDisplay}" Foreground="#71717A" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                            </StackPanel>
+
+                                            <!-- Slot Status Chip / Quick Run Button -->
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Border Background="{Binding StatusPillBackground}" CornerRadius="10" Padding="8,2" Margin="0,0,6,0">
+                                                    <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusPillForeground}" FontSize="9" FontWeight="Bold"/>
+                                                </Border>
+                                                <Button Content="▶" Width="26" Height="26" Style="{StaticResource RunButtonStyle}" FontSize="10" 
+                                                        Visibility="{Binding CanQuickRunVisibility}" Click="BtnQuickRun_Click" Tag="{Binding Index}" ToolTip="Quick Run Macro"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- Footer Slot Summary -->
+                    <Border Grid.Row="2" Background="#141416" BorderBrush="#2C2C32" BorderThickness="0,1,0,0" Padding="8,6">
+                        <DockPanel LastChildFill="False">
+                            <TextBlock x:Name="TxtSlotSummary" Text="Total: 100 Slots (3 Configured, 97 Empty)" Foreground="#71717A" FontSize="11" VerticalAlignment="Center"/>
+                            <Button Content="↻ Refresh Pool" Style="{StaticResource SecondaryButtonStyle}" DockPanel.Dock="Right" Padding="10,4" Click="BtnRefreshPool_Click"/>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- ================= RIGHT: INSPECTOR & CONTROLS ================= -->
+            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+
+                    <!-- CARD 1: SELECTED SLOT INSPECTOR -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="SELECTED MACRO SLOT" Foreground="#FF9800" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock x:Name="TxtSelectedSlotIndexBadge" Text="SLOT 01 (Index 0)" Foreground="#00E676" FontSize="11" FontWeight="Bold" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Border Height="1" Background="#2C2C32" Margin="0,0,0,14"/>
+
+                            <!-- Slot Name Input -->
+                            <TextBlock Text="MACRO NAME" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <TextBox x:Name="TxtSelectedMacroName" Text="Intro Sequence" Margin="0,0,0,12"/>
+
+                            <!-- Slot Description Input -->
+                            <TextBlock Text="DESCRIPTION / OPERATOR NOTES" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <TextBox x:Name="TxtSelectedMacroDesc" Text="Roll opening title and unmute master" Height="60" TextWrapping="Wrap" AcceptsReturn="True" Margin="0,0,0,12"/>
+
+                            <!-- Slot Validity / Info Box -->
+                            <Border Style="{StaticResource InnerCardBorderStyle}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="SLOT MEMORY STATE" Foreground="#71717A" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtSelectedSlotState" Text="VALID MACRO DATA RECORDED" Foreground="#00E676" FontSize="11" FontWeight="Bold" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <Button x:Name="BtnDeleteMacro" Grid.Column="1" Content="Clear Slot" Style="{StaticResource StopButtonStyle}" Padding="10,4" FontSize="10" Click="BtnDeleteMacro_Click"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- CARD 2: PLAYBACK CONTROLS -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="PLAYBACK EXECUTION" Foreground="#FF9800" FontSize="11" FontWeight="Bold" Margin="0,0,0,12"/>
+                            <Border Height="1" Background="#2C2C32" Margin="0,0,0,14"/>
+
+                            <!-- Loop Playback Toggle -->
+                            <CheckBox x:Name="ChkLoopPlayback" Content="Loop macro execution continuously" Margin="0,0,0,14"/>
+
+                            <!-- Action Buttons -->
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button x:Name="BtnRunMacro" Grid.Column="0" Content="▶ RUN MACRO" Style="{StaticResource RunButtonStyle}" Padding="0,10" Margin="0,0,6,0" Click="BtnRunMacro_Click"/>
+                                <Button x:Name="BtnStopMacro" Grid.Column="1" Content="■ STOP" Style="{StaticResource StopButtonStyle}" Padding="0,10" Margin="6,0,0,0" IsEnabled="False" Click="BtnStopMacro_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- CARD 3: RECORDING CONTROLS -->
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="CAPTURE / RECORD ACTIONS" Foreground="#FF9800" FontSize="11" FontWeight="Bold" Margin="0,0,0,12"/>
+                            <Border Height="1" Background="#2C2C32" Margin="0,0,0,14"/>
+
+                            <TextBlock Text="Record cuts, transitions, audio changes, and keyer actions into the selected slot." Foreground="#A1A1AA" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button x:Name="BtnStartRecord" Grid.Column="0" Content="⏺ START RECORD" Style="{StaticResource RecordMacroButtonStyle}" Padding="0,10" Margin="0,0,6,0" Click="BtnStartRecord_Click"/>
+                                <Button x:Name="BtnStopRecord" Grid.Column="1" Content="⏹ STOP RECORD" Style="{StaticResource StopButtonStyle}" Padding="0,10" Margin="6,0,0,0" IsEnabled="False" Click="BtnStopRecord_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

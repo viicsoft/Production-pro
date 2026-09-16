@@ -32,16 +32,19 @@ namespace Desktop
         /// <summary>Fires when a message is received from the relay (e.g., crew identity messages).</summary>
         public event Action<string>? OnRemoteMessage;
 
+        private Dictionary<int, Core.CameraRoleMetadata>? _cameraRoles;
+
         /// <summary>
         /// Connect to the relay server and register this desktop as the room's director.
         /// </summary>
-        public async Task ConnectAsync(string relayUrl, string roomId, string pin, string productionName, IEnumerable<object> activeInputs)
+        public async Task ConnectAsync(string relayUrl, string roomId, string pin, string productionName, IEnumerable<object> activeInputs, Dictionary<int, Core.CameraRoleMetadata>? cameraRoles)
         {
             RelayUrl = relayUrl;
             _roomId = roomId;
             _pin = pin;
             _productionName = productionName;
             _activeInputs = activeInputs;
+            _cameraRoles = cameraRoles;
             _shouldReconnect = true;
             _reconnectDelayMs = 1000;
 
@@ -67,7 +70,8 @@ namespace Desktop
                     roomId = _roomId,
                     pin = _pin,
                     productionName = _productionName,
-                    inputs = _activeInputs
+                    inputs = _activeInputs,
+                    cameraRoles = _cameraRoles
                 });
                 var joinBytes = Encoding.UTF8.GetBytes(joinMsg);
                 await _ws.SendAsync(new ArraySegment<byte>(joinBytes), WebSocketMessageType.Text, true, ct);

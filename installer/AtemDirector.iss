@@ -5,7 +5,7 @@
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "VIICSOFT"
 #define MyAppURL "https://viicsoft.com"
-#define MyAppExeName "AtemDirector.bat"
+#define MyAppExeName "desktop\desktop.exe"
 
 [Setup]
 ; Basic Information
@@ -25,17 +25,19 @@ DisableProgramGroupPage=yes
 ; Output
 OutputDir=..\installer-output
 OutputBaseFilename=AtemDirector-Setup-{#MyAppVersion}
-Compression=lzma2/max
+Compression=lzma2/fast
 SolidCompression=yes
 
 ; Privileges
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 
+; Process management during install
+CloseApplications=no
+RestartApplications=no
+
 ; UI
 WizardStyle=modern
-SetupIconFile=icon.ico
-UninstallDisplayIcon={app}\desktop\desktop.exe
 
 ; Architecture
 ArchitecturesAllowed=x64
@@ -45,12 +47,9 @@ ArchitecturesInstallIn64BitMode=x64
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; Launcher
-Source: "AtemDirector.bat"; DestDir: "{app}"; Flags: ignoreversion
-
 ; Registration scripts
 Source: "RegisterATEM.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "UnregisterATEM.bat"; DestDir: "{app}"; Flags: ignoreversion
@@ -86,7 +85,7 @@ Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""A
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AtemDirector Server"" dir=in action=allow program=""{app}\server\server.exe"" enable=yes"; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AtemDirector (HTTP)"" dir=in action=allow protocol=TCP localport=80 profile=any"; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AtemDirector (HTTPS)"" dir=in action=allow protocol=TCP localport=8443 profile=any"; Flags: runhidden
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent shellexec
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Unregister ATEM SDK COM DLL
@@ -99,15 +98,27 @@ Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=
 
 [Code]
 function InitializeSetup(): Boolean;
+var
+  ErrorCode: Integer;
 begin
+  Exec('taskkill.exe', '/F /IM desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM AtemDirector.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM AtemDirector.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM caddy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Result := True;
-  
-  // Check if .NET is needed (it's not, we're self-contained!)
-  // This is just a placeholder for future checks
-  
-  MsgBox('AtemDirector will be installed with all required dependencies.' + #13#10 + 
-         'No additional software installation is needed.', 
-         mbInformation, MB_OK);
+end;
+
+function InitializeUninstall(): Boolean;
+var
+  ErrorCode: Integer;
+begin
+  Exec('taskkill.exe', '/F /IM desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM AtemDirector.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM AtemDirector.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM caddy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Result := True;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

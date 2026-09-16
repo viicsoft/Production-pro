@@ -64,11 +64,6 @@ namespace Desktop
         private CancellationTokenSource? _cts;
         private const int TallyServerPort = 5160;
 
-        private IBMDSwitcher? _atem;
-        private IBMDSwitcherMixEffectBlock? _meBlock;
-        private readonly Dictionary<int, long> _inputIds = new();
-        private MixEffectBlockMonitor? _monitor;
-        private System.Threading.Timer? _atemPollTimer;
         private long _lastProgramInput = -1;
         private long _lastPreviewInput = -1;
 
@@ -90,7 +85,7 @@ namespace Desktop
 
         private readonly List<Border> _tickMarks = new();
 
-        private static readonly string LogFile = @"C:\worker\AtemDirector\desktop\debug.log";
+        private static readonly string LogFile = "debug.log";
         public static void Log(string msg)
         {
             try { File.AppendAllText(LogFile, $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch { }
@@ -98,12 +93,124 @@ namespace Desktop
 
         public static MainWindow Instance { get; private set; }
 
-        public MainWindow()
+        public ShotSuggestionsView ShotSuggestionsViewInstance { get; private set; }
+
+        public InputConfig GetConfig() => _config;
+
+        private Window _intercomWindow;
+        private Microsoft.Web.WebView2.Wpf.WebView2 IntercomWebView;
+        private SpeechCommandService? _speechService;
+        private DispatcherTimer? _notificationTimer;
+
+        public void ShowNotification(string message, bool isError = false, int durationSeconds = 4)
+        {
+            void Apply()
+            {
+                if (NotificationStatusText == null) return;
+                NotificationStatusText.Text = message;
+                NotificationStatusText.Foreground = isError 
+                    ? (SolidColorBrush)new BrushConverter().ConvertFrom("#EF5350")! 
+                    : (SolidColorBrush)new BrushConverter().ConvertFrom("#00E676")!;
+                    
+                _notificationTimer?.Stop();
+                _notificationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(durationSeconds) };
+                _notificationTimer.Tick += (s, e) =>
+                {
+                    _notificationTimer.Stop();
+                    if (NotificationStatusText != null)
+                    {
+                        NotificationStatusText.Text = "Ready";
+                        NotificationStatusText.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#888888")!;
+                    }
+                };
+                _notificationTimer.Start();
+            }
+
+            if (Dispatcher.CheckAccess())
+            {
+                Apply();
+            }
+            else
+            {
+                Dispatcher.InvokeAsync(Apply);
+            }
+        }
+
+        private void UpdateConnectionUiState(bool isConnected)
+        {
+            if (StatusText != null)
+            {
+                if (isConnected)
+                {
+                    if (_switcher is AtemHardwareAdapter adapter && adapter.IsHardware)
+                    {
+                        StatusText.Text = $"🟢 Physical Switcher ({_switcher.DeviceName})";
+                        StatusText.Foreground = Brushes.LimeGreen;
+                    }
+                    else
+                    {
+                        StatusText.Text = "🟢 Virtual Switcher (Standalone Ready)";
+                        StatusText.Foreground = Brushes.LimeGreen;
+                    }
+                }
+                else
+                {
+                    StatusText.Text = "⚪ Standby";
+                    StatusText.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#888888")!;
+                }
+            }
+            if (MenuConnect != null) MenuConnect.IsEnabled = !isConnected;
+            if (MenuDisconnect != null) MenuDisconnect.IsEnabled = isConnected;
+        }
+
+        public MainWindow() : this(null) { }
+
+        public MainWindow(IAtemSwitch? switcher = null)
         {
             Instance = this;
             InitializeComponent();
-            _switcher = _simAtem;
+            _switcher = switcher ?? new AtemHardwareAdapter(_simAtem, autoFallbackToSimulator: true);
+            _switcher.ConnectionChanged += isConnected => Dispatcher.InvokeAsync(async () =>
+            {
+                UpdateConnectionUiState(isConnected);
+                if (isConnected)
+                {
+                    await SyncFromSwitcherAsync();
+                }
+            });
+            _switcher.InputsUpdated += () => Dispatcher.InvokeAsync(async () => await SyncFromSwitcherAsync());
+            _switcher.ProgramPreviewChanged += (pgm, pvw) => Dispatcher.InvokeAsync(() => UpdateButtonStyles((int)pgm, (int)pvw));
+            _switcher.StreamStatusChanged += status => Dispatcher.InvokeAsync(() =>
+            {
+                if (MenuStartStreaming != null) MenuStartStreaming.IsEnabled = !status.IsStreaming;
+                if (MenuStopStreaming != null) MenuStopStreaming.IsEnabled = status.IsStreaming;
+            });
+            _switcher.RecordStatusChanged += status => Dispatcher.InvokeAsync(() =>
+            {
+                if (MenuStartRecording != null) MenuStartRecording.IsEnabled = !status.IsRecording;
+                if (MenuStopRecording != null) MenuStopRecording.IsEnabled = status.IsRecording;
+            });
+            _switcher.MacroRunStatusChanged += status => Dispatcher.InvokeAsync(() =>
+            {
+                if (MenuStopMacro != null) MenuStopMacro.IsEnabled = status.IsRunning;
+                if (MenuRunMacro != null) MenuRunMacro.IsEnabled = !status.IsRunning;
+            });
+            _switcher.MacroRecordStatusChanged += status => Dispatcher.InvokeAsync(() =>
+            {
+                if (MenuStopRecordMacro != null) MenuStopRecordMacro.IsEnabled = status.IsRecording;
+                if (MenuRecordMacro != null) MenuRecordMacro.IsEnabled = !status.IsRecording;
+            });
             _config = InputConfig.Load();
+
+            _speechService = new SpeechCommandService(_switcher, _config);
+            _speechService.OnTranscriptRecognized += (t) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"🎤 Heard: {t}");
+            _speechService.OnCommandExecuted += (c) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"⚡ {c}");
+            _speechService.OnError += (err) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"⚠️ Voice Error: {err}");
+
+            ShotSuggestionsViewInstance = new ShotSuggestionsView(_switcher);
+            PanelShotSuggestions.Content = ShotSuggestionsViewInstance;
+
+            UpdateBriefingStatus();
 
             FrameCaptureService.Instance.InputDeviceMap = new Dictionary<int, int>(_config.CaptureDeviceIndices);
             FrameCaptureService.Instance.Start();
@@ -115,7 +222,14 @@ namespace Desktop
 
             _simAtem.TransitionPositionChanged += pos =>
             {
-                Dispatcher.InvokeAsync(() => UpdateFaderVisual(pos));
+                if (!_faderDragging)
+                {
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        if (!_faderDragging)
+                            UpdateFaderVisual(pos);
+                    });
+                }
             };
             _simAtem.AutoTransitionCompleted += () =>
             {
@@ -128,6 +242,44 @@ namespace Desktop
                 BuildTBarTicks();
                 UpdateFaderVisual(_faderPosition);
                 UpdateTransitionStyleButtons();
+                UpdateConnectionUiState(_switcher.IsConnected);
+
+                // Auto-detect and connect to physical switcher over USB or Network on startup
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (!_switcher.IsConnected)
+                        {
+                            await _switcher.ConnectAsync("AUTO");
+                            if (_switcher.IsHardware)
+                            {
+                                await Dispatcher.InvokeAsync(async () =>
+                                {
+                                    ShowNotification($"Connected to physical {_switcher.DeviceName}", isError: false);
+                                    await SyncFromSwitcherAsync();
+                                });
+                            }
+                        }
+                    }
+                    catch { }
+                });
+
+                // Populate Speech Control UI
+                var micList = SpeechCommandService.GetMicrophoneDevices();
+                ComboMicrophone.ItemsSource = micList;
+                if (micList.Count > 0)
+                {
+                    int idx = Math.Min(_config.SelectedMicrophoneIndex, micList.Count - 1);
+                    ComboMicrophone.SelectedIndex = Math.Max(0, idx);
+                }
+                TxtWakeWord.Text = _config.WakeWord ?? "";
+                BtnVoiceControl.IsChecked = _config.VoiceControlEnabled;
+
+                if (_config.VoiceControlEnabled)
+                {
+                    _ = _speechService.StartListeningAsync(ComboMicrophone.SelectedIndex >= 0 ? ComboMicrophone.SelectedIndex : 0, TxtWakeWord.Text);
+                }
                 
                 // Start embedded web server for PWA
                 PwaServer.Instance.OnCrewCountChanged += (count) =>
@@ -144,68 +296,63 @@ namespace Desktop
                     {
                         if (TxtCrewCount != null) TxtCrewCount.Text = $"Crew: {connectedCams.Count}";
                         // Update camera dots in ShotSuggestionsView
-                        if (PanelShotSuggestions?.Content is ShotSuggestionsView ssv)
-                        {
-                            ssv.UpdateCameraDots(connectedCams);
-                        }
+                        ShotSuggestionsViewInstance.UpdateCameraDots(connectedCams);
                     });
                 };
                 
                 PwaServer.Instance.GetActiveInputs = () => _config.ActiveInputs.OrderBy(id => id).Select(id => new { id = id, label = _config.GetLabel(id) });
                 _ = PwaServer.Instance.StartAsync(8080);
+                
+                InitializeWebViewAsync();
             };
 
             _cts = new CancellationTokenSource();
             _ = PumpTalliesAndBroadcast(_cts.Token);
 
-            RoomManager.LoadState();
+            // Ensure an active production room is ready on startup (defaults to hybrid Online Cloud Relay)
+            RoomManager.EnsureActiveRoom();
 
             var roomSetup = new RoomSetupView();
             roomSetup.RoomCreated += async (s, e) => {
                 UpdateHeaderState();
-                
-                // If Online Mode, connect to cloud relay
-                if (RoomManager.ActiveRoom?.NetworkMode == NetworkMode.Online &&
-                    !string.IsNullOrEmpty(RoomManager.ActiveRoom.RelayUrl))
-                {
-                    var relay = new RelayClient();
-                    relay.OnConnectionChanged += (connected) =>
-                    {
-                        Dispatcher.InvokeAsync(() => UpdateHeaderState());
-                    };
-                    relay.OnRemoteMessage += (msg) =>
-                    {
-                        PwaServer.Instance.HandleRelayMessage(msg);
-                        if (msg.Contains("crew-connected") || msg.Contains("get_inputs"))
-                        {
-                            _ = PwaServer.Instance.BroadcastInputsAsync();
-                        }
-                    };
-                    PwaServer.Instance.Relay = relay;
-                    
-                    try
-                    {
-                        await relay.ConnectAsync(
-                            RoomManager.ActiveRoom.RelayUrl,
-                            RoomManager.ActiveRoom.RoomId,
-                            RoomManager.ActiveRoom.Pin,
-                            RoomManager.ActiveRoom.ProductionName,
-                            PwaServer.Instance.GetActiveInputs?.Invoke() ?? new object[0]);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Windows.MessageBox.Show($"Failed to connect to relay: {ex.Message}", "Online Mode Error");
-                    }
-                }
-                
+                await ConnectCloudRelayAsync();
+                NavigateIntercomToActiveRoom();
                 TabSwitcher.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             };
             PanelRoomSetup!.Content = roomSetup;
 
-            // If recovering from crash with an active online room, reconnect relay
-            if (RoomManager.ActiveRoom?.NetworkMode == NetworkMode.Online &&
-                !string.IsNullOrEmpty(RoomManager.ActiveRoom.RelayUrl))
+            // Auto-connect to cloud relay on startup
+            _ = ConnectCloudRelayAsync();
+
+            UpdateHeaderState();
+
+            Closed += (s, e) =>
             {
+                _cts?.Cancel();
+                FrameCaptureService.Instance.Stop();
+                try { IntercomWebView?.Dispose(); } catch { }
+            };
+        }
+
+        private async Task ConnectCloudRelayAsync()
+        {
+            var activeRoom = RoomManager.ActiveRoom;
+            if (activeRoom == null) return;
+
+            // Ensure Online mode with default Vidikom cloud relay
+            if (activeRoom.NetworkMode != NetworkMode.Online || string.IsNullOrEmpty(activeRoom.RelayUrl))
+            {
+                activeRoom.NetworkMode = NetworkMode.Online;
+                activeRoom.RelayUrl = "wss://vidikom.app/ws/room";
+            }
+
+            try
+            {
+                if (PwaServer.Instance.Relay != null)
+                {
+                    try { await PwaServer.Instance.Relay.DisconnectAsync(); } catch { }
+                }
+
                 var relay = new RelayClient();
                 relay.OnConnectionChanged += (connected) =>
                 {
@@ -220,49 +367,143 @@ namespace Desktop
                     }
                 };
                 PwaServer.Instance.Relay = relay;
-                _ = relay.ConnectAsync(
-                    RoomManager.ActiveRoom.RelayUrl,
-                    RoomManager.ActiveRoom.RoomId,
-                    RoomManager.ActiveRoom.Pin,
-                    "AtemDirector",
-                    PwaServer.Instance.GetActiveInputs?.Invoke() ?? new object[0]);
+
+                await relay.ConnectAsync(
+                    activeRoom.RelayUrl,
+                    activeRoom.RoomId,
+                    activeRoom.Pin,
+                    activeRoom.ProductionName ?? "Production Pro",
+                    PwaServer.Instance.GetActiveInputs?.Invoke() ?? Array.Empty<object>(),
+                    _config?.CameraRoles
+                );
             }
-
-            UpdateHeaderState();
-
-            InitializeWebViewAsync();
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[CloudRelay] Connect error: {ex.Message}");
+            }
+            finally
+            {
+                Dispatcher.InvokeAsync(() => UpdateHeaderState());
+            }
         }
 
+        private void LogIntercom(string message, Exception ex = null)
+        {
+            try
+            {
+                string logDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs");
+                if (!System.IO.Directory.Exists(logDir)) System.IO.Directory.CreateDirectory(logDir);
+                string logFile = System.IO.Path.Combine(logDir, $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                string logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
+                if (ex != null) logEntry += $"\nException: {ex.ToString()}";
+                System.IO.File.AppendAllText(logFile, logEntry + Environment.NewLine);
+            }
+            catch { }
+        }
 
         private async void InitializeWebViewAsync()
         {
             try
             {
-                var env = await CoreWebView2Environment.CreateAsync(null, System.IO.Path.Combine(AppContext.BaseDirectory, "webview2_data"));
-                await IntercomWebView.EnsureCoreWebView2Async(env);
+                LogIntercom("Intercom init: starting");
+                await Task.Delay(500); // Allow WPF to fully render the HwndHost
+                await Task.Delay(500); // Allow WPF to fully render the HwndHost
+                
+                IntercomWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
+                
+                string userDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector", "webview2_data");
+                LogIntercom($"Intercom init: user data folder = {userDataFolder}");
+
+                try 
+                {
+                    LogIntercom("Intercom init: checking WebView2 runtime version");
+                    var version = CoreWebView2Environment.GetAvailableBrowserVersionString();
+                    LogIntercom($"Intercom init: WebView2 runtime version = {version}");
+                }
+                catch (Exception ex)
+                {
+                    LogIntercom("Intercom init: WebView2 runtime check failed", ex);
+                    throw;
+                }
+
+
+                LogIntercom("Intercom init: creating environment");
+                var envOptions = new CoreWebView2EnvironmentOptions
+                {
+                    AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream"
+                };
+                var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder, envOptions);
+                LogIntercom("Intercom init: environment created");
+                
+                LogIntercom("Intercom init: starting EnsureCoreWebView2Async");
+                var initTask = IntercomWebView.EnsureCoreWebView2Async(env);
+
+                LogIntercom("Intercom init: showing window to allocate HWND");
+                _intercomWindow = new Window
+                {
+                    Owner = this,
+                    Width = 100,
+                    Height = 100,
+                    ShowInTaskbar = false,
+                    WindowStyle = WindowStyle.None,
+                    AllowsTransparency = true,
+                    Opacity = 0,
+                    Title = "BackgroundIntercom",
+                    IsHitTestVisible = false,
+                    ShowActivated = false,
+                    Topmost = false,
+                    Left = -10000,
+                    Top = -10000
+                };
+                _intercomWindow.Content = IntercomWebView;
+                _intercomWindow.Show();
+
+                LogIntercom("Intercom init: awaiting EnsureCoreWebView2Async");
+                await initTask;
+                LogIntercom("Intercom init: EnsureCoreWebView2Async completed");
+
+                IntercomWebView.CoreWebView2.ProcessFailed += (s, e) =>
+                    LogIntercom($"WebView2 process failed: {e.ProcessFailedKind}");
 
                 IntercomWebView.CoreWebView2.PermissionRequested += (s, e) =>
                 {
+                    LogIntercom($"WebView2 permission requested: {e.PermissionKind} for {e.Uri}");
                     if (e.PermissionKind == CoreWebView2PermissionKind.Microphone)
                     {
                         e.State = CoreWebView2PermissionState.Allow;
                     }
                 };
 
+                IntercomWebView.CoreWebView2.NavigationCompleted += async (s, e) =>
+                {
+                    LogIntercom($"WebView2 navigation completed: success={e.IsSuccess}, errorStatus={e.WebErrorStatus}");
+                    if (e.IsSuccess)
+                    {
+                        try
+                        {
+                            await Task.Delay(500);
+                            await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
+                        }
+                        catch { }
+                    }
+                };
+
                 IntercomWebView.CoreWebView2.WebMessageReceived += (s, e) =>
                 {
                     var msg = e.TryGetWebMessageAsString();
+                    LogIntercom($"WebView2 message received: {msg}");
                     if (msg.StartsWith("log:"))
                     {
                         var logMsg = $"[{DateTime.Now:HH:mm:ss.fff}] [DirectorWebView] {msg.Substring(4)}";
                         Console.WriteLine(logMsg);
-                        System.IO.File.AppendAllText("intercom_debug.log", logMsg + Environment.NewLine);
+                        try { System.IO.File.AppendAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs", "intercom_debug.log"), logMsg + Environment.NewLine); } catch {}
                         return;
                     }
                     if (msg == "intercom_connected")
                     {
                         Dispatcher.Invoke(() =>
                         {
+                            _isIntercomActive = true;
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x43, 0xA0, 0x47)); // Green
                             BtnToggleIntercom.Foreground = Brushes.White;
                             BtnToggleIntercom.Content = "🎙️ INTERCOM: ON";
@@ -272,22 +513,136 @@ namespace Desktop
                     {
                         Dispatcher.Invoke(() =>
                         {
+                            _isIntercomActive = false;
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                             BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
                             BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
                         });
                     }
                 };
-
-                // The server binds to port 8080 by default in StartAsync()
-                var activeRoom = RoomManager.ActiveRoom;
-                var intercomRoomId = activeRoom?.RoomId ?? "intercom";
-                var intercomPin = activeRoom?.Pin ?? "0000";
-                IntercomWebView.Source = new Uri($"http://127.0.0.1:8080/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}");
+                
+                NavigateIntercomToActiveRoom();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"WebView2 Init failed: {ex.Message}");
+                LogIntercom("Intercom init: failed with exception", ex);
+                System.Windows.MessageBox.Show($"WebView2 Init failed:\n{ex.Message}\n\nPath: {System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector", "webview2_data")}", "WebView2 Error");
+            }
+        }
+
+        private void NavigateIntercomToActiveRoom()
+        {
+            if (IntercomWebView?.CoreWebView2 == null) return;
+            try
+            {
+                var activeRoom = RoomManager.ActiveRoom;
+                var intercomRoomId = activeRoom?.RoomId ?? "";
+                var intercomPin = activeRoom?.Pin ?? "";
+                string voiceServer = "vidikom.app";
+                if (activeRoom?.NetworkMode == NetworkMode.Online && !string.IsNullOrEmpty(activeRoom.RelayUrl))
+                {
+                    try
+                    {
+                        var uri = new Uri(activeRoom.RelayUrl.Replace("ws://", "http://").Replace("wss://", "https://"));
+                        voiceServer = uri.Host;
+                    }
+                    catch
+                    {
+                        voiceServer = "vidikom.app";
+                    }
+                }
+                else
+                {
+                    voiceServer = "127.0.0.1:8080";
+                }
+                var url = $"http://127.0.0.1:8080/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&_v={DateTime.UtcNow.Ticks}";
+                LogIntercom($"Intercom navigating to: {url}");
+                IntercomWebView.Source = new Uri(url);
+                LogIntercom("Intercom navigation initiated");
+            }
+            catch (Exception ex)
+            {
+                LogIntercom("Intercom navigation failed", ex);
+            }
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _cts?.Cancel();
+            FrameCaptureService.Instance.Stop();
+            _speechService?.StopListeningAsync();
+            try
+            {
+                (_switcher as IDisposable)?.Dispose();
+            }
+            catch { }
+            try
+            {
+                IntercomWebView?.Dispose();
+            }
+            catch { }
+            if (_intercomWindow != null)
+            {
+                try { _intercomWindow.Close(); } catch { }
+                _intercomWindow = null;
+            }
+            base.OnClosed(e);
+
+            Task.Run(async () =>
+            {
+                try { desktop.BackgroundServiceManager.StopServices(); } catch { }
+                try { await PwaServer.Instance.DisposeAsync(); } catch { }
+                Environment.Exit(0);
+            });
+            try { Application.Current?.Shutdown(); } catch { }
+        }
+
+        // ============ VOICE CONTROL EVENT HANDLERS ============
+
+        private async void VoiceControlToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (_speechService == null) return;
+            bool enable = BtnVoiceControl.IsChecked == true;
+            _config.VoiceControlEnabled = enable;
+            _config.Save();
+
+            if (enable)
+            {
+                int micIndex = ComboMicrophone.SelectedIndex >= 0 ? ComboMicrophone.SelectedIndex : 0;
+                SpeechStatusText.Text = "🎤 Voice Control starting...";
+                await _speechService.StartListeningAsync(micIndex, TxtWakeWord.Text);
+            }
+            else
+            {
+                await _speechService.StopListeningAsync();
+                SpeechStatusText.Text = "🎤 Voice Control disabled";
+            }
+        }
+
+        private async void ComboMicrophone_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ComboMicrophone.SelectedIndex >= 0 && _config != null)
+            {
+                _config.SelectedMicrophoneIndex = ComboMicrophone.SelectedIndex;
+                _config.Save();
+                if (_speechService != null && _speechService.IsListening)
+                {
+                    await _speechService.StartListeningAsync(ComboMicrophone.SelectedIndex, TxtWakeWord.Text);
+                }
+            }
+        }
+
+        private async void TxtWakeWord_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (_config != null)
+            {
+                _config.WakeWord = TxtWakeWord.Text;
+                _config.Save();
+                if (_speechService != null && _speechService.IsListening)
+                {
+                    int micIndex = ComboMicrophone.SelectedIndex >= 0 ? ComboMicrophone.SelectedIndex : 0;
+                    await _speechService.StartListeningAsync(micIndex, TxtWakeWord.Text);
+                }
             }
         }
 
@@ -295,7 +650,8 @@ namespace Desktop
 
         private void RebuildButtonGrid()
         {
-            ButtonGrid.Items.Clear();
+            ButtonGrid.Children.Clear();
+            ButtonGrid.RowDefinitions.Clear();
             _camButtons.Clear();
             _buttonControls.Clear();
             StopPulseAnimation();
@@ -306,25 +662,45 @@ namespace Desktop
                 _camButtons.Add(cam);
                 var btn = CreateCamButton(cam);
                 _buttonControls[id] = btn;
-                ButtonGrid.Items.Add(btn);
             }
+            RecalculateGridColumns();
         }
 
         private Button CreateCamButton(CamButton cam)
         {
+            var tb = new System.Windows.Controls.TextBlock 
+            { 
+                Text = cam.Label, 
+                TextWrapping = System.Windows.TextWrapping.Wrap, 
+                TextAlignment = System.Windows.TextAlignment.Center 
+            };
             var btn = new Button
             {
-                Content = cam.Label,
+                Content = tb,
                 Style = (Style)FindResource("NeutralCamButton"),
                 Tag = cam,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
             };
-            btn.Click += CamButton_Click;
+            btn.PreviewMouseDown += CamButton_PreviewMouseDown;
+            btn.PreviewTouchDown += CamButton_PreviewTouchDown;
+            btn.PreviewMouseRightButtonUp += (s, e) =>
+            {
+                if (btn.Tag is CamButton c)
+                {
+                    _lastTapInput = -1;
+                    _ = PerformCutAsync(c.InputId);
+                    e.Handled = true;
+                }
+            };
             cam.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(CamButton.State)) ApplyButtonStyle(btn, cam);
-                if (e.PropertyName == nameof(CamButton.Label)) btn.Content = cam.Label;
+                if (e.PropertyName == nameof(CamButton.Label)) 
+                {
+                    if (btn.Content is System.Windows.Controls.TextBlock textBlock)
+                        textBlock.Text = cam.Label;
+                }
             };
             return btn;
         }
@@ -337,16 +713,51 @@ namespace Desktop
             if (itemCount == 0) return;
             double aw = ButtonGrid.ActualWidth - 20, ah = ButtonGrid.ActualHeight - 20;
             if (aw <= 0 || ah <= 0) return;
-            int bestCols = 1; double bestScore = double.MaxValue;
-            for (int cols = 1; cols <= Math.Min(itemCount, 10); cols++)
+
+            int bestRows = 1; double bestScore = double.MaxValue;
+            for (int r = 1; r <= Math.Min(itemCount, 10); r++)
             {
-                int rows = (int)Math.Ceiling((double)itemCount / cols);
-                double cw = aw / cols, ch = ah / rows;
+                double avgCols = (double)itemCount / r;
+                double cw = aw / avgCols, ch = ah / r;
                 double aspect = cw / ch;
-                double score = Math.Abs(aspect - 1.4) + (double)((cols * rows) - itemCount) / cols * 0.3;
-                if (score < bestScore) { bestScore = score; bestCols = cols; }
+                double score = Math.Abs(aspect - 1.4);
+                if (score < bestScore) { bestScore = score; bestRows = r; }
             }
-            GridColumns = bestCols;
+
+            ButtonGrid.Children.Clear();
+            ButtonGrid.RowDefinitions.Clear();
+
+            int baseCols = itemCount / bestRows;
+            int remainder = itemCount % bestRows;
+
+            int itemIndex = 0;
+            for (int r = 0; r < bestRows; r++)
+            {
+                ButtonGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                
+                int colsInRow = baseCols + (r < remainder ? 1 : 0);
+                
+                var rowGrid = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = colsInRow };
+                Grid.SetRow(rowGrid, r);
+                ButtonGrid.Children.Add(rowGrid);
+
+                for (int c = 0; c < colsInRow; c++)
+                {
+                    if (itemIndex < _camButtons.Count)
+                    {
+                        var camId = _camButtons[itemIndex].InputId;
+                        if (_buttonControls.TryGetValue(camId, out var btn))
+                        {
+                            if (VisualTreeHelper.GetParent(btn) is Panel parent)
+                            {
+                                parent.Children.Remove(btn);
+                            }
+                            rowGrid.Children.Add(btn);
+                        }
+                        itemIndex++;
+                    }
+                }
+            }
         }
 
         private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
@@ -428,23 +839,66 @@ namespace Desktop
 
         // ============ DOUBLE-TAP ============
 
-        private async void CamButton_Click(object sender, RoutedEventArgs e)
+        // ============ ZERO-DELAY TOUCH & CLICK SWITCHING ============
+
+        private void CamButton_PreviewTouchDown(object? sender, System.Windows.Input.TouchEventArgs e)
         {
-            var cam = (sender as Button)?.Tag as CamButton;
+            if (sender is Button btn)
+            {
+                HandleCamButtonPress(btn);
+                e.Handled = true;
+            }
+        }
+
+        private void CamButton_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (e.StylusDevice != null)
+            {
+                // Ignore mouse events promoted from touch to prevent double-triggering phantom clicks
+                return;
+            }
+
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && sender is Button btn)
+            {
+                HandleCamButtonPress(btn);
+                e.Handled = true;
+            }
+        }
+
+        private void HandleCamButtonPress(Button btn)
+        {
+            var cam = btn.Tag as CamButton;
             if (cam == null) return;
+
             var now = DateTime.UtcNow;
-            if (cam.InputId == _lastTapInput && (now - _lastTapTime).TotalMilliseconds < DoubleTapWindowMs)
+            var elapsed = (now - _lastTapTime).TotalMilliseconds;
+
+            if (cam.InputId == _lastTapInput && elapsed < 50)
+            {
+                // Ignore ghost touch/mouse duplicates
+                return;
+            }
+
+            // 1. If camera is already staged on Preview (Green), clicking it cuts it directly to Program (Red)
+            if (cam.State == CamState.Preview)
             {
                 _lastTapInput = -1;
-                await PerformCutAsync(cam.InputId);
+                _ = PerformCutAsync(cam.InputId);
+                return;
+            }
+
+            // 2. Double Tap: Instant Cut
+            if (cam.InputId == _lastTapInput && elapsed < DoubleTapWindowMs)
+            {
+                _lastTapInput = -1;
+                _ = PerformCutAsync(cam.InputId);
             }
             else
             {
-                _lastTapInput = cam.InputId; _lastTapTime = now;
-                var ci = cam.InputId; var ct = now;
-                await Task.Delay(DoubleTapWindowMs + 20);
-                if (_lastTapInput == ci && _lastTapTime == ct)
-                { await PerformPreviewSelect(ci); _lastTapInput = -1; }
+                // 3. Single Tap on neutral camera: Instant Preview Select
+                _lastTapInput = cam.InputId;
+                _lastTapTime = now;
+                _ = PerformPreviewSelect(cam.InputId);
             }
         }
 
@@ -505,38 +959,61 @@ namespace Desktop
             Canvas.SetTop(TBarHandle, handleY);
         }
 
+        private double _lastSentFaderPos = -1;
+
         private void TBarCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             _faderDragging = true;
             TBarCanvas.CaptureMouse();
-            UpdateFaderFromMouse(e);
+            UpdateFaderFromMouse(e, isEnding: false);
         }
 
         private void TBarCanvas_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            _faderDragging = false;
-            TBarCanvas.ReleaseMouseCapture();
+            if (_faderDragging)
+            {
+                _faderDragging = false;
+                TBarCanvas.ReleaseMouseCapture();
+                UpdateFaderFromMouse(e, isEnding: true);
+            }
         }
 
         private void TBarCanvas_MouseMove(object sender, MouseEventArgs e)
         {
             if (!_faderDragging) return;
-            UpdateFaderFromMouse(e);
+            UpdateFaderFromMouse(e, isEnding: false);
         }
 
-        private async void UpdateFaderFromMouse(MouseEventArgs e)
+        private void UpdateFaderFromMouse(MouseEventArgs e, bool isEnding)
         {
             double trackHeight = TBarCanvas.ActualHeight - 26;
             if (trackHeight <= 0) return;
+
             double y = e.GetPosition(TBarCanvas).Y - 13;
-            double pos = Math.Clamp(y / trackHeight, 0.0, 1.0);
-            await _switcher.SetTransitionPositionAsync(0, pos);
-            if (_meBlock != null)
-            {
-                try { _meBlock.SetTransitionPosition(pos); } catch { }
-            }
+            double rawPos = Math.Clamp(y / trackHeight, 0.0, 1.0);
+
+            // Snap to ends if within 3% of top or bottom for smooth completion
+            double pos = rawPos;
+            if (pos <= 0.03) pos = 0.0;
+            else if (pos >= 0.97) pos = 1.0;
+
+            // Update WPF visual handle position INSTANTLY (< 1ms UI latency)
             UpdateFaderVisual(pos);
-            RefreshButtonStatesFromSimulator();
+
+            // Only send hardware/simulator update if position changed meaningfully (> 0.002)
+            if (Math.Abs(pos - _lastSentFaderPos) > 0.002 || isEnding)
+            {
+                _lastSentFaderPos = pos;
+
+                // Send position asynchronously to simulator & hardware in background without blocking UI
+                _ = _switcher.SetTransitionPositionAsync(0, pos);
+
+                // If transition completed (hit 0.0 or 1.0) or mouse released, refresh button state
+                if (pos <= 0.0 || pos >= 1.0 || isEnding)
+                {
+                    RefreshButtonStatesFromSimulator();
+                }
+            }
         }
 
         // ============ KEYBOARD ============
@@ -544,6 +1021,20 @@ namespace Desktop
         private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.OriginalSource is System.Windows.Controls.TextBox) return;
+            
+            if (e.Key == Key.Space)
+            {
+                e.Handled = true;
+                CutButton_Click(null, null);
+                return;
+            }
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                AutoButton_Click(null, null);
+                return;
+            }
+
             double nudge = 0;
             switch (e.Key)
             {
@@ -558,10 +1049,6 @@ namespace Desktop
             e.Handled = true;
             double newPos = Math.Clamp(_faderPosition + nudge, 0.0, 1.0);
             await _switcher.SetTransitionPositionAsync(0, newPos);
-            if (_meBlock != null)
-            {
-                try { _meBlock.SetTransitionPosition(newPos); } catch { }
-            }
             UpdateFaderVisual(newPos);
             RefreshButtonStatesFromSimulator();
         }
@@ -570,16 +1057,13 @@ namespace Desktop
 
         private async void CutButton_Click(object sender, RoutedEventArgs e)
         {
+            var pgm = _camButtons.FirstOrDefault(c => c.State == CamState.Program);
             var pvw = _camButtons.FirstOrDefault(c => c.State == CamState.Preview);
-            if (pvw != null)
+            if (pgm != null && pvw != null)
             {
-                await _switcher.CutAsync(0, pvw.InputId);
+                UpdateButtonStyles(pvw.InputId, pgm.InputId);
             }
-            if (_meBlock != null)
-            {
-                try { _meBlock.PerformCut(); } catch { }
-            }
-            RefreshButtonStatesFromSimulator();
+            await _switcher.PerformCutAsync(0);
         }
 
         private void BottomBarScroll_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
@@ -593,58 +1077,405 @@ namespace Desktop
 
         private void ViewTab_Click(object sender, RoutedEventArgs e)
         {
-            var btn = sender as Button;
-            if (btn == null) return;
-            
-            // Visual toggle stub
-            TabSwitcher.Style = (Style)FindResource("ViewTabButton");
-            TabMedia.Style = (Style)FindResource("ViewTabButton");
-            TabAudio.Style = (Style)FindResource("ViewTabButton");
-            TabCamera.Style = (Style)FindResource("ViewTabButton");
-            TabRoom.Style = (Style)FindResource("ViewTabButton");
-            TabShotSuggestions.Style = (Style)FindResource("ViewTabButton");
-            
-            btn.Style = (Style)FindResource("ViewTabButtonSelected");
-
-            // Hide all panels
-            PanelSwitcher.Visibility = Visibility.Collapsed;
-            if (PanelMedia != null) PanelMedia.Visibility = Visibility.Collapsed;
-            if (PanelAudio != null) PanelAudio.Visibility = Visibility.Collapsed;
-            PanelCamera.Visibility = Visibility.Collapsed;
-            PanelRoomSetup.Visibility = Visibility.Collapsed;
-            PanelShotSuggestions.Visibility = Visibility.Collapsed;
-
-            // Show selected panel
-            switch (btn.Tag?.ToString())
+            try
             {
-                case "Switcher": PanelSwitcher.Visibility = Visibility.Visible; break;
-                case "Media":
-                    if (PanelMedia.Content == null)
-                        PanelMedia.Content = new MediaPoolView(_switcher);
-                    PanelMedia.Visibility = Visibility.Visible;
-                    break;
-                case "Audio":
-                    if (PanelAudio.Content == null)
-                        PanelAudio.Content = new AudioMixerView(_switcher);
-                    PanelAudio.Visibility = Visibility.Visible;
-                    break;
-                case "Camera":
-                    if (PanelCamera!.Content == null)
-                        PanelCamera.Content = new CameraControlView(_switcher);
-                    PanelCamera.Visibility = Visibility.Visible;
-                    break;
-                case "Room":
-                    PanelRoomSetup!.Visibility = Visibility.Visible;
-                    break;
-                case "ShotSuggestions":
-                    if (PanelShotSuggestions!.Content == null)
-                    {
-                        var view = new ShotSuggestionsView(_switcher);
-                        PanelShotSuggestions.Content = view;
-                    }
-                    PanelShotSuggestions.Visibility = Visibility.Visible;
-                    break;
+                var btn = sender as Button;
+                if (btn == null) return;
+                
+                // Visual toggle stub
+                TabSwitcher.Style = (Style)FindResource("ViewTabButton");
+                TabMedia.Style = (Style)FindResource("ViewTabButton");
+                TabAudio.Style = (Style)FindResource("ViewTabButton");
+                TabCamera.Style = (Style)FindResource("ViewTabButton");
+                TabRoom.Style = (Style)FindResource("ViewTabButton");
+                TabShotSuggestions.Style = (Style)FindResource("ViewTabButton");
+                if (TabConnection != null) TabConnection.Style = (Style)FindResource("ViewTabButton");
+                if (TabStream != null) TabStream.Style = (Style)FindResource("ViewTabButton");
+                if (TabRecord != null) TabRecord.Style = (Style)FindResource("ViewTabButton");
+                if (TabMacros != null) TabMacros.Style = (Style)FindResource("ViewTabButton");
+                if (TabOutputs != null) TabOutputs.Style = (Style)FindResource("ViewTabButton");
+                
+                btn.Style = (Style)FindResource("ViewTabButtonSelected");
+
+                // Hide all panels
+                if (PanelSwitcher != null) PanelSwitcher.Visibility = Visibility.Collapsed;
+                if (PanelMedia != null) PanelMedia.Visibility = Visibility.Collapsed;
+                if (PanelAudio != null) PanelAudio.Visibility = Visibility.Collapsed;
+                if (PanelCamera != null) PanelCamera.Visibility = Visibility.Collapsed;
+                if (PanelRoomSetup != null) PanelRoomSetup.Visibility = Visibility.Collapsed;
+                if (PanelShotSuggestions != null) PanelShotSuggestions.Visibility = Visibility.Collapsed;
+                if (PanelConnection != null) PanelConnection.Visibility = Visibility.Collapsed;
+                if (PanelStream != null) PanelStream.Visibility = Visibility.Collapsed;
+                if (PanelRecord != null) PanelRecord.Visibility = Visibility.Collapsed;
+                if (PanelMacros != null) PanelMacros.Visibility = Visibility.Collapsed;
+                if (PanelOutputs != null) PanelOutputs.Visibility = Visibility.Collapsed;
+
+                // Show selected panel
+                switch (btn.Tag?.ToString())
+                {
+                    case "Switcher": 
+                        if (PanelSwitcher != null) PanelSwitcher.Visibility = Visibility.Visible; 
+                        break;
+                    case "Media":
+                        if (PanelMedia != null)
+                        {
+                            if (PanelMedia.Content == null)
+                                PanelMedia.Content = new MediaPoolView(_switcher);
+                            PanelMedia.Visibility = Visibility.Visible;
+                        }
+                        break;
+                    case "Audio":
+                        if (PanelAudio != null)
+                        {
+                            if (PanelAudio.Content == null)
+                                PanelAudio.Content = new AudioMixerView(_switcher);
+                            PanelAudio.Visibility = Visibility.Visible;
+                        }
+                        break;
+                    case "Camera":
+                        if (PanelCamera != null)
+                        {
+                            if (PanelCamera.Content == null)
+                                PanelCamera.Content = new CameraControlView(_switcher);
+                            PanelCamera.Visibility = Visibility.Visible;
+                        }
+                        break;
+                    case "Room":
+                        if (PanelRoomSetup != null) PanelRoomSetup.Visibility = Visibility.Visible;
+                        break;
+                    case "ShotSuggestions":
+                        if (PanelShotSuggestions != null) PanelShotSuggestions.Visibility = Visibility.Visible;
+                        break;
+                    case "Connection":
+                        if (PanelConnection != null)
+                        {
+                            if (PanelConnection.Content == null)
+                                PanelConnection.Content = new Desktop.Views.ConnectionView(_switcher);
+                            PanelConnection.Visibility = Visibility.Visible;
+                        }
+                        break;
+                    case "Stream":
+                        if (PanelStream != null)
+                        {
+                            if (PanelStream.Content == null)
+                                PanelStream.Content = new Desktop.Views.StreamView(_switcher);
+                            PanelStream.Visibility = Visibility.Visible;
+                        }
+                        break;
+                    case "Record":
+                        if (PanelRecord != null)
+                        {
+                            if (PanelRecord.Content == null)
+                                PanelRecord.Content = new Desktop.Views.RecordView(_switcher);
+                            PanelRecord.Visibility = Visibility.Visible;
+                        }
+                        break;
+                    case "Macros":
+                        if (PanelMacros != null)
+                        {
+                            if (PanelMacros.Content == null)
+                                PanelMacros.Content = new Desktop.Views.MacrosView(_switcher);
+                            PanelMacros.Visibility = Visibility.Visible;
+                        }
+                        break;
+                    case "Outputs":
+                        if (PanelOutputs != null)
+                        {
+                            if (PanelOutputs.Content == null)
+                                PanelOutputs.Content = new Desktop.Views.OutputsView(_switcher);
+                            PanelOutputs.Visibility = Visibility.Visible;
+                        }
+                        break;
+                }
             }
+            catch (Exception ex)
+            {
+                LogIntercom($"ViewTab_Click error: {ex}");
+                ShowNotification($"Could not open view tab: {ex.Message}", isError: true);
+            }
+        }
+
+        public void SelectViewTab(string tag)
+        {
+            Button? targetTab = tag switch
+            {
+                "Switcher" => TabSwitcher,
+                "Media" => TabMedia,
+                "Audio" => TabAudio,
+                "Camera" => TabCamera,
+                "Room" => TabRoom,
+                "ShotSuggestions" => TabShotSuggestions,
+                "Connection" => TabConnection,
+                "Stream" => TabStream,
+                "Record" => TabRecord,
+                "Macros" => TabMacros,
+                "Outputs" => TabOutputs,
+                _ => null
+            };
+            if (targetTab != null)
+            {
+                ViewTab_Click(targetTab, new RoutedEventArgs());
+            }
+        }
+
+        private void MenuShowConnectionView_Click(object sender, RoutedEventArgs e)
+        {
+            SelectViewTab("Connection");
+        }
+
+        private void MenuShowStreamView_Click(object sender, RoutedEventArgs e)
+        {
+            SelectViewTab("Stream");
+        }
+
+        private async void MenuStartStreaming_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.StartStreamingAsync();
+                ShowNotification("Live streaming started.", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to start streaming: {ex.Message}", isError: true);
+            }
+        }
+
+        private async void MenuStopStreaming_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.StopStreamingAsync();
+                ShowNotification("Live streaming stopped.", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to stop streaming: {ex.Message}", isError: true);
+            }
+        }
+
+        private void MenuStreamSettings_Click(object sender, RoutedEventArgs e)
+        {
+            SelectViewTab("Stream");
+        }
+
+        private void MenuShowRecordView_Click(object sender, RoutedEventArgs e)
+        {
+            SelectViewTab("Record");
+        }
+
+        private async void MenuStartRecording_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.StartRecordingAsync();
+                ShowNotification("Disk recording started.", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to start recording: {ex.Message}", isError: true);
+            }
+        }
+
+        private async void MenuStopRecording_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.StopRecordingAsync();
+                ShowNotification("Disk recording stopped.", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to stop recording: {ex.Message}", isError: true);
+            }
+        }
+
+        private async void MenuSwitchActiveDisk_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.SwitchRecordingDiskAsync();
+                ShowNotification("Switched active recording disk.", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to switch disk: {ex.Message}", isError: true);
+            }
+        }
+
+        private void MenuRecordSettings_Click(object sender, RoutedEventArgs e)
+        {
+            SelectViewTab("Record");
+        }
+
+        private void MenuShowMacrosView_Click(object sender, RoutedEventArgs e) => SelectViewTab("Macros");
+        private void MenuRunMacro_Click(object sender, RoutedEventArgs e) => SelectViewTab("Macros");
+        private async void MenuStopMacro_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.StopMacroAsync();
+                ShowNotification("Macro playback stopped.");
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to stop macro: {ex.Message}", isError: true);
+            }
+        }
+        private void MenuRecordMacro_Click(object sender, RoutedEventArgs e) => SelectViewTab("Macros");
+        private async void MenuStopRecordMacro_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.StopRecordMacroAsync();
+                ShowNotification("Macro recording stopped.");
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to stop recording: {ex.Message}", isError: true);
+            }
+        }
+        private void MenuDeleteMacro_Click(object sender, RoutedEventArgs e) => SelectViewTab("Macros");
+
+        private void MenuShowOutputsView_Click(object sender, RoutedEventArgs e) => SelectViewTab("Outputs");
+        private void MenuAuxRouting_Click(object sender, RoutedEventArgs e) => SelectViewTab("Outputs");
+        private void MenuMultiViewSettings_Click(object sender, RoutedEventArgs e) => SelectViewTab("Outputs");
+        private void MenuVideoStandard_Click(object sender, RoutedEventArgs e) => SelectViewTab("Outputs");
+
+        // ============ FILE MENU HANDLERS ============
+
+        private async void MenuSaveStartupState_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.SaveStartupStateAsync();
+                ShowNotification("Startup state saved to switcher NVRAM.", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to save startup state: {ex.Message}", isError: true);
+            }
+        }
+
+        private async void MenuClearStartupState_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.ClearStartupStateAsync();
+                ShowNotification("Startup state cleared to factory defaults.", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to clear startup state: {ex.Message}", isError: true);
+            }
+        }
+
+        private async void MenuSaveProject_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var sfd = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save ATEM Project",
+                    Filter = "ATEM Project (*.atemproj)|*.atemproj|JSON File (*.json)|*.json|All Files (*.*)|*.*",
+                    DefaultExt = ".atemproj",
+                    FileName = "production_project.atemproj"
+                };
+
+                if (sfd.ShowDialog(this) == true)
+                {
+                    var config = await ProjectSerializer.SnapshotFromSwitcherAsync(_switcher, System.IO.Path.GetFileNameWithoutExtension(sfd.FileName));
+                    if (_config != null)
+                    {
+                        config.CustomLabels = new Dictionary<int, string>(_config.CustomLabels);
+                        config.ActiveInputs = new List<int>(_config.ActiveInputs);
+                        config.Briefing = _config.ActiveBriefing;
+                    }
+                    await ProjectSerializer.SaveToFileAsync(sfd.FileName, config);
+                    ShowNotification($"Project saved: {System.IO.Path.GetFileName(sfd.FileName)}", isError: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to save project: {ex.Message}", isError: true);
+            }
+        }
+
+        private async void MenuOpenProject_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var ofd = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "Open ATEM Project",
+                    Filter = "ATEM Project (*.atemproj)|*.atemproj|JSON File (*.json)|*.json|All Files (*.*)|*.*",
+                    DefaultExt = ".atemproj"
+                };
+
+                if (ofd.ShowDialog(this) == true)
+                {
+                    var config = await ProjectSerializer.LoadFromFileAsync(ofd.FileName);
+                    await ProjectSerializer.ApplyToSwitcherAsync(_switcher, config);
+                    if (_config != null)
+                    {
+                        if (config.CustomLabels != null)
+                        {
+                            _config.CustomLabels = new Dictionary<int, string>(config.CustomLabels);
+                        }
+                        if (config.ActiveInputs != null && config.ActiveInputs.Count > 0)
+                        {
+                            _config.ActiveInputs = new HashSet<int>(config.ActiveInputs);
+                        }
+                        if (config.Briefing != null)
+                        {
+                            _config.ActiveBriefing = config.Briefing;
+                        }
+                        _config.Save();
+                        RebuildButtonGrid();
+                    }
+                    ShowNotification($"Project loaded: {System.IO.Path.GetFileName(ofd.FileName)}", isError: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Failed to load project: {ex.Message}", isError: true);
+            }
+        }
+
+        private void MenuMediaPoolStills_Click(object sender, RoutedEventArgs e)
+        {
+            SelectViewTab("Media");
+        }
+
+        private void MenuExit_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
+        // ============ HELP MENU HANDLERS ============
+
+        private void MenuAbout_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Desktop.Views.AboutDialog(_switcher, initialTab: "About") { Owner = this };
+            dlg.ShowDialog();
+        }
+
+        private void MenuDeviceInfo_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Desktop.Views.AboutDialog(_switcher, initialTab: "Device") { Owner = this };
+            dlg.ShowDialog();
+        }
+
+        private void MenuKeyboardShortcuts_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Desktop.Views.AboutDialog(_switcher, initialTab: "Shortcuts") { Owner = this };
+            dlg.ShowDialog();
+        }
+
+        private void MenuDiagnostics_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new Desktop.Views.AboutDialog(_switcher, initialTab: "Diagnostics") { Owner = this };
+            dlg.ShowDialog();
         }
 
         private void DockToggle_Click(object sender, RoutedEventArgs e)
@@ -652,35 +1483,43 @@ namespace Desktop
             var btn = sender as Button;
             if (btn == null) return;
             
-            if (btn.Tag?.ToString() == "SuperSource")
+            try
             {
-                if (_superSourceDock == null || !_superSourceDock.IsLoaded)
+                if (btn.Tag?.ToString() == "SuperSource")
                 {
-                    _superSourceDock = new FloatingDockWindow(FloatingDockWindow.DockType.SuperSource, _config, _switcher);
-                    _superSourceDock.Closed += (s, ev) => _superSourceDock = null;
-                    _superSourceDock.Show();
+                    if (_superSourceDock == null || !_superSourceDock.IsLoaded)
+                    {
+                        _superSourceDock = new FloatingDockWindow(FloatingDockWindow.DockType.SuperSource, _config, _switcher);
+                        _superSourceDock.Closed += (s, ev) => _superSourceDock = null;
+                        _superSourceDock.Show();
+                    }
+                    else
+                    {
+                        _superSourceDock.Activate();
+                        if (_superSourceDock.WindowState == WindowState.Minimized)
+                            _superSourceDock.WindowState = WindowState.Normal;
+                    }
                 }
-                else
+                else if (btn.Tag?.ToString() == "Palettes")
                 {
-                    _superSourceDock.Activate();
-                    if (_superSourceDock.WindowState == WindowState.Minimized)
-                        _superSourceDock.WindowState = WindowState.Normal;
+                    if (_palettesDock == null || !_palettesDock.IsLoaded)
+                    {
+                        _palettesDock = new FloatingDockWindow(FloatingDockWindow.DockType.Palettes, _config, _switcher);
+                        _palettesDock.Closed += (s, ev) => _palettesDock = null;
+                        _palettesDock.Show();
+                    }
+                    else
+                    {
+                        _palettesDock.Activate();
+                        if (_palettesDock.WindowState == WindowState.Minimized)
+                            _palettesDock.WindowState = WindowState.Normal;
+                    }
                 }
             }
-            else if (btn.Tag?.ToString() == "Palettes")
+            catch (Exception ex)
             {
-                if (_palettesDock == null || !_palettesDock.IsLoaded)
-                {
-                    _palettesDock = new FloatingDockWindow(FloatingDockWindow.DockType.Palettes, _config, _switcher);
-                    _palettesDock.Closed += (s, ev) => _palettesDock = null;
-                    _palettesDock.Show();
-                }
-                else
-                {
-                    _palettesDock.Activate();
-                    if (_palettesDock.WindowState == WindowState.Minimized)
-                        _palettesDock.WindowState = WindowState.Normal;
-                }
+                Log($"Error opening dock window: {ex}");
+                MessageBox.Show($"Could not open window: {ex.Message}", "SuperSource Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -785,27 +1624,32 @@ namespace Desktop
                 return;
             }
 
-            _isIntercomActive = !_isIntercomActive;
-            
-            if (_isIntercomActive)
+            try
             {
-                BtnToggleIntercom.Content = "🎙️ CONNECTING...";
-                await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
+                _isIntercomActive = !_isIntercomActive;
+                
+                if (_isIntercomActive)
+                {
+                    BtnToggleIntercom.Content = "🎙️ CONNECTING...";
+                    await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
+                }
+                else
+                {
+                    await IntercomWebView.CoreWebView2.ExecuteScriptAsync("disconnectIntercom();");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                await IntercomWebView.CoreWebView2.ExecuteScriptAsync("disconnectIntercom();");
+                LogIntercom("Intercom toggle failed", ex);
+                System.Windows.MessageBox.Show("The Intercom backend process encountered an error and cannot be reached. Please restart the application.", "Intercom Error");
+                _isIntercomActive = false;
+                BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
             }
         }
 
         private async void AutoButton_Click(object sender, RoutedEventArgs e)
         {
-            await _switcher.AutoTransitionAsync(0);
-            if (_meBlock != null)
-            {
-                try { _meBlock.PerformAutoTransition(); } catch { }
-            }
-            RefreshButtonStatesFromSimulator();
+            await _switcher.AutoTransitionAsync(0, _config.AutoTransitionRateMs);
         }
 
         private void TransitionStyle_Click(object sender, RoutedEventArgs e)
@@ -817,19 +1661,6 @@ namespace Desktop
                 _config.SelectedTransitionStyle = style.ToString();
                 _config.Save();
                 _ = _switcher.SetTransitionStyleAsync(0, style);
-
-                if (_meBlock is IBMDSwitcherTransitionParameters transParams)
-                {
-                    _BMDSwitcherTransitionStyle bmdStyle = _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleMix;
-                    switch (style)
-                    {
-                        case TransitionStyle.Dip: bmdStyle = _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDip; break;
-                        case TransitionStyle.Wipe: bmdStyle = _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleWipe; break;
-                        case TransitionStyle.Stinger: bmdStyle = _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleStinger; break;
-                        case TransitionStyle.DVE: bmdStyle = _BMDSwitcherTransitionStyle.bmdSwitcherTransitionStyleDVE; break;
-                    }
-                    try { transParams.SetNextTransitionStyle(bmdStyle); } catch { }
-                }
 
                 UpdateTransitionStyleButtons();
             }
@@ -871,6 +1702,63 @@ namespace Desktop
 
         // ============ CONNECTION ============
 
+        private void MenuProductionBriefing_Click(object sender, RoutedEventArgs e)
+        {
+            var win = new ProductionBriefingWindow(_config);
+            win.Owner = this;
+            win.ShowDialog();
+            UpdateBriefingStatus();
+        }
+
+        private void UpdateBriefingStatus()
+        {
+            if (_config.ActiveBriefing == null) return;
+            bool hasEvent = !string.IsNullOrWhiteSpace(_config.ActiveBriefing.GetEffectiveEventType());
+            bool hasNarrative = !string.IsNullOrWhiteSpace(_config.ActiveBriefing.Narrative);
+            if (!hasEvent || !hasNarrative)
+            {
+                MenuStartAiDirector.IsEnabled = false;
+                MenuStartAiDirector.Header = "Start AI Director (Requires Briefing)";
+            }
+            else
+            {
+                MenuStartAiDirector.IsEnabled = true;
+                MenuStartAiDirector.Header = "Start AI Director";
+            }
+
+            // Segment Tracker logic
+            if (_config.ActiveBriefing.Flow != null && _config.ActiveBriefing.Flow.Count > 0)
+            {
+                SegmentTracker.Visibility = Visibility.Visible;
+                
+                var current = _config.ActiveBriefing.Flow.FirstOrDefault(s => s.Id == _config.CurrentSegmentId);
+                if (current == null)
+                {
+                    current = _config.ActiveBriefing.Flow.First();
+                    _config.CurrentSegmentId = current.Id;
+                    _config.Save();
+                }
+                
+                TxtCurrentSegment.Text = string.IsNullOrWhiteSpace(current.Time) ? current.Name : $"{current.Time} {current.Name}";
+            }
+            else
+            {
+                SegmentTracker.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void BtnNextSegment_Click(object sender, RoutedEventArgs e)
+        {
+            if (_config.ActiveBriefing?.Flow == null || _config.ActiveBriefing.Flow.Count == 0) return;
+            
+            int idx = _config.ActiveBriefing.Flow.FindIndex(s => s.Id == _config.CurrentSegmentId);
+            if (idx >= 0 && idx < _config.ActiveBriefing.Flow.Count - 1)
+            {
+                _config.CurrentSegmentId = _config.ActiveBriefing.Flow[idx + 1].Id;
+                _config.Save();
+                UpdateBriefingStatus();
+            }
+        }
 
         private void StartAiDirector_Click(object sender, RoutedEventArgs e)
         {
@@ -879,6 +1767,7 @@ namespace Desktop
             MenuStopAiDirector.IsEnabled = true;
             MenuPauseAiDirector.IsEnabled = true;
             MenuPauseAiDirector.Header = "Pause (Take the wheel)";
+            UpdateAiModeMenuText();
             Log("AI Director Started");
         }
 
@@ -889,6 +1778,34 @@ namespace Desktop
             MenuStopAiDirector.IsEnabled = false;
             MenuPauseAiDirector.IsEnabled = false;
             Log("AI Director Stopped");
+        }
+
+        private void MenuAiMode_Click(object sender, RoutedEventArgs e)
+        {
+            AiDirectorLoop.Instance.IsBrainstormMode = !AiDirectorLoop.Instance.IsBrainstormMode;
+            UpdateAiModeMenuText();
+            Log(AiDirectorLoop.Instance.IsBrainstormMode ? "AI Mode: Brainstorm (Ideas Pool)" : "AI Mode: Autopilot (Direct Send)");
+        }
+
+        private void StartAutonomous_Click(object sender, RoutedEventArgs e)
+        {
+            AutonomousDirectorLoop.Instance.Start(_config, _switcher);
+            MenuStartAutonomous.IsEnabled = false;
+            MenuStopAutonomous.IsEnabled = true;
+            Log("Autonomous Switching Started");
+        }
+
+        private void StopAutonomous_Click(object sender, RoutedEventArgs e)
+        {
+            AutonomousDirectorLoop.Instance.Stop();
+            MenuStartAutonomous.IsEnabled = true;
+            MenuStopAutonomous.IsEnabled = false;
+            Log("Autonomous Switching Stopped");
+        }
+
+        private void UpdateAiModeMenuText()
+        {
+            MenuAiMode.Header = AiDirectorLoop.Instance.IsBrainstormMode ? "Mode: Brainstorm [Active]" : "Mode: Autopilot [Active]";
         }
 
         private void PauseAiDirector_Click(object sender, RoutedEventArgs e)
@@ -902,9 +1819,14 @@ namespace Desktop
         {
             try
             {
-                await _switcher.ConnectAsync(Host.Text);
-                MessageBox.Show("Connected to Simulator", "AtemDirector");
-                ConnectToHardwareAtem();
+                string target = Host.Text;
+                if (string.IsNullOrWhiteSpace(target) || target.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
+                {
+                    target = "AUTO";
+                }
+                await _switcher.ConnectAsync(target);
+                string endpoint = string.IsNullOrWhiteSpace(target) ? "ATEM Switcher" : target;
+                ShowNotification($"Connected to {endpoint}", isError: false);
 
                 // Start tally pump regardless of WebSocket
                 _cts?.Dispose(); _cts = new CancellationTokenSource();
@@ -920,9 +1842,98 @@ namespace Desktop
                 catch { _ws = null; /* tally server not available, that's OK */ }
 
                 StatusText.Text = "Connected"; StatusText.Foreground = Brushes.LimeGreen;
-                RefreshButtonStatesFromSimulator();
+                await SyncFromSwitcherAsync();
             }
-            catch (Exception ex) { MessageBox.Show($"Connection failed: {ex.Message}"); }
+            catch (Exception ex) 
+            { 
+                ShowNotification($"Connection failed: {ex.Message}", isError: true); 
+            }
+        }
+
+        private async void Disconnect_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await _switcher.DisconnectAsync();
+                ShowNotification("Disconnected from switcher", isError: false);
+            }
+            catch (Exception ex)
+            {
+                ShowNotification($"Disconnect error: {ex.Message}", isError: true);
+            }
+        }
+
+        public async Task SyncFromSwitcherAsync()
+        {
+            if (!_switcher.IsConnected) return;
+
+            try
+            {
+                var inputs = await _switcher.GetInputsAsync();
+                if (inputs != null && inputs.Count > 0)
+                {
+                    List<SwitcherInput> validInputs;
+                    if (_switcher.IsHardware)
+                    {
+                        var camInputs = inputs.Where(i => i.Id >= 1 && i.Id <= 40).ToList();
+                        validInputs = camInputs.Count > 0 ? camInputs : inputs.Where(i => i.Id > 0 && i.Id < 1000).ToList();
+                    }
+                    else
+                    {
+                        validInputs = inputs;
+                    }
+
+                    if (validInputs.Count > 0)
+                    {
+                        _config.ActiveInputs = validInputs.Select(i => (int)i.Id).ToHashSet();
+                        foreach (var inp in validInputs)
+                        {
+                            string label;
+                            if (!string.IsNullOrWhiteSpace(inp.Name))
+                            {
+                                label = inp.Name.Trim();
+                            }
+                            else if (!string.IsNullOrWhiteSpace(inp.Alias))
+                            {
+                                string trimmed = inp.Alias.Trim();
+                                label = int.TryParse(trimmed, out int n) ? $"Cam {n}" : trimmed;
+                            }
+                            else
+                            {
+                                label = $"Cam {inp.Id}";
+                            }
+                            _config.CustomLabels[(int)inp.Id] = label;
+                        }
+                        _config.Save();
+                        RebuildButtonGrid();
+                    }
+                }
+
+                SwitcherState? state = null;
+                try
+                {
+                    state = await _switcher.GetStateAsync();
+                }
+                catch (Exception stateEx)
+                {
+                    Log($"[SyncFromSwitcher] GetStateAsync warning: {stateEx.Message}");
+                }
+
+                RefreshButtonStatesFromSimulator();
+
+                // Update ShotSuggestions camera buttons
+                ShotSuggestionsViewInstance?.RebuildCameraList();
+
+                // Broadcast updated inputs and tallies to PWA clients
+                if (state != null)
+                {
+                    _ = PwaServer.Instance.BroadcastTallyAsync(state);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[SyncFromSwitcher] Error: {ex}");
+            }
         }
 
         private async void RefreshButtonStatesFromSimulator()
@@ -976,121 +1987,14 @@ namespace Desktop
 
         private void ConnectToHardwareAtem()
         {
-            Log("[DEBUG] ConnectToHardwareAtem called");
-            try
-            {
-                var discovery = new CBMDSwitcherDiscovery();
-                discovery.ConnectTo(string.Empty, out IBMDSwitcher switcher, out _BMDSwitcherConnectToFailure failReason);
-                if (switcher == null) throw new Exception($"ConnectTo returned null. Reason: {failReason}");
-                _atem = switcher;
-                Guid meIterGuid = typeof(IBMDSwitcherMixEffectBlockIterator).GUID;
-                _atem.CreateIterator(meIterGuid, out IntPtr meIterPtr);
-                var meIter = (IBMDSwitcherMixEffectBlockIterator)Marshal.GetObjectForIUnknown(meIterPtr);
-                meIter.Next(out _meBlock);
-                if (_meBlock == null) throw new Exception("Could not acquire MixEffect block (ME1) from ATEM.");
-                BuildInputMap();
-                _monitor = new MixEffectBlockMonitor(_meBlock);
-                _monitor.ProgramInputChanged += (physicalId) =>
-                {
-                    long logicalId = GetLogicalInputId(physicalId);
-                    if (logicalId > 0) Dispatcher.InvokeAsync(async () => await _switcher.CutAsync(0, (int)logicalId));
-                };
-                _monitor.PreviewInputChanged += (physicalId) =>
-                {
-                    long logicalId = GetLogicalInputId(physicalId);
-                    if (logicalId > 0) Dispatcher.InvokeAsync(async () => await _switcher.SetPreviewAsync(0, (int)logicalId));
-                };
-                _meBlock.AddCallback(_monitor);
-                StartAtemPolling();
-                _atem.GetProductName(out string productName);
-                MessageBox.Show($"Connected to physical ATEM: {productName}", "AtemDirector");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Could not connect to physical ATEM over USB.\nYou can still use the simulator.\n\n" +
-                    $"Details: {ex.Message}", "AtemDirector", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
+            // Decommissioned: COM discovery and fallback are now encapsulated within AtemHardwareAdapter
+            Log("[Hardware] ConnectToHardwareAtem called (decommissioned, handled by AtemHardwareAdapter)");
         }
 
-        private void StartAtemPolling()
+        private void DisconnectHardwareAtem()
         {
-            _atemPollTimer?.Dispose();
-            if (_meBlock != null)
-            {
-                try
-                {
-                    _meBlock.GetProgramInput(out _lastProgramInput);
-                    _meBlock.GetPreviewInput(out _lastPreviewInput);
-                    
-                    // Sync physical state to simulator immediately
-                    long pgmL = GetLogicalInputId(_lastProgramInput);
-                    long pvwL = GetLogicalInputId(_lastPreviewInput);
-                    if (pgmL > 0) _ = _switcher.CutAsync(0, (int)pgmL);
-                    if (pvwL > 0) _ = _switcher.SetPreviewAsync(0, (int)pvwL);
-                } catch { }
-            }
-            _atemPollTimer = new System.Threading.Timer(PollAtemState, null, 100, 100);
-        }
-
-        private void PollAtemState(object? state)
-        {
-            if (_meBlock == null) return;
-            try
-            {
-                Dispatcher.Invoke(() =>
-                {
-                    try
-                    {
-                        _meBlock.GetProgramInput(out long currentPgm);
-                        _meBlock.GetPreviewInput(out long currentPvw);
-                        if (currentPgm != _lastProgramInput && _lastProgramInput != -1)
-                        { var l = GetLogicalInputId(currentPgm); if (l > 0) _ = _switcher.CutAsync(0, (int)l); }
-                        if (currentPvw != _lastPreviewInput && _lastPreviewInput != -1)
-                        { var l = GetLogicalInputId(currentPvw); if (l > 0) _ = _switcher.SetPreviewAsync(0, (int)l); }
-                        _lastProgramInput = currentPgm; _lastPreviewInput = currentPvw;
-                    } catch { }
-                });
-            } catch { }
-        }
-
-        private long GetLogicalInputId(long physicalId)
-        {
-            foreach (var kvp in _inputIds) if (kvp.Value == physicalId) return kvp.Key;
-            return -1;
-        }
-
-        [ComVisible(true)]
-        [ClassInterface(ClassInterfaceType.None)]
-        public class MixEffectBlockMonitor : IBMDSwitcherMixEffectBlockCallback
-        {
-            private readonly IBMDSwitcherMixEffectBlock _meBlock;
-            public event Action<long>? ProgramInputChanged;
-            public event Action<long>? PreviewInputChanged;
-            public MixEffectBlockMonitor(IBMDSwitcherMixEffectBlock meBlock) { _meBlock = meBlock; }
-            private const long ProgramInputPropId = 1885825390;
-            private const long PreviewInputPropId = 1886873966;
-            public void PropertyChanged(long propertyId)
-            {
-                if (propertyId == ProgramInputPropId) { _meBlock.GetProgramInput(out long pgmId); ProgramInputChanged?.Invoke(pgmId); }
-                else if (propertyId == PreviewInputPropId) { _meBlock.GetPreviewInput(out long pvwId); PreviewInputChanged?.Invoke(pvwId); }
-            }
-            public void Notify(_BMDSwitcherMixEffectBlockEventType eventType) { }
-        }
-
-        private void BuildInputMap()
-        {
-            _inputIds.Clear();
-            if (_atem == null) return;
-            Guid inputIterGuid = typeof(IBMDSwitcherInputIterator).GUID;
-            _atem.CreateIterator(inputIterGuid, out IntPtr inputIterPtr);
-            var inputIter = (IBMDSwitcherInputIterator)Marshal.GetObjectForIUnknown(inputIterPtr);
-            while (true)
-            {
-                inputIter.Next(out IBMDSwitcherInput input);
-                if (input == null) break;
-                input.GetInputId(out long id);
-                if (id >= 1 && id <= 40) _inputIds[(int)id] = id;
-            }
+            // Decommissioned: COM resource release is now encapsulated within AtemHardwareAdapter
+            Log("[Hardware] DisconnectHardwareAtem called (decommissioned, handled by AtemHardwareAdapter)");
         }
 
         // ============ TALLY PUMP ============
@@ -1102,13 +2006,17 @@ namespace Desktop
                 try
                 {
                     var updates = TallyEngine.Compute(state).Where(t => t.MeIndex == 0).OrderBy(t => t.CamAlias).ToList();
-                    Application.Current.Dispatcher.Invoke(() =>
+                    var app = Application.Current;
+                    if (app?.Dispatcher != null && !app.Dispatcher.HasShutdownStarted)
                     {
-                        _tallies.Clear();
-                        foreach (var t in updates) _tallies.Add(t);
-                        var me = state.MEs.FirstOrDefault(m => m.MeIndex == 0);
-                        if (me != null) UpdateButtonStyles((int)(me.Program.FirstOrDefault()), (int)(me.Preview.FirstOrDefault()));
-                    });
+                        await app.Dispatcher.InvokeAsync(() =>
+                        {
+                            _tallies.Clear();
+                            foreach (var t in updates) _tallies.Add(t);
+                            var me = state.MEs.FirstOrDefault(m => m.MeIndex == 0);
+                            if (me != null) UpdateButtonStyles((int)(me.Program.FirstOrDefault()), (int)(me.Preview.FirstOrDefault()));
+                        });
+                    }
                     if (_ws is { State: WebSocketState.Open })
                     {
                         foreach (var t in updates)
@@ -1131,6 +2039,7 @@ namespace Desktop
             {
                 _lastUiProgramInput = programInput;
                 AiDirectorLoop.Instance.OnCameraCut(programInput);
+                AutonomousDirectorLoop.Instance.OnCameraCut(programInput);
             }
 
             foreach (var cam in _camButtons)
@@ -1143,22 +2052,36 @@ namespace Desktop
 
         private async Task PerformCutAsync(int inputIndex)
         {
+            // Optimistic instant UI update (< 1ms)
+            var pvw = _camButtons.FirstOrDefault(c => c.State == CamState.Preview);
+            int pvwId = pvw != null ? pvw.InputId : inputIndex;
+            UpdateButtonStyles(inputIndex, pvwId == inputIndex ? (int)_lastProgramInput : pvwId);
+
             await _switcher.CutAsync(0, inputIndex);
-            try { if (_meBlock != null && _inputIds.TryGetValue(inputIndex, out long inputId)) _meBlock.SetProgramInput(inputId); }
-            catch (Exception ex) { MessageBox.Show($"Hardware program cut failed: {ex.Message}", "AtemDirector", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
         private async Task PerformPreviewSelect(int inputIndex)
         {
+            // Optimistic instant UI update (< 1ms)
+            var pgm = _camButtons.FirstOrDefault(c => c.State == CamState.Program);
+            int pgmId = pgm != null ? pgm.InputId : (int)_lastProgramInput;
+            UpdateButtonStyles(pgmId > 0 ? pgmId : 1, inputIndex);
+
             await _switcher.SetPreviewAsync(0, inputIndex);
-            try { if (_meBlock != null && _inputIds.TryGetValue(inputIndex, out long inputId)) _meBlock.SetPreviewInput(inputId); }
-            catch (Exception ex) { MessageBox.Show($"Hardware preview select failed: {ex.Message}", "AtemDirector", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
         // ============ EDIT MODE ============
 
+        private void OverlayBackground_Click(object sender, MouseButtonEventArgs e)
+        {
+            if (e.Source == EditInputsOverlay)
+            {
+                EditInputsOverlay.Visibility = Visibility.Collapsed;
+            }
+        }
+
         private void ToggleEditMode_Click(object sender, RoutedEventArgs e)
-        { EditOverlay.Visibility = Visibility.Visible; BuildEditGrid(); }
+        { EditInputsOverlay.Visibility = Visibility.Visible; BuildEditGrid(); }
 
         private void BuildEditGrid()
         {
@@ -1167,31 +2090,60 @@ namespace Desktop
             {
                 var inputId = i;
                 var isActive = _config.ActiveInputs.Contains(inputId);
-                var panel = new StackPanel
+
+                var cardBorder = new Border
                 {
-                    Margin = new Thickness(6),
-                    Background = new SolidColorBrush(isActive ? Color.FromRgb(0x33, 0x55, 0x33) : Color.FromRgb(0x33, 0x33, 0x33)),
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Margin = new Thickness(4),
+                    CornerRadius = new CornerRadius(6),
+                    BorderThickness = new Thickness(1),
+                    Background = new SolidColorBrush(isActive ? Color.FromRgb(0x1E, 0x2A, 0x22) : Color.FromRgb(0x1A, 0x1A, 0x1E)),
+                    BorderBrush = new SolidColorBrush(isActive ? Color.FromRgb(0x00, 0xC8, 0x53) : Color.FromRgb(0x3D, 0x3D, 0x44)),
+                    Padding = new Thickness(8)
                 };
+
+                var panel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
+
                 var cb = new CheckBox
                 {
-                    Content = $"Input {inputId}", IsChecked = isActive, Foreground = Brushes.White,
-                    Margin = new Thickness(10, 10, 10, 4), FontWeight = FontWeights.SemiBold, FontSize = 13,
+                    Content = $"Input {inputId}",
+                    IsChecked = isActive,
+                    Foreground = Brushes.White,
+                    Margin = new Thickness(2, 2, 2, 6),
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 12
                 };
-                cb.Tag = inputId; cb.Checked += EditCheckbox_Changed; cb.Unchecked += EditCheckbox_Changed;
+                cb.Tag = cardBorder;
+                cb.Checked += (s, e) =>
+                {
+                    _config.ActiveInputs.Add(inputId);
+                    cardBorder.Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x2A, 0x22));
+                    cardBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
+                };
+                cb.Unchecked += (s, e) =>
+                {
+                    _config.ActiveInputs.Remove(inputId);
+                    cardBorder.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1E));
+                    cardBorder.BorderBrush = new SolidColorBrush(Color.FromRgb(0x3D, 0x3D, 0x44));
+                };
+
                 var tb = new TextBox
                 {
                     Text = _config.CustomLabels.ContainsKey(inputId) ? _config.CustomLabels[inputId] : "",
-                    Margin = new Thickness(10, 0, 10, 4),
-                    Background = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)),
-                    Foreground = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
-                    Padding = new Thickness(6, 4, 6, 4), FontSize = 12,
+                    Margin = new Thickness(0, 0, 0, 6),
+                    Background = new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x16)),
+                    Foreground = Brushes.White,
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x3D, 0x3D, 0x44)),
+                    Padding = new Thickness(6, 4, 6, 4),
+                    FontSize = 11
                 };
                 tb.Tag = inputId;
                 var watermark = new TextBlock
                 {
-                    Text = "Custom Label...", Foreground = Brushes.Gray, Margin = new Thickness(16, 4, 10, 4),
-                    IsHitTestVisible = false, FontSize = 12,
+                    Text = "Custom Label...",
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x90)),
+                    Margin = new Thickness(8, 4, 6, 4),
+                    IsHitTestVisible = false,
+                    FontSize = 11,
                     Visibility = string.IsNullOrEmpty(tb.Text) ? Visibility.Visible : Visibility.Collapsed
                 };
                 tb.TextChanged += (s, e2) =>
@@ -1207,10 +2159,10 @@ namespace Desktop
 
                 var roleCombo = new ComboBox
                 {
-                    Margin = new Thickness(10, 0, 10, 10),
-                    Background = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)),
-                    Foreground = Brushes.Black,
-                    FontSize = 11,
+                    Margin = new Thickness(0, 0, 0, 6),
+                    Height = 26,
+                    FontSize = 10,
+                    MaxDropDownHeight = 140,
                     ToolTip = "Camera Role for AI Director"
                 };
                 string[] roles = { "Master Wide", "Master Close-Up", "Crane", "Jib", "Roving Stage", "Roving Audience Left", "Roving Audience Right", "Roving Audience Center", "Locked Wide", "Locked Close-Up", "Handheld Stage", "Handheld Audience", "Overhead", "Backstage / Behind-Scenes", "B-Roll", "Custom" };
@@ -1234,10 +2186,9 @@ namespace Desktop
 
                 var deviceCombo = new ComboBox
                 {
-                    Margin = new Thickness(10, 0, 10, 10),
-                    Background = new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x22)),
-                    Foreground = Brushes.Black,
-                    FontSize = 11,
+                    Height = 26,
+                    FontSize = 10,
+                    MaxDropDownHeight = 140,
                     ToolTip = "USB Capture Device (Video Index)"
                 };
                 deviceCombo.Items.Add("No Capture Device");
@@ -1254,30 +2205,30 @@ namespace Desktop
                 };
 
                 var tbGrid = new Grid();
-                tbGrid.Children.Add(tb); tbGrid.Children.Add(watermark);
-                panel.Children.Add(cb); panel.Children.Add(tbGrid); panel.Children.Add(roleCombo); panel.Children.Add(deviceCombo);
-                EditInputList.Items.Add(panel);
+                tbGrid.Children.Add(tb);
+                tbGrid.Children.Add(watermark);
+
+                panel.Children.Add(cb);
+                panel.Children.Add(tbGrid);
+                panel.Children.Add(roleCombo);
+                panel.Children.Add(deviceCombo);
+
+                cardBorder.Child = panel;
+                EditInputList.Items.Add(cardBorder);
             }
         }
 
         private void EditCheckbox_Changed(object sender, RoutedEventArgs e)
         {
-            var cb = sender as CheckBox;
-            if (cb?.Tag is int id)
-            {
-                if (cb.IsChecked == true) _config.ActiveInputs.Add(id); else _config.ActiveInputs.Remove(id);
-                if (cb.Parent is StackPanel panel)
-                    panel.Background = new SolidColorBrush(cb.IsChecked == true ? Color.FromRgb(0x33, 0x55, 0x33) : Color.FromRgb(0x33, 0x33, 0x33));
-            }
         }
 
         private void EditDone_Click(object sender, RoutedEventArgs e)
         { 
-            EditOverlay.Visibility = Visibility.Collapsed; 
+            EditInputsOverlay.Visibility = Visibility.Collapsed; 
             _config.Save(); 
             RebuildButtonGrid(); 
             _ = PwaServer.Instance.BroadcastInputsAsync();
-            if (PanelShotSuggestions.Content is ShotSuggestionsView ssv) ssv.RebuildCameraList();
+            ShotSuggestionsViewInstance.RebuildCameraList();
 
             // Sync video capture map and restart
             FrameCaptureService.Instance.InputDeviceMap = new Dictionary<int, int>(_config.CaptureDeviceIndices);
@@ -1333,14 +2284,54 @@ namespace Desktop
 
         private string GetLocalIpAddress()
         {
-            var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
-            foreach (var ip in host.AddressList)
+            try
             {
-                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                    .Where(nic => nic.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                                  nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    .OrderBy(nic =>
+                    {
+                        var name = nic.Name.ToLowerInvariant();
+                        var desc = nic.Description.ToLowerInvariant();
+                        if (name.Contains("vethernet") || desc.Contains("hyper-v") || desc.Contains("virtual") || desc.Contains("wsl") || name.Contains("docker"))
+                            return 10;
+                        if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211 || name.Contains("wi-fi") || desc.Contains("wireless"))
+                            return 0;
+                        if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Ethernet)
+                            return 1;
+                        return 2;
+                    });
+
+                foreach (var nic in interfaces)
                 {
-                    return ip.ToString();
+                    var props = nic.GetIPProperties();
+                    foreach (var addr in props.UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        {
+                            var ipStr = addr.Address.ToString();
+                            if (!ipStr.StartsWith("127.") && !ipStr.StartsWith("169.254."))
+                            {
+                                return ipStr;
+                            }
+                        }
+                    }
                 }
             }
+            catch { }
+
+            try
+            {
+                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
+                foreach (var ip in host.AddressList)
+                {
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !ip.ToString().StartsWith("127."))
+                    {
+                        return ip.ToString();
+                    }
+                }
+            }
+            catch { }
             return "127.0.0.1";
         }
 
@@ -1360,6 +2351,15 @@ namespace Desktop
                 joinUrl = $"http://{localIp}:8080/?r={RoomManager.ActiveRoom.RoomId}&p={RoomManager.ActiveRoom.Pin}";
             }
             
+            var displayRoom = RoomManager.ActiveRoom.RoomId;
+            if (displayRoom.Length == 6)
+            {
+                displayRoom = $"{displayRoom.Substring(0, 3)} {displayRoom.Substring(3)}";
+            }
+            TxtQrRoomId.Text = displayRoom;
+            TxtQrPin.Text = RoomManager.ActiveRoom.Pin;
+            TxtQrJoinUrl.Text = joinUrl;
+
             using var qrGenerator = new QRCodeGenerator();
             using var qrCodeData = qrGenerator.CreateQrCode(joinUrl, QRCodeGenerator.ECCLevel.Q);
             using var qrCode = new PngByteQRCode(qrCodeData);
@@ -1399,7 +2399,7 @@ namespace Desktop
                     joinUrl = $"http://{localIp}:8080/?r={RoomManager.ActiveRoom.RoomId}&p={RoomManager.ActiveRoom.Pin}";
                 }
                 Clipboard.SetText(joinUrl);
-                MessageBox.Show("Link copied to clipboard!", "Room Link");
+                MessageBox.Show("Link copied to clipboard!\n\n" + joinUrl, "Room Link");
             }
         }
 
@@ -1434,3 +2434,4 @@ namespace Desktop
         #endregion
     }
 }
+

@@ -266,7 +266,7 @@
         try {
             var uri = new Uri(url);
             var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-            return query["v"];
+            return query["v"] ?? url;
         } catch { return url; }
     }
 }

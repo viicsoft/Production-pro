@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Core;
 
 namespace Desktop
 {
@@ -14,20 +15,10 @@ namespace Desktop
     {
         public double X { get; set; } = -1;
         public double Y { get; set; } = -1;
-        public double Width { get; set; } = 400;
-        public double Height { get; set; } = 600;
+        public double Width { get; set; } = 680;
+        public double Height { get; set; } = 740;
         public bool IsMinimized { get; set; } = false;
         public bool IsOpen { get; set; } = false;
-    }
-
-    public class CameraRoleMetadata
-    {
-        public string Role { get; set; } = "Custom";
-        public string Mobility { get; set; } = "fixed";
-        public string DefaultFraming { get; set; } = "variable";
-        public string SubjectArea { get; set; } = "variable";
-        public string UseFrequency { get; set; } = "primary";
-        public string TransitionCompatibility { get; set; } = "";
     }
 
     public class InputConfig
@@ -40,6 +31,16 @@ namespace Desktop
         public int AutoTransitionRateMs { get; set; } = 1000;
         public WindowRect SuperSourceDock { get; set; } = new();
         public WindowRect PalettesDock { get; set; } = new();
+
+        public ProductionBriefing ActiveBriefing { get; set; } = new();
+        public Dictionary<string, ProductionBriefing> BriefingTemplates { get; set; } = new();
+        public string CurrentSegmentId { get; set; } = "";
+        
+        public bool SetupCompleted { get; set; } = false;
+
+        public bool VoiceControlEnabled { get; set; } = false;
+        public string WakeWord { get; set; } = "";
+        public int SelectedMicrophoneIndex { get; set; } = 0;
 
         private static readonly string ConfigDir =
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector");
@@ -54,7 +55,18 @@ namespace Desktop
                 {
                     var json = File.ReadAllText(ConfigFile);
                     var cfg = JsonSerializer.Deserialize<InputConfig>(json);
-                    if (cfg != null) return cfg;
+                    if (cfg != null)
+                    {
+                        cfg.ActiveInputs ??= new(Enumerable.Range(1, 8));
+                        cfg.CustomLabels ??= new();
+                        cfg.CameraRoles ??= new();
+                        cfg.CaptureDeviceIndices ??= new();
+                        cfg.SuperSourceDock ??= new WindowRect();
+                        cfg.PalettesDock ??= new WindowRect();
+                        cfg.ActiveBriefing ??= new ProductionBriefing();
+                        cfg.BriefingTemplates ??= new();
+                        return cfg;
+                    }
                 }
             }
             catch { /* fall through to defaults */ }
@@ -78,7 +90,7 @@ namespace Desktop
         /// </summary>
         public string GetLabel(int inputId)
         {
-            if (CustomLabels.TryGetValue(inputId, out var label) && !string.IsNullOrWhiteSpace(label))
+            if (CustomLabels != null && CustomLabels.TryGetValue(inputId, out var label) && !string.IsNullOrWhiteSpace(label))
                 return label;
             return $"Cam{inputId}";
         }

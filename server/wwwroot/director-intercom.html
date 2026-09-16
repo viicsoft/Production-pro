@@ -1,189 +1,394 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="utf-8">
     <title>Director Intercom</title>
 </head>
-<body>
+<body style="background:#111; color:#eee; font-family:sans-serif; margin:10px;">
+    <h3>Director Intercom Active</h3>
     <div id="audio-container"></div>
-    <script>
-        // WebRTC Intercom for Director
-        // Uses the existing WebSocket connection for signaling
-        // Director is the "hub" - each crew member connects to the director via a peer connection.
 
+    <script>
         let ws = null;
-        let localStream = null;
-        const peers = {}; // clientId -> RTCPeerConnection
-        const audioElements = {}; // clientId -> HTMLAudioElement
-        const iceServers = [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-        ];
+        let directorStream = null;
+        const peers = {}; // alias/cam -> RTCPeerConnection
+        let isConnecting = false;
+        let isConnected = false;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const rawRoomId = urlParams.get('roomId') || urlParams.get('roomName') || 'intercom';
+        const roomId = rawRoomId.replace(/\s+/g, '');
+        const pin = (urlParams.get('pin') || '').trim();
+        const voiceServer = (urlParams.get('voiceServer') || '').trim();
 
         function log(msg) {
             console.log('[Director Intercom] ' + msg);
+            postToWpf('log:' + msg);
+        }
+
+        function postToWpf(msg) {
+            try {
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage(msg);
+                }
+            } catch (e) {
+                console.warn('postToWpf error:', e);
+            }
+        }
+
+        function initWebSocket() {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+
+            let proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            let host = location.host || '127.0.0.1:8080';
+
+            if (voiceServer) {
+                const cleanVoice = voiceServer.replace(/^https?:\/\//i, '').replace(/^wss?:\/\//i, '').replace(/\/+$/, '');
+                if (voiceServer.startsWith('ws://') || voiceServer.startsWith('http://')) {
+                    proto = 'ws:';
+                } else {
+                    proto = 'wss:';
+                }
+                host = cleanVoice;
+            }
+            
+            // Connect to voice mesh endpoint
+            const targetUrl = `${proto}//${host}/ws/voice?roomId=${encodeURIComponent(roomId)}&pin=${encodeURIComponent(pin)}`;
+            log('Connecting to signaling endpoint: ' + targetUrl);
+            ws = new WebSocket(targetUrl);
+
+            ws.onopen = () => {
+                log('Signaling WebSocket connected to /ws/voice');
+                // Join voice room as Director
+                ws.send(JSON.stringify({
+                    type: 'join',
+                    roomId: roomId,
+                    alias: 'Director',
+                    role: 'director'
+                }));
+
+                // Also announce ready for legacy intercom
+                ws.send(JSON.stringify({ type: 'intercom-director-ready' }));
+            };
+
+            ws.onmessage = async (e) => {
+                try {
+                    const msg = JSON.parse(e.data);
+                    const type = msg.type;
+
+                    // Mesh events (React Native WebRtcMeshService)
+                    if (type === 'peers') {
+                        log('Received peers list: ' + JSON.stringify(msg.peers));
+                        if (Array.isArray(msg.peers)) {
+                            for (const p of msg.peers) {
+                                if (p.alias && p.alias !== 'Director') {
+                                    await getOrCreatePeer(p.alias, true);
+                                }
+                            }
+                        }
+                    } else if (type === 'peer-joined') {
+                        const alias = msg.alias || msg.peer?.alias;
+                        log('Peer joined: ' + alias);
+                        if (alias && alias !== 'Director') {
+                            await getOrCreatePeer(alias, false);
+                        }
+                    } else if (type === 'peer-left') {
+                        const alias = msg.alias || msg.peerId;
+                        log('Peer left: ' + alias);
+                        if (alias) cleanupPeer(alias);
+                    } else if (type === 'signal') {
+                        if (msg.from && (msg.to === 'Director' || !msg.to) && msg.data) {
+                            await handleSignalData(msg.from, msg.data);
+                        }
+                    }
+                    // Direct camera events
+                    else if (type === 'intercom-offer') {
+                        await handleDirectOffer(msg.cam, msg.sdp);
+                    } else if (type === 'intercom-ice') {
+                        await handleDirectIce(msg.cam, msg.candidate);
+                    } else if (type === 'intercom-leave') {
+                        cleanupPeer(msg.cam);
+                    }
+                } catch (err) {
+                    log('Error handling WS message: ' + err.message);
+                }
+            };
+
+            ws.onclose = () => {
+                log('Signaling WebSocket closed. Reconnecting in 2s...');
+                setTimeout(initWebSocket, 2000);
+            };
+
+            ws.onerror = (err) => {
+                log('WebSocket error: ' + err);
+            };
         }
 
         async function connectIntercom() {
-            log('Starting intercom...');
+            if (isConnecting || isConnected) return;
+            isConnecting = true;
+            log('Starting Director intercom...');
+
             try {
-                // Get microphone
-                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                log('Microphone acquired');
-
-                // Connect to the same WebSocket the main app uses (LAN mode)
-                const urlParams = new URLSearchParams(window.location.search);
-                const roomId = urlParams.get('roomId') || '';
-                const pin = urlParams.get('pin') || '';
-                const roomName = urlParams.get('roomName') || '';
-
-                // Determine WS URL
-                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const host = location.host || 'localhost:8080';
-                const wsUrl = `${proto}//${host}/ws?roomId=${roomId}&pin=${pin}`;
-
-                ws = new WebSocket(wsUrl);
-                ws.onopen = () => {
-                    log('WebSocket connected');
-                    // Announce ourselves as director intercom
-                    ws.send(JSON.stringify({ type: 'intercom-director-ready' }));
-                    window.chrome.webview.postMessage('intercom_connected');
-                };
-
-                ws.onmessage = (e) => {
-                    let data;
-                    try { data = JSON.parse(e.data); } catch { return; }
-                    handleSignaling(data);
-                };
-
-                ws.onclose = () => {
-                    log('WebSocket closed');
-                    window.chrome.webview.postMessage('intercom_disconnected');
-                };
-
-                ws.onerror = (err) => {
-                    log('WebSocket error: ' + err);
-                    window.chrome.webview.postMessage('intercom_error');
-                };
-            } catch (err) {
-                log('Error: ' + err.message);
-                window.chrome.webview.postMessage('intercom_error');
-            }
-        }
-
-        async function handleSignaling(data) {
-            if (data.type === 'intercom-offer') {
-                // A crew member wants to connect
-                const clientId = data.clientId;
-                log('Received offer from ' + clientId);
-                await handleOffer(clientId, data.offer);
-            } else if (data.type === 'intercom-ice') {
-                const clientId = data.clientId;
-                if (peers[clientId]) {
-                    try {
-                        await peers[clientId].addIceCandidate(new RTCIceCandidate(data.candidate));
-                    } catch (e) {
-                        log('ICE add failed: ' + e.message);
+                // 1. Initialize WebAudio context
+                try {
+                    if (!window._audioCtx) {
+                        window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                     }
-                }
-            } else if (data.type === 'intercom-leave') {
-                closePeer(data.clientId);
+                    if (window._audioCtx.state === 'suspended') {
+                        window._audioCtx.resume();
+                    }
+                } catch (_) {}
+
+                // 2. Capture Director microphone FIRST before connecting signaling
+                log('Requesting microphone access...');
+                directorStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 48000,
+                        channelCount: 1
+                    },
+                    video: false
+                });
+
+                log('Microphone acquired successfully');
+                isConnected = true;
+                isConnecting = false;
+
+                // 3. Now connect to WebSocket with microphone already live
+                initWebSocket();
+
+                postToWpf('intercom_connected');
+            } catch (err) {
+                log('Microphone capture error: ' + err.message);
+                isConnecting = false;
+                isConnected = false;
+                postToWpf('intercom_error');
             }
         }
 
-        async function handleOffer(clientId, offer) {
-            // Close existing peer if any
-            closePeer(clientId);
+        async function getOrCreatePeer(alias, initiateOffer = false) {
+            if (peers[alias]) return peers[alias];
 
-            const pc = new RTCPeerConnection({ iceServers });
-            peers[clientId] = pc;
+            log('Creating RTCPeerConnection for: ' + alias);
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun.cloudflare.com:3478' }
+                ]
+            });
 
-            // Add our mic tracks
-            if (localStream) {
-                localStream.getTracks().forEach(track => {
-                    pc.addTrack(track, localStream);
+            peers[alias] = pc;
+
+            if (directorStream) {
+                directorStream.getAudioTracks().forEach(track => {
+                    track.enabled = true;
+                    try { pc.addTrack(track, directorStream); } catch (_) {}
                 });
             }
 
-            // Handle incoming audio from crew
             pc.ontrack = (event) => {
-                log('Got remote track from ' + clientId);
-                let audioEl = audioElements[clientId];
+                log(`Audio track received from: ${alias}`);
+                let audioEl = document.getElementById('audio-peer-' + alias);
                 if (!audioEl) {
                     audioEl = document.createElement('audio');
+                    audioEl.id = 'audio-peer-' + alias;
                     audioEl.autoplay = true;
-                    audioEl.id = 'audio-' + clientId;
+                    audioEl.controls = false;
                     document.getElementById('audio-container').appendChild(audioEl);
-                    audioElements[clientId] = audioEl;
                 }
-                audioEl.srcObject = event.streams[0];
+                const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+                audioEl.srcObject = stream;
+                audioEl.play().catch(e => log(`Autoplay notification for ${alias}: ` + e.message));
+
+                try {
+                    if (!window._audioCtx) {
+                        window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (window._audioCtx.state === 'suspended') {
+                        window._audioCtx.resume();
+                    }
+                    const source = window._audioCtx.createMediaStreamSource(stream);
+                    source.connect(window._audioCtx.destination);
+                    log(`Direct WebAudio mixer attached for ${alias}`);
+                } catch (webaudioErr) {
+                    log(`WebAudio attach error for ${alias}: ` + webaudioErr.message);
+                }
             };
 
-            // Send ICE candidates to the crew member
             pc.onicecandidate = (event) => {
                 if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
-                        type: 'intercom-ice',
-                        targetClientId: clientId,
-                        candidate: event.candidate.toJSON()
+                        type: 'signal',
+                        roomId: roomId,
+                        from: 'Director',
+                        to: alias,
+                        data: {
+                            type: 'candidate',
+                            candidate: event.candidate
+                        }
                     }));
                 }
             };
 
             pc.onconnectionstatechange = () => {
-                log('Peer ' + clientId + ' state: ' + pc.connectionState);
-                if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-                    closePeer(clientId);
+                log(`${alias} connection state: ${pc.connectionState}`);
+                if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                    cleanupPeer(alias);
                 }
             };
 
-            try {
-                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            if (initiateOffer) {
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'signal',
+                            roomId: roomId,
+                            from: 'Director',
+                            to: alias,
+                            data: offer
+                        }));
+                    }
+                } catch (err) {
+                    log(`Error creating offer for ${alias}: ` + err.message);
+                }
+            }
+
+            return pc;
+        }
+
+        async function handleSignalData(fromAlias, data) {
+            const pc = await getOrCreatePeer(fromAlias);
+            log(`[handleSignalData] fromAlias=${fromAlias}, pc=${pc}, state=${pc?.signalingState}`);
+            if (!pc) return;
+
+            if (data.type === 'offer') {
+                log(`Handling offer from: ${fromAlias}`);
+                if (pc.signalingState !== 'stable') {
+                    log(`Offer collision detected for ${fromAlias}, rolling back local offer`);
+                    try {
+                        await pc.setLocalDescription({ type: 'rollback' });
+                    } catch (e) {
+                        log(`Rollback failed for ${fromAlias}: ` + e.message);
+                    }
+                }
+                await pc.setRemoteDescription(new RTCSessionDescription(data));
+
+                // Flush queued ICE candidates
+                if (pc._iceQueue && pc._iceQueue.length > 0) {
+                    for (const c of pc._iceQueue) {
+                        try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+                    }
+                    pc._iceQueue = [];
+                }
+
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
-                        type: 'intercom-answer',
-                        targetClientId: clientId,
-                        answer: answer
+                        type: 'signal',
+                        roomId: roomId,
+                        from: 'Director',
+                        to: fromAlias,
+                        data: answer
                     }));
                 }
-                log('Sent answer to ' + clientId);
-            } catch (e) {
-                log('Error handling offer: ' + e.message);
-                closePeer(clientId);
+            } else if (data.type === 'answer') {
+                log(`Handling answer from: ${fromAlias}`);
+                await pc.setRemoteDescription(new RTCSessionDescription(data));
+
+                // Flush queued ICE candidates
+                if (pc._iceQueue && pc._iceQueue.length > 0) {
+                    for (const c of pc._iceQueue) {
+                        try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+                    }
+                    pc._iceQueue = [];
+                }
+            } else if (data.type === 'candidate' || data.candidate) {
+                const cand = data.candidate || data;
+                if (!pc.remoteDescription) {
+                    if (!pc._iceQueue) pc._iceQueue = [];
+                    pc._iceQueue.push(cand);
+                } else {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(cand));
+                    } catch (e) {
+                        log(`Error adding ICE candidate from ${fromAlias}: ` + e.message);
+                    }
+                }
             }
         }
 
-        function closePeer(clientId) {
-            if (peers[clientId]) {
-                peers[clientId].close();
-                delete peers[clientId];
+        async function handleDirectOffer(cam, sdp) {
+            const alias = 'Cam ' + cam;
+            const pc = await getOrCreatePeer(alias);
+            if (!pc) return;
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'intercom-answer',
+                    cam: cam.toString(),
+                    sdp: answer
+                }));
             }
-            if (audioElements[clientId]) {
-                audioElements[clientId].remove();
-                delete audioElements[clientId];
+        }
+
+        async function handleDirectIce(cam, candidate) {
+            const alias = 'Cam ' + cam;
+            const pc = await getOrCreatePeer(alias);
+            if (pc && candidate) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                    log(`Error adding direct ICE for ${alias}: ` + e.message);
+                }
             }
+        }
+
+        function cleanupPeer(alias) {
+            const pc = peers[alias];
+            if (pc) {
+                try { pc.close(); } catch (e) {}
+                delete peers[alias];
+            }
+            const el = document.getElementById('audio-peer-' + alias);
+            if (el) el.remove();
+            log(`Cleaned up peer: ${alias}`);
         }
 
         function disconnectIntercom() {
-            // Close all peers
-            for (const id of Object.keys(peers)) {
-                closePeer(id);
+            log('Disconnecting Director intercom...');
+            if (directorStream) {
+                directorStream.getTracks().forEach(t => t.stop());
+                directorStream = null;
             }
-            // Stop local stream
-            if (localStream) {
-                localStream.getTracks().forEach(t => t.stop());
-                localStream = null;
-            }
-            // Close WS
-            if (ws) {
-                ws.onclose = null;
-                ws.close();
-                ws = null;
-            }
-            window.chrome.webview.postMessage('intercom_disconnected');
+
+            Object.keys(peers).forEach(alias => cleanupPeer(alias));
+            isConnected = false;
+            isConnecting = false;
+
+            document.getElementById('audio-container').innerHTML = '';
+            postToWpf('intercom_disconnected');
         }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initWebSocket();
+            setTimeout(() => {
+                connectIntercom();
+            }, 500);
+        });
     </script>
 </body>
 </html>

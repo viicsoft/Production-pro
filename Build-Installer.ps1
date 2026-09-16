@@ -10,6 +10,12 @@ Write-Host ""
 
 # Check if Inno Setup is installed
 $innoSetupPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+$localInnoSetupPath = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+
+if (Test-Path $localInnoSetupPath) {
+    $innoSetupPath = $localInnoSetupPath
+}
+
 if (-not (Test-Path $innoSetupPath)) {
     Write-Host "ERROR: Inno Setup not found!" -ForegroundColor Red
     Write-Host ""

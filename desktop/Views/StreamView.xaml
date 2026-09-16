@@ -1,0 +1,365 @@
+<UserControl x:Class="Desktop.Views.StreamView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="720" d:DesignWidth="1100"
+             Background="#141416"
+             Foreground="#E4E4E7"
+             FontFamily="Segoe UI">
+
+    <UserControl.Resources>
+        <!-- Card Container Style -->
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#1E1E22"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="18"/>
+        </Style>
+
+        <!-- Nested Inner Box Style -->
+        <Style x:Key="InnerCardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#141416"/>
+            <Setter Property="BorderBrush" Value="#2C2C32"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+
+        <!-- Primary Broadcast Action Button (Go On Air / Start) -->
+        <Style x:Key="OnAirButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#00C853"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#00E676"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#009624"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Stop Action Button Style -->
+        <Style x:Key="StopStreamButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#2A2A30"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderBrush" Value="#44444C"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#D32F2F"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#EF5350"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#B71C1C"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Secondary Action Button Style -->
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#222226"/>
+            <Setter Property="Foreground" Value="#E4E4E7"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#2A2A30"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#FF9800"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- 0: Header -->
+            <RowDefinition Height="*"/>     <!-- 1: Main Content -->
+        </Grid.RowDefinitions>
+
+        <!-- 0. TOP HEADER BAR -->
+        <Border Grid.Row="0" Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="0,0,0,1" Padding="20,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="30" Height="30" Background="#2A2A30" CornerRadius="6" BorderBrush="#3D3D44" BorderThickness="1" Margin="0,0,12,0" VerticalAlignment="Center">
+                        <!-- Broadcast Antenna / Tower Icon -->
+                        <Path Data="M 15 3 A 12 12 0 0 1 15 27 M 15 7 A 8 8 0 0 1 15 23 M 15 11 A 4 4 0 0 1 15 19 M 15 15 L 15 15.01" 
+                              Stroke="#FF9800" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" 
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="LIVE RTMP STREAMING CONTROL" Foreground="#FF9800" FontWeight="Bold" FontSize="13"/>
+                        <TextBlock Text="Configure RTMP broadcast servers, credentials, bitrates, and monitor real-time transmission telemetry" Foreground="#A1A1AA" FontSize="11" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Header Status Pill -->
+                <Border x:Name="PillHeaderStatus" Grid.Column="1" Background="#2A2A30" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="14" Padding="12,5" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="DotHeaderStatus" Width="8" Height="8" Fill="#71717A" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="TxtHeaderStatus" Text="OFF AIR (IDLE)" Foreground="#A1A1AA" FontSize="11" FontWeight="Bold"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 1. MAIN CONTENT AREA -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="480"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- LEFT COLUMN: CONFIGURATION & TRANSPORT CONTROLS -->
+                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+
+                    <!-- CARD 1: STREAM CONFIGURATION -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="STREAM CONFIGURATION" Foreground="#FF9800" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="RTMP / RTMPS" Foreground="#71717A" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Border Height="1" Background="#2C2C32" Margin="0,0,0,14"/>
+
+                            <!-- Service Preset Dropdown -->
+                            <TextBlock Text="STREAMING SERVICE PRESET" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <ComboBox x:Name="CmbServicePreset" Height="36" Margin="0,0,0,14" SelectionChanged="CmbServicePreset_SelectionChanged">
+                                <ComboBoxItem Content="YouTube Live" IsSelected="True"/>
+                                <ComboBoxItem Content="Twitch"/>
+                                <ComboBoxItem Content="Facebook Live"/>
+                                <ComboBoxItem Content="Custom RTMP Server"/>
+                            </ComboBox>
+
+                            <!-- Server URL Input -->
+                            <TextBlock Text="SERVER URL" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <TextBox x:Name="TxtServerUrl" Text="rtmp://a.rtmp.youtube.com/live2" Height="36" FontSize="12" VerticalContentAlignment="Center" Margin="0,0,0,14"/>
+
+                            <!-- Stream Key Input with Reveal Toggle -->
+                            <TextBlock Text="STREAM KEY (PRIVATE)" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <Grid Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="42"/>
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="PwdStreamKey" Height="36" FontSize="13" VerticalContentAlignment="Center" Padding="8,4" PasswordChanged="PwdStreamKey_PasswordChanged"/>
+                                <TextBox x:Name="TxtStreamKey" Height="36" FontSize="12" VerticalContentAlignment="Center" Padding="8,4" Visibility="Collapsed" TextChanged="TxtStreamKey_TextChanged"/>
+                                <Button x:Name="BtnToggleKeyReveal" Grid.Column="1" Content="👁" Style="{StaticResource SecondaryButtonStyle}" Margin="4,0,0,0" ToolTip="Reveal/Hide Stream Key" Click="BtnToggleKeyReveal_Click"/>
+                            </Grid>
+
+                            <!-- Bitrate Settings (Low / High) -->
+                            <Grid Margin="0,0,0,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                                    <TextBlock Text="LOW BITRATE (BPS)" Foreground="#A1A1AA" FontSize="9" FontWeight="Bold" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="TxtLowBitrate" Text="4500000" Height="32" FontSize="11" VerticalContentAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBlock Text="HIGH BITRATE (BPS)" Foreground="#A1A1AA" FontSize="9" FontWeight="Bold" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="TxtHighBitrate" Text="6000000" Height="32" FontSize="11" VerticalContentAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Save / Apply Settings Button -->
+                            <Button x:Name="BtnSaveSettings" Content="✓ Save Stream Settings" Style="{StaticResource SecondaryButtonStyle}" Height="34" Click="BtnSaveSettings_Click"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- CARD 2: BROADCAST TRANSMISSION CONTROL -->
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="TRANSMISSION CONTROL" Foreground="#FF9800" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="ON AIR SWITCH" Foreground="#71717A" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Border Height="1" Background="#2C2C32" Margin="0,0,0,14"/>
+
+                            <Grid Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button x:Name="BtnStartStreaming" Grid.Column="0" Content="🔴 GO ON AIR" Style="{StaticResource OnAirButtonStyle}" Height="46" Margin="0,0,6,0" Click="BtnStartStreaming_Click"/>
+                                <Button x:Name="BtnStopStreaming" Grid.Column="1" Content="⬛ STOP STREAM" Style="{StaticResource StopStreamButtonStyle}" Height="46" Margin="6,0,0,0" IsEnabled="False" Click="BtnStopStreaming_Click"/>
+                            </Grid>
+
+                            <!-- Status Feedback Banner -->
+                            <Border x:Name="PnlStatusBanner" Background="#141416" BorderBrush="#2C2C32" BorderThickness="1" CornerRadius="4" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="TxtStatusBannerIcon" Text="○" FontSize="13" Foreground="#71717A" Margin="0,1,10,0" VerticalAlignment="Top"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock x:Name="TxtStatusHeadline" Text="Stream Engine Ready" FontWeight="Bold" FontSize="11" Foreground="#A1A1AA"/>
+                                        <TextBlock x:Name="TxtStatusDetails" Text="Configure RTMP credentials and click 'Go On Air' to start live broadcast." FontSize="10" Foreground="#71717A" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+
+                <!-- RIGHT COLUMN: LIVE TELEMETRY & NETWORK HEALTH -->
+                <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" VerticalAlignment="Stretch">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header & Health Tag -->
+                        <Grid Grid.Row="0" Margin="0,0,0,12">
+                            <TextBlock Text="LIVE STREAM TELEMETRY &amp; NETWORK HEALTH" Foreground="#FF9800" FontSize="11" FontWeight="Bold"/>
+                            <Border x:Name="BadgeStreamHealth" Background="#2A2A30" CornerRadius="3" Padding="8,2" HorizontalAlignment="Right">
+                                <TextBlock x:Name="TxtHealthStatus" Text="STANDBY" Foreground="#71717A" FontSize="10" FontWeight="Bold"/>
+                            </Border>
+                        </Grid>
+                        <Border Grid.Row="0" Height="1" Background="#2C2C32" VerticalAlignment="Bottom"/>
+
+                        <!-- Telemetry Grid -->
+                        <StackPanel Grid.Row="1" Margin="0,16,0,0">
+
+                            <!-- Metric Highlight Tiles -->
+                            <UniformGrid Columns="4" Margin="0,0,0,16">
+                                <Border Style="{StaticResource InnerCardBorderStyle}" Margin="0,0,4,0">
+                                    <StackPanel>
+                                        <TextBlock Text="STATE" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtStatState" Text="IDLE" Foreground="#A1A1AA" FontSize="13" FontWeight="Bold" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource InnerCardBorderStyle}" Margin="4,0,4,0">
+                                    <StackPanel>
+                                        <TextBlock Text="DURATION" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtStatDuration" Text="00:00:00" Foreground="#E4E4E7" FontSize="13" FontWeight="Bold" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource InnerCardBorderStyle}" Margin="4,0,4,0">
+                                    <StackPanel>
+                                        <TextBlock Text="BITRATE" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtStatBitrate" Text="0 kbps" Foreground="#00E676" FontSize="13" FontWeight="Bold" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource InnerCardBorderStyle}" Margin="4,0,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="CACHE BUFFER" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtStatCache" Text="0.0%" Foreground="#E4E4E7" FontSize="13" FontWeight="Bold" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+
+                            <!-- Cache Fullness Progress Meter -->
+                            <Border Style="{StaticResource InnerCardBorderStyle}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,6">
+                                        <TextBlock Text="STREAM CACHE HEADROOM BUFFER" Foreground="#FF9800" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtCachePercent" Text="0.0%" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <ProgressBar x:Name="ProgressCache" Height="10" Value="0" Maximum="100" Background="#141416" Foreground="#00E676" BorderThickness="0"/>
+                                    <TextBlock Text="Low cache (under 15%) indicates optimal upload bandwidth. High cache (>50%) indicates network throttling." Foreground="#71717A" FontSize="9" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Details Table -->
+                            <Border Style="{StaticResource InnerCardBorderStyle}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="TRANSMISSION ENDPOINT &amp; ENCODER METRICS" Foreground="#FF9800" FontSize="10" FontWeight="Bold" Margin="0,0,0,10"/>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Service Provider:" Foreground="#888890" FontSize="11"/>
+                                        <TextBlock x:Name="TxtTelemetryService" Grid.Column="1" Text="YouTube Live" Foreground="#E4E4E7" FontSize="11" FontWeight="SemiBold"/>
+                                    </Grid>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Target RTMP URL:" Foreground="#888890" FontSize="11"/>
+                                        <TextBlock x:Name="TxtTelemetryUrl" Grid.Column="1" Text="rtmp://a.rtmp.youtube.com/live2" Foreground="#A1A1AA" FontSize="11"/>
+                                    </Grid>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Configured Bitrate:" Foreground="#888890" FontSize="11"/>
+                                        <TextBlock x:Name="TxtTelemetryBitrateRange" Grid.Column="1" Text="4,500 – 6,000 kbps" Foreground="#E4E4E7" FontSize="11"/>
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Stream Health:" Foreground="#888890" FontSize="11"/>
+                                        <TextBlock x:Name="TxtTelemetryHealth" Grid.Column="1" Text="Link Ready (0 Packet Loss)" Foreground="#00E676" FontSize="11"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Refresh Action -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="BtnRefreshTelemetry" Content="🔄 Refresh Status" Style="{StaticResource SecondaryButtonStyle}" Padding="14,6" Click="BtnRefreshTelemetry_Click"/>
+                            </StackPanel>
+
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

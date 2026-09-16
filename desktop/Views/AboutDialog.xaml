@@ -1,0 +1,404 @@
+<Window x:Class="Desktop.Views.AboutDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="About Atem Software Control"
+        Width="820" Height="640"
+        MinWidth="720" MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        Background="#141416"
+        Foreground="#E4E4E7"
+        FontFamily="Segoe UI">
+
+    <Window.Resources>
+        <!-- Card Container Style -->
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#1E1E22"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+
+        <!-- Inner Box Style -->
+        <Style x:Key="InnerCardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#141416"/>
+            <Setter Property="BorderBrush" Value="#2C2C32"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+
+        <!-- Action Button Style -->
+        <Style x:Key="ActionButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#2A2A30"/>
+            <Setter Property="Foreground" Value="#E4E4E7"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#3D3D44"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FF9800"/>
+                                <Setter Property="Foreground" Value="#111113"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- TabItem Style -->
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="#A1A1AA"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="tabBorder" Background="Transparent" BorderBrush="Transparent" BorderThickness="0,0,0,2" Padding="{TemplateBinding Padding}" Margin="0,0,4,0" Cursor="Hand">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="tabBorder" Property="Background" Value="#1E1E22"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="tabBorder" Property="BorderBrush" Value="#FF9800"/>
+                                <Setter TargetName="tabBorder" Property="Background" Value="#1E1E22"/>
+                                <Setter Property="Foreground" Value="#FF9800"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Header Banner -->
+            <RowDefinition Height="*"/>     <!-- Tabs Content -->
+            <RowDefinition Height="Auto"/>  <!-- Footer -->
+        </Grid.RowDefinitions>
+
+        <!-- HEADER BANNER -->
+        <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="16,12" Margin="0,0,0,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Width="44" Height="44" Background="#2A2A30" CornerRadius="8" BorderBrush="#FF9800" BorderThickness="1.5" Margin="0,0,14,0" VerticalAlignment="Center">
+                    <TextBlock Text="⚡" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="VIDIKOM ATEM SOFTWARE CONTROL" FontSize="16" FontWeight="Bold" Foreground="#FF9800"/>
+                    <TextBlock Text="Professional Broadcast Control Surface, SDK Automation &amp; AI Director" FontSize="11" Foreground="#A1A1AA" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <Border Grid.Column="2" x:Name="ChipDeviceMode" Background="#FF9800" CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtDeviceMode" Text="SIMULATOR" Foreground="#111113" FontSize="10" FontWeight="Bold"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- MAIN TABS -->
+        <TabControl x:Name="MainTabs" Grid.Row="1" Background="Transparent" BorderThickness="0">
+            
+            <!-- TAB 1: ABOUT & SYSTEM -->
+            <TabItem Header="ℹ️ About">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,10,0,0">
+                    <StackPanel>
+                        <!-- Software Version Card -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="SOFTWARE INFORMATION" FontSize="12" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="160"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="26"/>
+                                        <RowDefinition Height="26"/>
+                                        <RowDefinition Height="26"/>
+                                        <RowDefinition Height="26"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Application Version:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TxtAppVersion" Text="1.2.0.0 (Milestone 5)" Foreground="#FFFFFF" FontWeight="SemiBold" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text=".NET Runtime:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TxtDotNetVersion" Text=".NET 9.0 Windows (WPF)" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Target Architecture:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="TxtArchitecture" Text="X64 (64-bit)" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="ATEM SDK Interop:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="BMDSwitcherAPI COM Interop with SimAtem Fallback" Foreground="#00E676" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Host System Card -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="HOST ENVIRONMENT" FontSize="12" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="160"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="26"/>
+                                        <RowDefinition Height="26"/>
+                                        <RowDefinition Height="26"/>
+                                        <RowDefinition Height="26"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Operating System:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TxtOsVersion" Text="Microsoft Windows" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Machine Name:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TxtMachineName" Text="DESKTOP" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="User Account:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="TxtUserName" Text="USER" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Working Directory:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="TxtWorkingDir" Text="C:\..." Foreground="#A1A1AA" FontSize="10" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Copyright & Legal -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="CREDITS &amp; COPYRIGHT" FontSize="12" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,6"/>
+                                <TextBlock Text="Designed &amp; Developed for Vidikom Broadcast Production Suites." Foreground="#E4E4E7" FontSize="11"/>
+                                <TextBlock Text="© 2026 Viicsoft / Vidikom. Blackmagic Design and ATEM are registered trademarks of Blackmagic Design Pty. Ltd." Foreground="#A1A1AA" FontSize="10" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- TAB 2: DEVICE INFORMATION -->
+            <TabItem Header="📟 Device Info">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,10,0,0">
+                    <StackPanel>
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Header & Refresh -->
+                                <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                                    <TextBlock Text="SWITCHER HARDWARE IDENTIFICATION" FontSize="12" FontWeight="Bold" Foreground="#FF9800" VerticalAlignment="Center"/>
+                                    <Button DockPanel.Dock="Right" Content="🔄 Refresh Device Info" Style="{StaticResource ActionButtonStyle}" Click="BtnRefreshDevice_Click"/>
+                                </DockPanel>
+
+                                <!-- Properties Grid -->
+                                <Border Grid.Row="1" Style="{StaticResource InnerCardBorderStyle}" Margin="0,0,0,12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="28"/>
+                                            <RowDefinition Height="28"/>
+                                            <RowDefinition Height="28"/>
+                                            <RowDefinition Height="28"/>
+                                            <RowDefinition Height="28"/>
+                                            <RowDefinition Height="28"/>
+                                        </Grid.RowDefinitions>
+
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Switcher Model:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TxtDeviceModel" Text="Loading..." Foreground="#FFFFFF" FontWeight="Bold" VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Device Name:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TxtDeviceName" Text="Loading..." Foreground="#FFFFFF" VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="IP Address / Host:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="TxtDeviceIp" Text="Loading..." Foreground="#00E676" FontWeight="SemiBold" VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Hardware Unique ID:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="TxtDeviceUniqueId" Text="Loading..." Foreground="#FFFFFF" FontFamily="Consolas" VerticalAlignment="Center"/>
+
+                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Power Status:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Ellipse x:Name="DotPowerStatus" Width="10" Height="10" Fill="#00E676" Margin="0,0,6,0"/>
+                                            <TextBlock x:Name="TxtPowerStatus" Text="Normal / OK" Foreground="#FFFFFF" FontWeight="SemiBold"/>
+                                        </StackPanel>
+
+                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Connection Mode:" Foreground="#A1A1AA" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="1" x:Name="TxtConnectionMode" Text="In-Memory Simulator" Foreground="#FF9800" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Hint Banner -->
+                                <Border Grid.Row="2" Background="#1A1A22" CornerRadius="4" Padding="10">
+                                    <TextBlock Text="💡 To change the connected hardware endpoint, use the 'Connection' tab in the bottom bar or Menu > Connection > Show Connection View." Foreground="#A1A1AA" FontSize="11" TextWrapping="Wrap"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- TAB 3: KEYBOARD SHORTCUTS -->
+            <TabItem Header="⌨️ Shortcuts">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,10,0,0">
+                    <StackPanel>
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <TextBlock Text="BROADCAST KEYBOARD SHORTCUTS QUICK REFERENCE" FontSize="12" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,10"/>
+                                <DataGrid x:Name="GridShortcuts" AutoGenerateColumns="False" IsReadOnly="True"
+                                          Background="#141416" RowBackground="#1E1E22" AlternatingRowBackground="#18181C"
+                                          Foreground="#E4E4E7" BorderBrush="#3D3D44" GridLinesVisibility="Horizontal"
+                                          HorizontalGridLinesBrush="#2C2C32" HeadersVisibility="Column"
+                                          CanUserResizeRows="False" SelectionMode="Single">
+                                    <DataGrid.ColumnHeaderStyle>
+                                        <Style TargetType="DataGridColumnHeader">
+                                            <Setter Property="Background" Value="#25252A"/>
+                                            <Setter Property="Foreground" Value="#FF9800"/>
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                            <Setter Property="Padding" Value="10,6"/>
+                                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                            <Setter Property="BorderBrush" Value="#3D3D44"/>
+                                        </Style>
+                                    </DataGrid.ColumnHeaderStyle>
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Key / Combination" Binding="{Binding Key}" Width="160">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                    <Setter Property="Foreground" Value="#FF9800"/>
+                                                    <Setter Property="Padding" Value="10,4"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Header="Action / Function" Binding="{Binding Action}" Width="*">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Padding" Value="10,4"/>
+                                                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="130">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Padding" Value="10,4"/>
+                                                    <Setter Property="Foreground" Value="#A1A1AA"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- TAB 4: DIAGNOSTICS & LOGS -->
+            <TabItem Header="🩺 Diagnostics">
+                <Grid Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>  <!-- Telemetry Row -->
+                        <RowDefinition Height="*"/>     <!-- Log Viewer -->
+                        <RowDefinition Height="Auto"/>  <!-- Log Actions -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Telemetry Cards -->
+                    <Border Grid.Row="0" Style="{StaticResource CardBorderStyle}" Padding="12" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="MANAGED MEMORY" FontSize="9" FontWeight="Bold" Foreground="#A1A1AA"/>
+                                <TextBlock x:Name="TxtGcMemory" Text="-- MB" FontSize="14" FontWeight="Bold" Foreground="#00E676" Margin="0,2,0,0"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="WORKING SET" FontSize="9" FontWeight="Bold" Foreground="#A1A1AA"/>
+                                <TextBlock x:Name="TxtWorkingSet" Text="-- MB" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,2,0,0"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="THREADS" FontSize="9" FontWeight="Bold" Foreground="#A1A1AA"/>
+                                <TextBlock x:Name="TxtThreadCount" Text="--" FontSize="14" FontWeight="Bold" Foreground="#FF9800" Margin="0,2,0,0"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3">
+                                <TextBlock Text="UPTIME" FontSize="9" FontWeight="Bold" Foreground="#A1A1AA"/>
+                                <TextBlock x:Name="TxtUptime" Text="00:00:00" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Recent Logs Box -->
+                    <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="10">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="RECENT APPLICATION &amp; HARDWARE LOGS" FontSize="11" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,6"/>
+
+                            <TextBox Grid.Row="1" x:Name="TxtDiagnosticsLogs"
+                                     Background="#111113" Foreground="#CCCCCC" BorderBrush="#2C2C32" BorderThickness="1"
+                                     FontFamily="Consolas" FontSize="10" IsReadOnly="True"
+                                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                     TextWrapping="NoWrap" Padding="8"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Diagnostics Action Buttons -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+                        <Button Content="📋 Copy Diagnostics" Style="{StaticResource ActionButtonStyle}" Click="BtnCopyDiagnostics_Click" Margin="0,0,8,0"/>
+                        <Button Content="📂 Open Logs Folder" Style="{StaticResource ActionButtonStyle}" Click="BtnOpenLogsFolder_Click" Margin="0,0,8,0"/>
+                        <Button Content="🔄 Refresh" Style="{StaticResource ActionButtonStyle}" Click="BtnRefreshDiagnostics_Click"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- FOOTER BAR -->
+        <Border Grid.Row="2" Margin="0,10,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Close" Style="{StaticResource ActionButtonStyle}" Click="BtnClose_Click" Width="90"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

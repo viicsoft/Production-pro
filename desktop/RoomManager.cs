@@ -59,11 +59,27 @@ namespace Desktop
             }
         }
 
-        public static void CreateRoom(string productionName, string directorName, NetworkMode networkMode = NetworkMode.LAN, string relayUrl = "")
+        public static void EnsureActiveRoom()
+        {
+            LoadState();
+            if (_activeRoom == null || string.IsNullOrWhiteSpace(_activeRoom.RoomId) || (DateTime.UtcNow - _activeRoom.CreatedAt).TotalHours > 24)
+            {
+                CreateRoom("Live Production", Environment.UserName, NetworkMode.Online, "wss://vidikom.app/ws/room");
+            }
+            else if (_activeRoom.NetworkMode == NetworkMode.LAN || string.IsNullOrEmpty(_activeRoom.RelayUrl))
+            {
+                // Upgrade existing room to hybrid cloud relay mode
+                _activeRoom.NetworkMode = NetworkMode.Online;
+                _activeRoom.RelayUrl = "wss://vidikom.app/ws/room";
+                SaveState();
+            }
+        }
+
+        public static void CreateRoom(string productionName, string directorName, NetworkMode networkMode = NetworkMode.Online, string relayUrl = "wss://vidikom.app/ws/room", string? forcedRoomId = null, string? forcedPin = null)
         {
             var rnd = new Random();
-            var roomId = rnd.Next(100000, 999999).ToString();
-            var pin = rnd.Next(1000, 9999).ToString();
+            var roomId = forcedRoomId ?? rnd.Next(100000, 999999).ToString();
+            var pin = forcedPin ?? rnd.Next(1000, 9999).ToString();
 
             // Generate a secure random HMAC secret
             var secretBytes = new byte[32];

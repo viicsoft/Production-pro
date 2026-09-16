@@ -32,6 +32,11 @@ namespace Desktop
             LoadSuggestions();
             BuildCategoryTree();
             RebuildCameraList();
+
+            PwaServer.Instance.OnSuggestionAck += (cam, shotId) =>
+            {
+                Dispatcher.InvokeAsync(() => HandleSuggestionAck(cam, shotId));
+            };
         }
 
         private void LoadSuggestions()
@@ -167,7 +172,8 @@ namespace Desktop
                 }
 
                 var textPanel = new StackPanel { Margin = new Thickness(10, 6, 10, 6) };
-                var title = new TextBlock { Text = s.Title, Foreground = Brushes.White, FontWeight = FontWeights.Bold, FontSize = 14, TextWrapping = TextWrapping.Wrap };
+                var titleText = s.TargetCameraId != -1 ? $"[Cam {s.TargetCameraId}] {s.Title}" : s.Title;
+                var title = new TextBlock { Text = titleText, Foreground = Brushes.White, FontWeight = FontWeights.Bold, FontSize = 14, TextWrapping = TextWrapping.Wrap };
                 var desc = new TextBlock { Text = s.Description, Foreground = Brushes.Gray, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0) };
                 textPanel.Children.Add(title);
                 textPanel.Children.Add(desc);
@@ -208,10 +214,12 @@ namespace Desktop
                     var dot = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = dotColor, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
                     dot.Tag = i; // Tag for updating later
                     var tb = new TextBlock { Text = label, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+                    var ackTb = new TextBlock { Text = "", Tag = $"ack_{i}", Foreground = Brushes.LimeGreen, FontWeight = FontWeights.Bold, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
 
                     stack.Children.Add(cb);
                     stack.Children.Add(dot);
                     stack.Children.Add(tb);
+                    stack.Children.Add(ackTb);
 
                     CameraList.Children.Add(stack);
                 }
@@ -229,12 +237,39 @@ namespace Desktop
                     var dot = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4), Background = dotColor, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
                     dot.Tag = i;
                     var tb = new TextBlock { Text = $"CAM {i} (Op {i})", Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+                    var ackTb = new TextBlock { Text = "", Tag = $"ack_{i}", Foreground = Brushes.LimeGreen, FontWeight = FontWeights.Bold, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
 
                     stack.Children.Add(cb);
                     stack.Children.Add(dot);
                     stack.Children.Add(tb);
+                    stack.Children.Add(ackTb);
 
                     CameraList.Children.Add(stack);
+                }
+            }
+        }
+
+        private void HandleSuggestionAck(string camStr, string? shotId)
+        {
+            if (int.TryParse(camStr, out int camId))
+            {
+                foreach (StackPanel sp in CameraList.Children)
+                {
+                    foreach (var child in sp.Children)
+                    {
+                        if (child is TextBlock ackTb && ackTb.Tag is string tag && tag == $"ack_{camId}")
+                        {
+                            ackTb.Text = "✓ ACK";
+                            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                            timer.Tick += (s, e) =>
+                            {
+                                ackTb.Text = "";
+                                timer.Stop();
+                            };
+                            timer.Start();
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -249,6 +284,78 @@ namespace Desktop
                     dot.Background = isConnected ? Brushes.Lime : new SolidColorBrush(Color.FromRgb(0xFF, 0xA5, 0x00));
                 }
             }
+        }
+
+        public void ClearAiBrainstormCategory()
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                _allSuggestions.RemoveAll(s => s.Category == "AI Brainstorm");
+                SaveSuggestions();
+                
+                TreeViewItem? aiNode = null;
+                foreach (TreeViewItem item in CategoryTree.Items)
+                {
+                    if (item.Tag as string == "AI Brainstorm")
+                    {
+                        aiNode = item;
+                        break;
+                    }
+                }
+                if (aiNode != null)
+                {
+                    CategoryTree.Items.Remove(aiNode);
+                }
+
+                if (CategoryTree.SelectedItem is TreeViewItem sel && 
+                    (sel.Tag as string == "ALL" || sel.Tag as string == "AI Brainstorm"))
+                {
+                    UpdateTiles("ALL");
+                    if (CategoryTree.Items.Count > 0)
+                        ((TreeViewItem)CategoryTree.Items[0]).IsSelected = true;
+                }
+            });
+        }
+
+        public void AddAiBrainstormIdea(ShotSuggestion suggestion)
+        {
+            var aiSuggestion = suggestion with { Category = "AI Brainstorm" };
+            
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                _allSuggestions.Insert(0, aiSuggestion); // Add to top
+                
+                // limit pool to 50 for AI Brainstorm to avoid growing forever
+                var aiCount = _allSuggestions.Count(s => s.Category == "AI Brainstorm");
+                if (aiCount > 50)
+                {
+                    var oldest = _allSuggestions.LastOrDefault(s => s.Category == "AI Brainstorm");
+                    if (oldest != null) _allSuggestions.Remove(oldest);
+                }
+
+                SaveSuggestions();
+                
+                bool hasAiCat = false;
+                foreach (TreeViewItem item in CategoryTree.Items)
+                {
+                    if (item.Tag as string == "AI Brainstorm")
+                    {
+                        hasAiCat = true;
+                        break;
+                    }
+                }
+
+                if (!hasAiCat)
+                {
+                    BuildCategoryTree();
+                }
+
+                if (CategoryTree.SelectedItem is TreeViewItem sel && 
+                    (sel.Tag as string == "ALL" || sel.Tag as string == "AI Brainstorm"))
+                {
+                    UpdateTiles(sel.Tag as string ?? "ALL");
+                }
+            });
         }
 
         private void AddCategory_Click(object sender, RoutedEventArgs e)
@@ -529,6 +636,44 @@ namespace Desktop
             }
             foreach (Border b in SuggestionsWrap.Children) b.BorderThickness = new Thickness(0);
             _selectedSuggestion = null;
+        }
+
+        private System.Windows.Threading.DispatcherTimer? _autoDispatchTimer;
+
+        private void AutoDispatch_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_autoDispatchTimer == null)
+            {
+                _autoDispatchTimer = new System.Windows.Threading.DispatcherTimer();
+                _autoDispatchTimer.Interval = TimeSpan.FromSeconds(20);
+                _autoDispatchTimer.Tick += async (s, ev) =>
+                {
+                    await DispatchNextShotToCamerasAsync();
+                };
+            }
+            _autoDispatchTimer.Start();
+            _ = DispatchNextShotToCamerasAsync(); // fire initial
+        }
+
+        private void AutoDispatch_Unchecked(object sender, RoutedEventArgs e)
+        {
+            _autoDispatchTimer?.Stop();
+        }
+
+        private async Task DispatchNextShotToCamerasAsync()
+        {
+            var connectedCams = PwaServer.Instance.ConnectedCameras;
+            if (connectedCams.Count == 0) return;
+
+            foreach (var camStr in connectedCams)
+            {
+                if (int.TryParse(camStr, out int camId))
+                {
+                    var roleInfo = new CameraRoleMetadata { Role = "Roving Stage" };
+                    var shot = RoleShotGenerator.GenerateShotForRole(roleInfo, camId);
+                    await PwaServer.Instance.BroadcastSuggestionAsync(shot, new[] { camId });
+                }
+            }
         }
     }
 }

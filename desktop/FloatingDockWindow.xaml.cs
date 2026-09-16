@@ -17,7 +17,7 @@ namespace Desktop
         {
             InitializeComponent();
             _type = type;
-            _config = config;
+            _config = config ?? new InputConfig();
             _switcher = switcher;
 
             TitleText.Text = type == DockType.SuperSource ? "SUPERSOURCE" : "PALETTES";
@@ -31,28 +31,42 @@ namespace Desktop
                 DockContent.Content = new PalettesView(_switcher);
             }
 
-            // Load saved position
-            var rect = type == DockType.SuperSource ? _config.SuperSourceDock : _config.PalettesDock;
+            // Load saved position safely
+            var rect = GetDockRect();
             if (rect.X >= 0 && rect.Y >= 0)
             {
                 this.Left = rect.X;
                 this.Top = rect.Y;
-                this.Width = rect.Width;
-                this.Height = rect.Height;
+                this.Width = rect.Width > 200 ? rect.Width : (type == DockType.SuperSource ? 680 : 400);
+                this.Height = rect.Height > 200 ? rect.Height : (type == DockType.SuperSource ? 740 : 600);
                 if (rect.IsMinimized) ToggleMinimize();
+            }
+        }
+
+        private WindowRect GetDockRect()
+        {
+            if (_type == DockType.SuperSource)
+            {
+                _config.SuperSourceDock ??= new WindowRect();
+                return _config.SuperSourceDock;
+            }
+            else
+            {
+                _config.PalettesDock ??= new WindowRect();
+                return _config.PalettesDock;
             }
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            var rect = _type == DockType.SuperSource ? _config.SuperSourceDock : _config.PalettesDock;
+            var rect = GetDockRect();
             rect.IsOpen = true;
             _config.Save();
         }
 
         private void Window_Closed(object sender, EventArgs e)
         {
-            var rect = _type == DockType.SuperSource ? _config.SuperSourceDock : _config.PalettesDock;
+            var rect = GetDockRect();
             rect.IsOpen = false;
             _config.Save();
         }
@@ -72,7 +86,7 @@ namespace Desktop
 
         private void SavePosition()
         {
-            var rect = _type == DockType.SuperSource ? _config.SuperSourceDock : _config.PalettesDock;
+            var rect = GetDockRect();
             if (!rect.IsMinimized)
             {
                 rect.X = this.Left;
@@ -96,7 +110,7 @@ namespace Desktop
 
         private void ToggleMinimize()
         {
-            var rect = _type == DockType.SuperSource ? _config.SuperSourceDock : _config.PalettesDock;
+            var rect = GetDockRect();
             rect.IsMinimized = !rect.IsMinimized;
             
             if (rect.IsMinimized)
@@ -109,8 +123,8 @@ namespace Desktop
             else
             {
                 DockContent.Visibility = Visibility.Visible;
-                this.MinHeight = 100;
-                this.Height = rect.Height > 30 ? rect.Height : 600;
+                this.MinHeight = 400;
+                this.Height = rect.Height > 200 ? rect.Height : (_type == DockType.SuperSource ? 740 : 600);
                 this.ResizeMode = ResizeMode.CanResizeWithGrip;
             }
             _config.Save();

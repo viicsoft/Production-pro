@@ -1,0 +1,49 @@
+<Window x:Class="Desktop.SetupWizardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Vidikom Setup Wizard" Height="500" Width="600"
+        Background="#1E1E1E" Foreground="White" WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
+
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Margin" Value="0,5"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#007ACC"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Margin" Value="10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Vidikom First-Launch Setup" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" Grid.Row="0" Margin="0,0,0,20"/>
+
+        <Border Grid.Row="1" Background="#252526" CornerRadius="8" Padding="20">
+            <StackPanel x:Name="SetupContent">
+                <TextBlock x:Name="TxtStepTitle" Text="Step 1: System Check" FontSize="18" FontWeight="Bold" Foreground="#4CAF50"/>
+                <TextBlock x:Name="TxtStepDescription" Text="We are checking your system for required dependencies..." Margin="0,10,0,20"/>
+                
+                <ProgressBar x:Name="ProgressBar" Height="20" Margin="0,10,0,10" IsIndeterminate="True" Visibility="Collapsed"/>
+                
+                <TextBlock x:Name="TxtDetails" Text="" Foreground="#AAA" FontSize="12" Margin="0,10,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button x:Name="BtnSkip" Content="Skip Step" Click="BtnSkip_Click" Background="#444" Visibility="Collapsed"/>
+            <Button x:Name="BtnAction" Content="Next" Click="BtnAction_Click" Visibility="Collapsed"/>
+        </StackPanel>
+    </Grid>
+</Window>

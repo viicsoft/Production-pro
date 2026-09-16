@@ -43,6 +43,7 @@ public sealed record ShotSuggestion(
 )
 {
     public bool IsAiGenerated { get; set; } = false;
+    public int TargetCameraId { get; set; } = -1;
 }
 
 public sealed record SwitcherState(
@@ -64,3 +65,202 @@ public sealed record ShotCue(string CamAlias, string Title, string Details, int 
 
 /// <summary>Selectable transition styles used by AUTO and T-bar. CUT/AUTO are actions, not styles.</summary>
 public enum TransitionStyle { Mix, Dip, Wipe, Stinger, DVE }
+
+public class CameraRoleMetadata
+{
+    public string Role { get; set; } = "Custom";
+    public string Mobility { get; set; } = "fixed";
+    public string DefaultFraming { get; set; } = "variable";
+    public string SubjectArea { get; set; } = "variable";
+    public string UseFrequency { get; set; } = "primary";
+    public string TransitionCompatibility { get; set; } = "";
+}
+
+public class EventSegment
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Time { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Notes { get; set; } = "";
+}
+
+public class ProductionBriefing
+{
+    public string Name { get; set; } = "New Production";
+    public string EventType { get; set; } = "Concert / Live Music";
+    public string CustomEventType { get; set; } = "";
+    public string Narrative { get; set; } = "";
+    public string VenueDescription { get; set; } = "";
+    public List<string> VenuePhotoPaths { get; set; } = new();
+    public List<EventSegment> Flow { get; set; } = new();
+    
+    public string GetEffectiveEventType() => EventType == "Custom (free text)" ? CustomEventType : EventType;
+}
+
+// ============================================================================
+// Milestone 1 Models: Connection, Stream, Record, Macros, Outputs, File, Help
+// ============================================================================
+
+#region Connection Models
+
+/// <summary>Discrete connection states for switcher hardware and simulator.</summary>
+public enum SwitcherConnectionState
+{
+    Disconnected,
+    Connecting,
+    Connected,
+    Failed
+}
+
+/// <summary>Detailed switcher connection state and endpoint metadata.</summary>
+public sealed record ConnectionInfo(
+    string Host,
+    SwitcherConnectionState State,
+    string? DeviceName = null,
+    string? FailureReason = null
+);
+
+#endregion
+
+#region Stream Models
+
+/// <summary>Discrete streaming lifecycle states matching ATEM RTMP engine.</summary>
+public enum StreamState
+{
+    Idle,
+    Connecting,
+    Streaming,
+    Stopping
+}
+
+/// <summary>Configuration parameters for live RTMP video streaming.</summary>
+public sealed record StreamSettings(
+    string ServiceName,
+    string Url,
+    string Key,
+    uint LowBitrate = 0,
+    uint HighBitrate = 0
+);
+
+/// <summary>Runtime telemetry and transmission status for live streaming.</summary>
+public sealed record StreamStatus(
+    StreamState State,
+    bool IsStreaming,
+    ulong DurationSeconds,
+    uint EncodingBitrate,
+    double CacheUsedPercent,
+    string? Error = null
+);
+
+#endregion
+
+#region Record Models
+
+/// <summary>Discrete disk recording lifecycle states.</summary>
+public enum RecordState
+{
+    Idle,
+    Recording,
+    Stopping
+}
+
+/// <summary>Disk storage volume information and capacity telemetry.</summary>
+public sealed record RecordDiskInfo(
+    uint DiskId,
+    string VolumeName,
+    uint RecordingTimeMinutes,
+    string Status,
+    bool IsActive
+);
+
+/// <summary>Runtime status, duration, and disk capacity for video recording.</summary>
+public sealed record RecordStatus(
+    RecordState State,
+    bool IsRecording,
+    string Filename,
+    ulong DurationSeconds,
+    uint TotalRecordingTimeAvailableMinutes,
+    string? Error = null
+);
+
+#endregion
+
+#region Macro Models
+
+/// <summary>Metadata and operational status for an ATEM macro slot (0..99).</summary>
+public sealed record MacroInfo(
+    uint Index,
+    string Name,
+    string Description,
+    bool IsValid,
+    bool HasUnsupportedOps = false
+);
+
+/// <summary>Execution state telemetry for running macros.</summary>
+public sealed record MacroRunStatus(
+    bool IsRunning,
+    bool IsWaitingForUser,
+    bool Loop,
+    uint ActiveMacroIndex
+);
+
+/// <summary>Recording state telemetry when capturing operator actions into a macro slot.</summary>
+public sealed record MacroRecordStatus(
+    bool IsRecording,
+    uint ActiveMacroIndex
+);
+
+#endregion
+
+#region Output & Routing Models
+
+/// <summary>Auxiliary video output routing configuration.</summary>
+public sealed record AuxOutputInfo(
+    long Id,
+    string Name,
+    long CurrentSourceInputId
+);
+
+/// <summary>Individual window configuration within a MultiView layout.</summary>
+public sealed record MultiViewWindow(
+    uint WindowIndex,
+    long CurrentInputId,
+    bool VuMeterEnabled
+);
+
+/// <summary>MultiView split layout, swap status, and window source mapping.</summary>
+public sealed record MultiViewConfig(
+    int Index,
+    string Layout,
+    bool SupportsProgramPreviewSwap,
+    bool ProgramPreviewSwapped,
+    List<MultiViewWindow> Windows
+);
+
+#endregion
+
+#region Media Pool Models
+
+/// <summary>Still image slot information in the switcher media pool.</summary>
+public sealed record MediaStillInfo(
+    uint Index,
+    string Name,
+    bool IsValid,
+    string? FilePath = null
+);
+
+#endregion
+
+#region Device & Diagnostic Models
+
+/// <summary>Hardware device identification, network, and power supply telemetry.</summary>
+public sealed record DeviceInfo(
+    string ModelName,
+    string DeviceName,
+    string IpAddress,
+    string UniqueId,
+    bool IsSimulator,
+    string PowerStatus
+);
+
+#endregion

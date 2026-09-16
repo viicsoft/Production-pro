@@ -1,0 +1,50 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on tags like v1.0.0
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Install Velopack CLI
+      run: dotnet tool install -g vpk
+
+    - name: Publish App
+      run: dotnet publish desktop/Desktop.csproj -c Release -r win-x64 --self-contained true -o publish
+
+    # Optional: Code Signing the published binaries before packing
+    # - name: Code Sign Binaries
+    #   run: |
+    #     & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /fd SHA256 /a /f cert.pfx /p ${{ secrets.CERT_PASSWORD }} "publish\Desktop.exe"
+
+    - name: Pack with Velopack
+      run: vpk pack -u Vidikom -v ${{ github.ref_name }} -p publish -o releases -e Desktop.exe
+
+    - name: Compile Inno Setup Installer
+      uses: minyus/setup-inno-setup@v1
+      with:
+        iscc-path: true
+    - run: ISCC desktop/installer.iss
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          desktop/output/VidikomSetup_*.exe
+          releases/Setup.exe
+          releases/*.nupkg
+          releases/RELEASES
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

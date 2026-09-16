@@ -103,11 +103,11 @@ The desktop app connects to ATEM hardware at `192.168.10.240` by default. This c
 
 ## License
 
-Proprietary - VIICSOFT
+Proprietary - Vidikom
 
 ## Support
 
-For support, contact: admin@viicsoft.com
+For support, contact: admin@vidikom.com
 
 ## Version History
 

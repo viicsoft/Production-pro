@@ -49,3 +49,32 @@ brain/
 *.7z
 *.rar
 publish_linux/
+publish_linux.tar.gz
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Scratch and test debug artifacts
+scratch_app/
+TestResults/
+*.trx
+build_err.txt
+diag*.txt
+logs*.txt
+recovered.txt
+stderr.txt
+stdout.txt
+test*.txt
+test*.ps1
+test*.cs
+test*.js
+ws_test.js
+e2e_test.js
+GetLogs.cs
+ollama_tags.json
+mobile-maui/
+TEST_READY.md
+.agents/
+

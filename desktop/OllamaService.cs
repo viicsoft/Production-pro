@@ -11,7 +11,7 @@ namespace Desktop
     public class OllamaService
     {
         private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
-        public static string ModelName { get; set; } = "gemma3:4b";
+        public static string ModelName { get; set; } = "gemma4-vision:latest";
 
         public static async Task<bool> IsOllamaRunningAsync()
         {
@@ -270,15 +270,18 @@ namespace Desktop
             }
         }
 
-        public static async Task<string> GenerateAsync(string prompt, string[] base64Images)
+        public static async Task<string> GenerateAsync(string prompt, int timeoutMs = 90000)
         {
             var payload = new
             {
                 model = ModelName,
                 prompt = prompt,
-                images = base64Images,
                 stream = false,
-                format = "json"
+                format = "json",
+                options = new {
+                    temperature = 0.5,
+                    num_predict = 800
+                }
             };
 
             var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:11434/api/generate")
@@ -286,10 +289,38 @@ namespace Desktop
                 Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
             };
 
-            var response = await _http.SendAsync(req);
+            using var cts = new CancellationTokenSource(timeoutMs);
+            var response = await _http.SendAsync(req, cts.Token);
             response.EnsureSuccessStatusCode();
 
-            var json = await response.Content.ReadAsStringAsync();
+            var json = await response.Content.ReadAsStringAsync(cts.Token);
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("response").GetString() ?? "";
+        }
+        public static async Task<string> GenerateVisionAsync(string prompt, string base64Image, string? model = null, int timeoutMs = 90000)
+        {
+            var payload = new
+            {
+                model = model ?? ModelName,
+                prompt = prompt,
+                images = new[] { base64Image },
+                stream = false,
+                options = new {
+                    temperature = 0.5,
+                    num_predict = 400
+                }
+            };
+
+            var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:11434/api/generate")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+
+            using var cts = new CancellationTokenSource(timeoutMs);
+            var response = await _http.SendAsync(req, cts.Token);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync(cts.Token);
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.GetProperty("response").GetString() ?? "";
         }

@@ -1,0 +1,391 @@
+<UserControl x:Class="Desktop.Views.RecordView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="720" d:DesignWidth="1100"
+             Background="#141416"
+             Foreground="#E4E4E7"
+             FontFamily="Segoe UI">
+
+    <UserControl.Resources>
+        <!-- Card Container Style -->
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#1E1E22"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="18"/>
+        </Style>
+
+        <!-- Nested Inner Box Style -->
+        <Style x:Key="InnerCardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#141416"/>
+            <Setter Property="BorderBrush" Value="#2C2C32"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="12"/>
+        </Style>
+
+        <!-- Record Start Action Button Style (Red Glow) -->
+        <Style x:Key="RecordStartButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#D32F2F"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#EF5350"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#B71C1C"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Record Stop Button Style -->
+        <Style x:Key="RecordStopButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#2A2A30"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderBrush" Value="#44444C"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#D32F2F"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#EF5350"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#B71C1C"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Secondary Outline Button Style -->
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#222226"/>
+            <Setter Property="Foreground" Value="#E4E4E7"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderBrush" Value="#3D3D44"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#2A2A30"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#FF9800"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- 0: Header -->
+            <RowDefinition Height="*"/>     <!-- 1: Main Content -->
+        </Grid.RowDefinitions>
+
+        <!-- 0. TOP HEADER BAR -->
+        <Border Grid.Row="0" Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="0,0,0,1" Padding="20,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="30" Height="30" Background="#2A2A30" CornerRadius="6" BorderBrush="#3D3D44" BorderThickness="1" Margin="0,0,12,0" VerticalAlignment="Center">
+                        <!-- Disk / Recording Circle Icon -->
+                        <Ellipse Width="14" Height="14" Fill="#EF5350" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="DISK RECORDING &amp; ISO CAPTURE CONTROL" Foreground="#FF9800" FontWeight="Bold" FontSize="13"/>
+                        <TextBlock Text="Manage USB/NVMe media disks, ISO camera recording, base filenames, and monitor storage capacity" Foreground="#A1A1AA" FontSize="11" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Header Status Pill -->
+                <Border x:Name="PillHeaderStatus" Grid.Column="1" Background="#2A2A30" BorderBrush="#3D3D44" BorderThickness="1" CornerRadius="14" Padding="12,5" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="DotHeaderStatus" Width="8" Height="8" Fill="#71717A" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="TxtHeaderStatus" Text="STANDBY (IDLE)" Foreground="#A1A1AA" FontSize="11" FontWeight="Bold"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 1. MAIN CONTENT AREA -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="20">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="480"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- LEFT COLUMN: RECORDING CONFIGURATION & TRANSPORT -->
+                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+
+                    <!-- CARD 1: FILENAME & ISO CONFIGURATION -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,16">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="RECORDING CONFIGURATION" Foreground="#FF9800" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="MP4 / H.264" Foreground="#71717A" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Border Height="1" Background="#2C2C32" Margin="0,0,0,14"/>
+
+                            <!-- Target Base Filename -->
+                            <TextBlock Text="TARGET BASE FILENAME" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <Grid Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtRecordFilename" Text="Recording_01" Height="36" FontSize="13" VerticalContentAlignment="Center" Margin="0,0,8,0"/>
+                                <Button x:Name="BtnApplyFilename" Grid.Column="1" Content="Set" Style="{StaticResource SecondaryButtonStyle}" Width="60" Height="36" Click="BtnApplyFilename_Click"/>
+                            </Grid>
+                            <TextBlock Text="Switcher automatically appends timestamp and camera track index to filename." Foreground="#71717A" FontSize="10" Margin="0,0,0,16"/>
+
+                            <!-- ISO Recording Mode Toggle -->
+                            <Border Style="{StaticResource InnerCardBorderStyle}">
+                                <StackPanel>
+                                    <CheckBox x:Name="ChkRecordAllIso" Content="Record all inputs (ISO mode)" FontSize="12" FontWeight="Bold" Margin="0,0,0,6" Checked="ChkRecordAllIso_Checked" Unchecked="ChkRecordAllIso_Unchecked"/>
+                                    <TextBlock Text="Records clean isolated MP4 feeds from all active camera inputs simultaneously in addition to the Program mix." Foreground="#A1A1AA" FontSize="10" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </Border>
+
+                    <!-- CARD 2: RECORD TRANSPORT CONTROL -->
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="RECORD TRANSPORT CONTROL" Foreground="#FF9800" FontSize="11" FontWeight="Bold"/>
+                                <TextBlock Text="MEDIA WRITE" Foreground="#71717A" FontSize="10" FontWeight="Bold" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Border Height="1" Background="#2C2C32" Margin="0,0,0,14"/>
+
+                            <!-- Primary Action Buttons -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button x:Name="BtnStartRecording" Grid.Column="0" Content="⏺ START RECORDING" Style="{StaticResource RecordStartButtonStyle}" Height="46" Margin="0,0,6,0" Click="BtnStartRecording_Click"/>
+                                <Button x:Name="BtnStopRecording" Grid.Column="1" Content="⬛ STOP RECORDING" Style="{StaticResource RecordStopButtonStyle}" Height="46" Margin="6,0,0,0" IsEnabled="False" Click="BtnStopRecording_Click"/>
+                            </Grid>
+
+                            <!-- Switch Active Disk Button -->
+                            <Button x:Name="BtnSwitchDisk" Content="🔀 Switch Active Disk" Style="{StaticResource SecondaryButtonStyle}" Height="36" Margin="0,0,0,14" Click="BtnSwitchDisk_Click"/>
+
+                            <!-- Status Feedback Banner -->
+                            <Border x:Name="PnlStatusBanner" Background="#141416" BorderBrush="#2C2C32" BorderThickness="1" CornerRadius="4" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="TxtStatusBannerIcon" Text="○" FontSize="13" Foreground="#71717A" Margin="0,1,10,0" VerticalAlignment="Top"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock x:Name="TxtStatusHeadline" Text="Recording Engine Idle" FontWeight="Bold" FontSize="11" Foreground="#A1A1AA"/>
+                                        <TextBlock x:Name="TxtStatusDetails" Text="Disks mounted and ready. Click 'Start Recording' to begin disk capture." FontSize="10" Foreground="#71717A" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+
+                <!-- RIGHT COLUMN: STORAGE DISKS & RECORDING TELEMETRY -->
+                <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" VerticalAlignment="Stretch">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Header & Capacity Health -->
+                        <Grid Grid.Row="0" Margin="0,0,0,12">
+                            <TextBlock Text="STORAGE DRIVES &amp; CAPACITY TELEMETRY" Foreground="#FF9800" FontSize="11" FontWeight="Bold"/>
+                            <Border x:Name="BadgeStorageHealth" Background="#2A2A30" CornerRadius="3" Padding="8,2" HorizontalAlignment="Right">
+                                <TextBlock x:Name="TxtStorageHealth" Text="STANDBY" Foreground="#71717A" FontSize="10" FontWeight="Bold"/>
+                            </Border>
+                        </Grid>
+                        <Border Grid.Row="0" Height="1" Background="#2C2C32" VerticalAlignment="Bottom"/>
+
+                        <!-- Telemetry Grid -->
+                        <StackPanel Grid.Row="1" Margin="0,16,0,0">
+
+                            <!-- Metric Highlight Tiles -->
+                            <UniformGrid Columns="3" Margin="0,0,0,16">
+                                <Border Style="{StaticResource InnerCardBorderStyle}" Margin="0,0,4,0">
+                                    <StackPanel>
+                                        <TextBlock Text="STATE" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtStatState" Text="IDLE" Foreground="#A1A1AA" FontSize="13" FontWeight="Bold" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource InnerCardBorderStyle}" Margin="4,0,4,0">
+                                    <StackPanel>
+                                        <TextBlock Text="DURATION" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtStatDuration" Text="00:00:00" Foreground="#E4E4E7" FontSize="13" FontWeight="Bold" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource InnerCardBorderStyle}" Margin="4,0,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="TOTAL AVAILABLE" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
+                                        <TextBlock x:Name="TxtStatRemaining" Text="1,060 min" Foreground="#00E676" FontSize="13" FontWeight="Bold" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+
+                            <!-- Attached Disks Header -->
+                            <Grid Margin="0,0,0,8">
+                                <TextBlock Text="ATTACHED MEDIA STORAGE DRIVES" Foreground="#FF9800" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="ACTIVE TARGET HIGHLIGHTED" Foreground="#71717A" FontSize="9" FontWeight="Bold" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <!-- Disks ItemsControl -->
+                            <ItemsControl x:Name="LstDisks" Margin="0,0,0,16">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,8" Padding="12" CornerRadius="4">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#141416"/>
+                                                    <Setter Property="BorderBrush" Value="#2C2C32"/>
+                                                    <Setter Property="BorderThickness" Value="1"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="#FF9800"/>
+                                                            <Setter Property="Background" Value="#221E14"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <!-- Disk Icon & ID -->
+                                                <Border Grid.Column="0" Width="36" Height="36" Background="#1E1E22" CornerRadius="4" BorderBrush="#3D3D44" BorderThickness="1" Margin="0,0,12,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DiskId, StringFormat='D{0}'}" Foreground="#FF9800" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+
+                                                <!-- Name & Time -->
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding VolumeName}" Foreground="#E4E4E7" FontWeight="SemiBold" FontSize="12"/>
+                                                    <TextBlock Text="{Binding RecordingTimeMinutes, StringFormat='Available: {0} min'}" Foreground="#A1A1AA" FontSize="10" Margin="0,2,0,0"/>
+                                                </StackPanel>
+
+                                                <!-- Status Badge -->
+                                                <Border Grid.Column="2" CornerRadius="3" Padding="8,3" Margin="0,0,12,0" VerticalAlignment="Center">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#2A2A30"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Status}" Value="Recording">
+                                                                    <Setter Property="Background" Value="#B71C1C"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="{Binding Status}" Foreground="#FFFFFF" FontWeight="Bold" FontSize="10"/>
+                                                </Border>
+
+                                                <!-- Active Target Indicator -->
+                                                <Border Grid.Column="3" CornerRadius="3" Padding="8,3" VerticalAlignment="Center">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#1E1E22"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                                    <Setter Property="Background" Value="#FF9800"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock FontSize="10" FontWeight="Bold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="STANDBY"/>
+                                                                <Setter Property="Foreground" Value="#71717A"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                                        <Setter Property="Text" Value="ACTIVE TARGET"/>
+                                                                        <Setter Property="Foreground" Value="#000000"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Refresh Action -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="BtnRefreshDisks" Content="🔄 Refresh Disks" Style="{StaticResource SecondaryButtonStyle}" Padding="14,6" Click="BtnRefreshDisks_Click"/>
+                            </StackPanel>
+
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
