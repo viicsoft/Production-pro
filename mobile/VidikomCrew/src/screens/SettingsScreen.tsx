@@ -638,11 +638,11 @@ export const SettingsScreen: React.FC = () => {
             onPress={async () => {
               setServerIpInput('192.168.1.93');
               setDirectorPortInput('8080');
-              setVoicePortInput('5160');
+              setVoicePortInput('8080');
               await updateSettings({
                 serverIp: '192.168.1.93',
                 directorPort: 8080,
-                voicePort: 5160,
+                voicePort: 8080,
                 isCloudRelay: false,
               });
               setQuickJoinStatus('Local LAN Active');

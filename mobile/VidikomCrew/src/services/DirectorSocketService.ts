@@ -73,7 +73,9 @@ export type DirectorIncomingMessage =
   | { type: 'reminder'; targetCameras?: number[]; text: string }
   | { type: 'grade'; targetCameras?: number[]; grade: string; feedback: string }
   | { type: 'color-profile-broadcast'; profile: MasterColorProfileBroadcast }
-  | { type: 'webrtc-signal'; payload: any };
+  | { type: 'webrtc-signal'; payload: any }
+  | { type: 'control-auth-success' }
+  | { type: 'control-auth-failed' };
 
 export interface DirectorSocketConfig {
   serverIp: string;
@@ -100,6 +102,8 @@ export class DirectorSocketService {
   private lastPingSentAt = 0;
   private activePingId: string | null = null;
   private latencyMs = 0;
+  private lastInputs: SwitcherInput[] = [];
+  private lastTally: MEState[] = [];
 
   private listeners: { [event: string]: Set<EventCallback> } = {
     status: new Set(),
@@ -113,6 +117,7 @@ export class DirectorSocketService {
     latency: new Set(),
     error: new Set(),
     roomEnded: new Set(),
+    controlAuth: new Set(),
   };
 
   public static getInstance(): DirectorSocketService {
@@ -279,6 +284,7 @@ export class DirectorSocketService {
       case 'tally':
         this.emit('error', null);
         if (Array.isArray(msg.mes)) {
+          this.lastTally = msg.mes;
           this.emit('tally', msg.mes);
         }
         break;
@@ -286,6 +292,7 @@ export class DirectorSocketService {
       case 'inputs':
         this.emit('error', null);
         if (Array.isArray(msg.inputs)) {
+          this.lastInputs = msg.inputs;
           this.emit('inputs', msg.inputs);
         }
         break;
@@ -348,6 +355,14 @@ export class DirectorSocketService {
         if (msg.profile) {
           this.emit('colorProfile', msg.profile);
         }
+        break;
+
+      case 'control-auth-success':
+        this.emit('controlAuth', { success: true });
+        break;
+
+      case 'control-auth-failed':
+        this.emit('controlAuth', { success: false });
         break;
     }
   }
@@ -413,6 +428,26 @@ export class DirectorSocketService {
       return this.send({ type: 'identity', cam: String(cameraId) });
     }
     return true;
+  }
+
+  public getInputs(): SwitcherInput[] {
+    return this.lastInputs;
+  }
+
+  public getTally(): MEState[] {
+    return this.lastTally;
+  }
+
+  public sendControlAuth(code: string): boolean {
+    return this.send({ type: 'control-auth', code });
+  }
+
+  public sendSwitchCommand(code: string, mode: string, input: number): boolean {
+    return this.send({ type: 'switch', code, mode, input });
+  }
+
+  public on<T = any>(event: string, callback: EventCallback<T>): () => void {
+    return this.subscribe(event, callback);
   }
 
   private startHeartbeat(): void {

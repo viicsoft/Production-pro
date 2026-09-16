@@ -437,7 +437,7 @@ namespace Desktop
                 LogIntercom("Intercom init: creating environment");
                 var envOptions = new CoreWebView2EnvironmentOptions
                 {
-                    AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --disable-features=WebRtcHideLocalIpsWithMdns"
+                    AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --disable-features=WebRtcHideLocalIpsWithMdns --allow-running-insecure-content"
                 };
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder, envOptions);
                 LogIntercom("Intercom init: environment created");
@@ -593,7 +593,7 @@ namespace Desktop
                 }
                 else
                 {
-                    voiceServer = "127.0.0.1:8080";
+                    voiceServer = "ws://127.0.0.1:8080";
                 }
                 // Load from virtual host mapping so page loads locally without depending on network port 8080
                 var localIp = "127.0.0.1";

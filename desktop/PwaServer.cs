@@ -46,7 +46,7 @@ namespace Desktop
             PinCode = new Random().Next(1000, 9999).ToString();
             var builder = WebApplication.CreateBuilder();
             builder.Environment.WebRootPath = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
-            builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+            builder.WebHost.UseUrls($"http://0.0.0.0:{port}", "http://0.0.0.0:5160");
             _app = builder.Build();
 
             _app.UseWebSockets();
@@ -622,6 +622,30 @@ namespace Desktop
                 else if (type == "color-profile-broadcast")
                 {
                     BroadcastToAllCrewAndRelay(json);
+                }
+                else if (type == "control-auth")
+                {
+                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var activeRoom = RoomManager.ActiveRoom;
+                    var success = activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode;
+                    var resp = JsonSerializer.Serialize(new { type = success ? "control-auth-success" : "control-auth-failed" });
+                    if (Relay != null && Relay.IsConnected)
+                    {
+                        _ = Relay.SendAsync(resp);
+                    }
+                }
+                else if (type == "switch")
+                {
+                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var activeRoom = RoomManager.ActiveRoom;
+                    if (activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode)
+                    {
+                        var mode = root.TryGetProperty("mode", out var md) ? md.GetString() : "";
+                        if (root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var inputId))
+                        {
+                            OnControlSwitch?.Invoke(mode, inputId);
+                        }
+                    }
                 }
             }
             catch { }

@@ -111,7 +111,13 @@
 
             if (voiceServer) {
                 const cleanVoice = voiceServer.replace(/^https?:\/\//i, '').replace(/^wss?:\/\//i, '').replace(/\/+$/, '');
-                if (voiceServer.startsWith('ws://') || voiceServer.startsWith('http://')) {
+                const isLocal = cleanVoice.includes('127.0.0.1') || 
+                                cleanVoice.includes('localhost') || 
+                                cleanVoice.includes(':8080') || 
+                                cleanVoice.includes(':5160') ||
+                                /^\d+\.\d+\.\d+\.\d+/.test(cleanVoice);
+
+                if (voiceServer.startsWith('ws://') || voiceServer.startsWith('http://') || isLocal) {
                     proto = 'ws:';
                 } else {
                     proto = 'wss:';
