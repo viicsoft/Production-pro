@@ -598,7 +598,7 @@ namespace Desktop
                 // Load from virtual host mapping so page loads locally without depending on network port 8080
                 var localIp = "127.0.0.1";
                 try {
-                    localIp = PwaServer.Instance.GetType().GetMethod("GetLocalIpAddress", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.Invoke(PwaServer.Instance, null) as string ?? "127.0.0.1";
+                    localIp = GetLocalIpAddress();
                 } catch { }
 
                 var url = $"https://intercom.atem/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&localIp={localIp}&_v={DateTime.UtcNow.Ticks}";
