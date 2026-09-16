@@ -11,8 +11,9 @@
  * 5. Instant cue acknowledgment and next AI shot trigger.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
+import { NavigationContext } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
 import { useTally } from '../context/TallyContext';
@@ -22,6 +23,7 @@ import ViewfinderPreview from '../components/suggestions/ViewfinderPreview';
 import JoinRoomModal from '../components/common/JoinRoomModal';
 
 export const TallyScreen: React.FC = () => {
+  const navigation = useContext(NavigationContext);
   const { theme } = useTheme();
   const { settings } = useSettings();
   const { tallyState } = useTally();
@@ -39,6 +41,16 @@ export const TallyScreen: React.FC = () => {
 
   const [localImmersive, setLocalImmersive] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+
+  // Sync header and tab bar visibility with full-screen rig immersion mode
+  useEffect(() => {
+    if (navigation?.setOptions) {
+      navigation.setOptions({
+        headerShown: !localImmersive,
+        tabBarStyle: localImmersive ? { display: 'none' } : undefined,
+      });
+    }
+  }, [localImmersive, navigation]);
 
   // Full-screen rig immersion view
   if (localImmersive) {

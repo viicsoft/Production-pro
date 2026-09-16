@@ -11,6 +11,8 @@ import ShotSuggestionsScreen from '../screens/ShotSuggestionsScreen';
 import ColorBalanceScreen from '../screens/ColorBalanceScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
+import AppBar from '../components/common/AppBar';
+
 const Tab = createBottomTabNavigator<TabParamList>();
 
 // Resilient Icon component supporting vector glyphs without native font dependency
@@ -70,21 +72,8 @@ export const TabNavigator: React.FC = () => {
           letterSpacing: 0.5,
           marginTop: 2,
         },
-        headerShown: false,
-        headerTitleStyle: {
-          fontWeight: 'bold',
-          letterSpacing: 1.5,
-          fontSize: 16,
-          textTransform: 'uppercase',
-        },
-        headerRight: () => (
-          <View style={[styles.headerBadge, { backgroundColor: 'rgba(255, 255, 255, 0.08)' }]}>
-            <View style={[styles.livePip, { backgroundColor: theme.tallyPreview }]} />
-            <Text style={[styles.headerBadgeText, { color: theme.textPrimary }]}>
-              CAM {settings.cameraId}
-            </Text>
-          </View>
-        ),
+        headerShown: true,
+        header: (props) => <AppBar {...props} />,
       })}
     >
       <Tab.Screen
