@@ -64,14 +64,7 @@ namespace Desktop
             LoadState();
             if (_activeRoom == null || string.IsNullOrWhiteSpace(_activeRoom.RoomId) || (DateTime.UtcNow - _activeRoom.CreatedAt).TotalHours > 24)
             {
-                CreateRoom("Live Production", Environment.UserName, NetworkMode.Online, "wss://vidikom.app/ws/room");
-            }
-            else if (_activeRoom.NetworkMode == NetworkMode.LAN || string.IsNullOrEmpty(_activeRoom.RelayUrl))
-            {
-                // Upgrade existing room to hybrid cloud relay mode
-                _activeRoom.NetworkMode = NetworkMode.Online;
-                _activeRoom.RelayUrl = "wss://vidikom.app/ws/room";
-                SaveState();
+                CreateRoom("Live Production", Environment.UserName, NetworkMode.LAN, "");
             }
         }
 

@@ -482,6 +482,7 @@ export class WebRtcMeshService {
         entry.makingOffer = true;
         const offer = await pc.createOffer();
         if (pc.signalingState === 'stable') {
+          offer.sdp = this.setHighBitrateOpus(offer.sdp);
           await pc.setLocalDescription(offer);
           this.sendSignal(alias, pc.localDescription);
         }
@@ -493,6 +494,21 @@ export class WebRtcMeshService {
     }
 
     return entry;
+  }
+
+  private setHighBitrateOpus(sdp: string): string {
+    if (!sdp) return sdp;
+    let lines = sdp.split('\r\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].indexOf('a=fmtp:') === 0 && lines[i].toLowerCase().includes('opus')) {
+        if (lines[i].includes('maxaveragebitrate')) {
+          lines[i] = lines[i].replace(/maxaveragebitrate=\d+/, 'maxaveragebitrate=128000');
+        } else {
+          lines[i] += ';maxaveragebitrate=128000;stereo=1';
+        }
+      }
+    }
+    return lines.join('\r\n');
   }
 
   private async handleSignalData(fromAlias: string, data: any): Promise<void> {
@@ -533,6 +549,7 @@ export class WebRtcMeshService {
         }
 
         const answer = await pc.createAnswer();
+        answer.sdp = this.setHighBitrateOpus(answer.sdp);
         await pc.setLocalDescription(answer);
         this.sendSignal(fromAlias, pc.localDescription);
       }

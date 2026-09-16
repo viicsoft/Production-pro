@@ -72,6 +72,22 @@
         window.setMicMute = setMicMute;
         window.toggleMicMute = toggleMicMute;
 
+        function setHighBitrateOpus(sdp) {
+            let lines = sdp.split('\r\n');
+            let modified = false;
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf('a=fmtp:') === 0 && lines[i].toLowerCase().includes('opus')) {
+                    if (lines[i].includes('maxaveragebitrate')) {
+                        lines[i] = lines[i].replace(/maxaveragebitrate=\d+/, 'maxaveragebitrate=128000');
+                    } else {
+                        lines[i] += ';maxaveragebitrate=128000;stereo=1';
+                    }
+                    modified = true;
+                }
+            }
+            return lines.join('\r\n');
+        }
+
         function initWebSocket() {
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
                 return;
@@ -297,6 +313,7 @@
                     pc._makingOffer = true;
                     const offer = await pc.createOffer();
                     if (pc.signalingState !== 'stable') return;
+                    offer.sdp = setHighBitrateOpus(offer.sdp);
                     await pc.setLocalDescription(offer);
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
@@ -372,7 +389,9 @@
 
             if (initiateOffer) {
                 try {
+                    pc._makingOffer = true;
                     const offer = await pc.createOffer();
+                    offer.sdp = setHighBitrateOpus(offer.sdp);
                     await pc.setLocalDescription(offer);
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
@@ -383,8 +402,10 @@
                             data: offer
                         }));
                     }
-                } catch (err) {
-                    log(`Error creating offer for ${alias}: ` + err.message);
+                } catch (e) {
+                    log(`Error creating offer for ${alias}: ` + e.message);
+                } finally {
+                    pc._makingOffer = false;
                 }
             }
 
@@ -428,6 +449,7 @@
                 ensureMicTracksAttached(pc);
 
                 const answer = await pc.createAnswer();
+                answer.sdp = setHighBitrateOpus(answer.sdp);
                 await pc.setLocalDescription(answer);
 
                 if (ws && ws.readyState === WebSocket.OPEN) {

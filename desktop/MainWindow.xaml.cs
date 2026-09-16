@@ -337,13 +337,9 @@ namespace Desktop
         private async Task ConnectCloudRelayAsync()
         {
             var activeRoom = RoomManager.ActiveRoom;
-            if (activeRoom == null) return;
-
-            // Ensure Online mode with default Vidikom cloud relay
-            if (activeRoom.NetworkMode != NetworkMode.Online || string.IsNullOrEmpty(activeRoom.RelayUrl))
+            if (activeRoom == null || activeRoom.NetworkMode != NetworkMode.Online || string.IsNullOrEmpty(activeRoom.RelayUrl))
             {
-                activeRoom.NetworkMode = NetworkMode.Online;
-                activeRoom.RelayUrl = "wss://vidikom.app/ws/room";
+                return;
             }
 
             try
