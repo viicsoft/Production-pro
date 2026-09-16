@@ -10,6 +10,7 @@ export type TabParamList = {
   Comms: undefined;
   Suggestions: undefined;
   ColorBalance: undefined;
+  Control: undefined;
   Settings: undefined;
 };
 

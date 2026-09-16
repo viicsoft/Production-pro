@@ -1014,6 +1014,10 @@
                         <TextBlock Text="PIN: " FontSize="15" FontWeight="SemiBold" Foreground="#AAAAAA" VerticalAlignment="Center"/>
                         <TextBlock x:Name="TxtQrPin" Text="----" FontSize="18" FontWeight="Bold" Foreground="#00E5FF" VerticalAlignment="Center"/>
                     </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,5,0,0">
+                        <TextBlock Text="Switcher Control Code: " FontSize="15" FontWeight="SemiBold" Foreground="#AAAAAA" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="TxtQrControlCode" Text="----" FontSize="18" FontWeight="Bold" Foreground="#FF9800" VerticalAlignment="Center"/>
+                    </StackPanel>
 
                     <TextBlock x:Name="TxtQrJoinUrl" Text="https://..." FontSize="12" Foreground="#888888" HorizontalAlignment="Center" Margin="0,8,0,0" TextTrimming="CharacterEllipsis" MaxWidth="340"/>
 

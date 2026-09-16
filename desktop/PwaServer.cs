@@ -37,6 +37,7 @@ namespace Desktop
         public string PinCode { get; private set; } = "0000";
 
         public Func<IEnumerable<object>>? GetActiveInputs { get; set; }
+        public Action<string, long>? OnControlSwitch { get; set; }
 
         private PwaServer() { }
 
@@ -522,7 +523,32 @@ namespace Desktop
                         {
                             BroadcastToAllCrewAndRelay(json);
                         }
+                        else if (type == "control-auth")
+                        {
+                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var activeRoom = RoomManager.ActiveRoom;
+                            var success = activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode;
+                            var resp = JsonSerializer.Serialize(new { type = success ? "control-auth-success" : "control-auth-failed" });
+                            if (_clients.TryGetValue(clientId, out var ws) && ws.State == WebSocketState.Open)
+                            {
+                                _ = ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(resp)), WebSocketMessageType.Text, true, CancellationToken.None);
+                            }
+                        }
+                        else if (type == "switch")
+                        {
+                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var activeRoom = RoomManager.ActiveRoom;
+                            if (activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode)
+                            {
+                                var mode = root.TryGetProperty("mode", out var md) ? md.GetString() : "";
+                                if (root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var inputId))
+                                {
+                                    OnControlSwitch?.Invoke(mode, inputId);
+                                }
+                            }
+                        }
                     }
+
                 }
                 catch { }
             }

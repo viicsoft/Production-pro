@@ -301,6 +301,17 @@ namespace Desktop
                 };
                 
                 PwaServer.Instance.GetActiveInputs = () => _config.ActiveInputs.OrderBy(id => id).Select(id => new { id = id, label = _config.GetLabel(id) });
+                PwaServer.Instance.OnControlSwitch = (mode, inputId) => Dispatcher.InvokeAsync(async () =>
+                {
+                    if (mode == "pgm")
+                        await _switcher.SetProgramInputAsync(0, inputId);
+                    else if (mode == "pvw")
+                        await _switcher.SetPreviewInputAsync(0, inputId);
+                    else if (mode == "auto")
+                        await _switcher.PerformAutoTransitionAsync(0);
+                    else if (mode == "cut")
+                        await _switcher.PerformCutAsync(0);
+                });
                 _ = PwaServer.Instance.StartAsync(8080);
                 
                 InitializeWebViewAsync();
@@ -426,7 +437,7 @@ namespace Desktop
                 LogIntercom("Intercom init: creating environment");
                 var envOptions = new CoreWebView2EnvironmentOptions
                 {
-                    AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream"
+                    AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --disable-features=WebRtcHideLocalIpsWithMdns"
                 };
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder, envOptions);
                 LogIntercom("Intercom init: environment created");
@@ -585,8 +596,13 @@ namespace Desktop
                     voiceServer = "127.0.0.1:8080";
                 }
                 // Load from virtual host mapping so page loads locally without depending on network port 8080
-                var url = $"https://intercom.atem/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&_v={DateTime.UtcNow.Ticks}";
-                LogIntercom($"Intercom navigating to: {url}");
+                var localIp = "127.0.0.1";
+                try {
+                    localIp = PwaServer.Instance.GetType().GetMethod("GetLocalIpAddress", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.Invoke(PwaServer.Instance, null) as string ?? "127.0.0.1";
+                } catch { }
+
+                var url = $"https://intercom.atem/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&localIp={localIp}&_v={DateTime.UtcNow.Ticks}";
+                LogIntercom($"Intercom init: navigating to {url}");
                 IntercomWebView.Source = new Uri(url);
                 LogIntercom("Intercom navigation initiated");
             }
@@ -2443,6 +2459,7 @@ namespace Desktop
             }
             TxtQrRoomId.Text = displayRoom;
             TxtQrPin.Text = RoomManager.ActiveRoom.Pin;
+            TxtQrControlCode.Text = RoomManager.ActiveRoom.ControlCode;
             TxtQrJoinUrl.Text = joinUrl;
 
             using var qrGenerator = new QRCodeGenerator();

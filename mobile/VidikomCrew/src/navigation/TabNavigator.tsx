@@ -9,6 +9,7 @@ import TallyScreen from '../screens/TallyScreen';
 import CommsScreen from '../screens/CommsScreen';
 import ShotSuggestionsScreen from '../screens/ShotSuggestionsScreen';
 import ColorBalanceScreen from '../screens/ColorBalanceScreen';
+import SwitcherControlScreen from '../screens/SwitcherControlScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
 import AppBar from '../components/common/AppBar';
@@ -27,6 +28,8 @@ const TabIcon = ({ name, focused, primaryColor, primaryContainer }: { name: stri
         return '📋';
       case 'ColorBalance':
         return '🎨';
+      case 'Control':
+        return '🎛️';
       case 'Settings':
         return '⚙️';
       default:
@@ -114,6 +117,16 @@ export const TabNavigator: React.FC = () => {
           tabBarLabel: 'Color',
           tabBarButtonTestID: 'tab-color-balance',
           tabBarAccessibilityLabel: 'Color Balance Tab',
+        }}
+      />
+      <Tab.Screen
+        name="Control"
+        component={SwitcherControlScreen}
+        options={{
+          title: 'Switcher',
+          tabBarLabel: 'Control',
+          tabBarButtonTestID: 'tab-control',
+          tabBarAccessibilityLabel: 'Switcher Control Tab',
         }}
       />
       <Tab.Screen

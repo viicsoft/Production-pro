@@ -21,6 +21,7 @@ namespace Desktop
         public string HmacSecret { get; set; } = string.Empty;
         public string ProductionName { get; set; } = string.Empty;
         public string DirectorName { get; set; } = string.Empty;
+        public string ControlCode { get; set; } = string.Empty;
         public NetworkMode NetworkMode { get; set; } = NetworkMode.LAN;
         public string RelayUrl { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
@@ -88,6 +89,7 @@ namespace Desktop
                 HmacSecret = Convert.ToBase64String(secretBytes),
                 ProductionName = productionName,
                 DirectorName = directorName,
+                ControlCode = rnd.Next(1000, 9999).ToString(),
                 NetworkMode = networkMode,
                 RelayUrl = relayUrl,
                 CreatedAt = DateTime.UtcNow

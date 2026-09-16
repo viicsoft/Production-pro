@@ -302,7 +302,11 @@
                     pc._makingOffer = true;
                     const offer = await pc.createOffer();
                     if (pc.signalingState !== 'stable') return;
-                    const modifiedSdp = setHighBitrateOpus(offer.sdp);
+                    let modifiedSdp = setHighBitrateOpus(offer.sdp);
+                    const localIp = new URLSearchParams(window.location.search).get('localIp');
+                    if (localIp) {
+                        modifiedSdp = modifiedSdp.replace(/[a-f0-9-]+\.local/ig, localIp);
+                    }
                     await pc.setLocalDescription({ type: offer.type, sdp: modifiedSdp });
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
@@ -356,6 +360,12 @@
 
             pc.onicecandidate = (event) => {
                 if (event.candidate && event.candidate.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                    let candObj = { ...event.candidate.toJSON() };
+                    const localIp = new URLSearchParams(window.location.search).get('localIp');
+                    if (localIp && candObj.candidate && candObj.candidate.includes('.local')) {
+                        candObj.candidate = candObj.candidate.replace(/[a-f0-9-]+\.local/ig, localIp);
+                        log('Replaced mDNS in candidate with ' + localIp);
+                    }
                     ws.send(JSON.stringify({
                         type: 'signal',
                         roomId: roomId,
@@ -363,7 +373,7 @@
                         to: alias,
                         data: {
                             type: 'candidate',
-                            candidate: event.candidate
+                            candidate: candObj
                         }
                     }));
                 }
@@ -380,7 +390,11 @@
                 try {
                     pc._makingOffer = true;
                     const offer = await pc.createOffer();
-                    const modifiedSdp = setHighBitrateOpus(offer.sdp);
+                    let modifiedSdp = setHighBitrateOpus(offer.sdp);
+                    const localIp = new URLSearchParams(window.location.search).get('localIp');
+                    if (localIp) {
+                        modifiedSdp = modifiedSdp.replace(/[a-f0-9-]+\.local/ig, localIp);
+                    }
                     await pc.setLocalDescription({ type: offer.type, sdp: modifiedSdp });
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
@@ -408,8 +422,9 @@
 
             if (data.type === 'offer') {
                 log(`Handling offer from: ${fromAlias}`);
+                const isPolite = false; // Director is always impolite
                 const offerCollision = (data.type === 'offer') && (pc._makingOffer || pc.signalingState !== 'stable');
-                pc._ignoreOffer = !true && offerCollision; // Director is always impolite because Camera is polite
+                pc._ignoreOffer = !isPolite && offerCollision;
 
                 if (pc._ignoreOffer) {
                     log(`Offer collision detected for ${fromAlias}, ignoring remote offer`);
@@ -438,7 +453,11 @@
                 ensureMicTracksAttached(pc);
 
                 const answer = await pc.createAnswer();
-                const modifiedSdp = setHighBitrateOpus(answer.sdp);
+                let modifiedSdp = setHighBitrateOpus(answer.sdp);
+                const localIp = new URLSearchParams(window.location.search).get('localIp');
+                if (localIp) {
+                    modifiedSdp = modifiedSdp.replace(/[a-f0-9-]+\.local/ig, localIp);
+                }
                 await pc.setLocalDescription({ type: answer.type, sdp: modifiedSdp });
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
