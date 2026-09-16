@@ -21,6 +21,23 @@
         const pin = (urlParams.get('pin') || '').trim();
         const voiceServer = (urlParams.get('voiceServer') || '').trim();
 
+        const ICE_SERVERS = [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:vidikom.app:3478' },
+            {
+                urls: [
+                    'turn:vidikom.app:3478?transport=udp',
+                    'turn:vidikom.app:3478?transport=tcp'
+                ],
+                username: 'vidikom',
+                credential: 'viicsoft'
+            }
+        ];
+
+        window._audioSources = window._audioSources || {};
+
         function log(msg) {
             console.log('[Director Intercom] ' + msg);
             postToWpf('log:' + msg);
@@ -126,6 +143,23 @@
             };
         }
 
+        function ensureMicTracksAttached(pc) {
+            if (!directorStream) return;
+            const senders = pc.getSenders();
+            const hasAudioSender = senders.some(s => s.track && s.track.kind === 'audio');
+            if (!hasAudioSender) {
+                directorStream.getAudioTracks().forEach(track => {
+                    track.enabled = true;
+                    try { 
+                        pc.addTrack(track, directorStream); 
+                        log('Attached microphone track to peer');
+                    } catch (e) {
+                        log('Error attaching microphone track: ' + e.message);
+                    }
+                });
+            }
+        }
+
         async function connectIntercom() {
             if (isConnecting || isConnected) return;
             isConnecting = true;
@@ -138,11 +172,11 @@
                         window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                     }
                     if (window._audioCtx.state === 'suspended') {
-                        window._audioCtx.resume();
+                        await window._audioCtx.resume();
                     }
                 } catch (_) {}
 
-                // 2. Capture Director microphone (non-fatal if no microphone connected)
+                // 2. Capture Director microphone
                 log('Requesting microphone access...');
                 try {
                     directorStream = await navigator.mediaDevices.getUserMedia({
@@ -155,7 +189,10 @@
                         },
                         video: false
                     });
-                    log('Microphone acquired successfully');
+                    log('Microphone acquired successfully with ' + directorStream.getAudioTracks().length + ' track(s)');
+                    
+                    // Attach to any peers already created
+                    Object.values(peers).forEach(pc => ensureMicTracksAttached(pc));
                 } catch (micErr) {
                     log('Microphone warning: ' + micErr.message + ' (continuing in listen mode)');
                 }
@@ -163,7 +200,7 @@
                 isConnected = true;
                 isConnecting = false;
 
-                // 3. Connect to WebSocket
+                // 3. Connect to WebSocket signaling NOW that mic is ready
                 initWebSocket();
 
                 postToWpf('intercom_connected');
@@ -180,22 +217,12 @@
 
             log('Creating RTCPeerConnection for: ' + alias);
             const pc = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun.cloudflare.com:3478' }
-                ]
+                iceServers: ICE_SERVERS
             });
 
             peers[alias] = pc;
 
-            if (directorStream) {
-                directorStream.getAudioTracks().forEach(track => {
-                    track.enabled = true;
-                    try { pc.addTrack(track, directorStream); } catch (_) {}
-                });
-            }
+            ensureMicTracksAttached(pc);
 
             pc.ontrack = (event) => {
                 log(`Audio track received from: ${alias}`);
@@ -205,6 +232,8 @@
                     audioEl.id = 'audio-peer-' + alias;
                     audioEl.autoplay = true;
                     audioEl.controls = false;
+                    audioEl.volume = 1.0;
+                    audioEl.muted = false;
                     document.getElementById('audio-container').appendChild(audioEl);
                 }
                 const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
@@ -219,6 +248,7 @@
                         window._audioCtx.resume();
                     }
                     const source = window._audioCtx.createMediaStreamSource(stream);
+                    window._audioSources[alias] = source; // Keep alive against GC
                     source.connect(window._audioCtx.destination);
                     log(`Direct WebAudio mixer attached for ${alias}`);
                 } catch (webaudioErr) {
@@ -227,7 +257,7 @@
             };
 
             pc.onicecandidate = (event) => {
-                if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                if (event.candidate && event.candidate.candidate && ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'signal',
                         roomId: roomId,
@@ -270,7 +300,7 @@
         }
 
         async function handleSignalData(fromAlias, data) {
-            const pc = await getOrCreatePeer(fromAlias);
+            const pc = await getOrCreatePeer(fromAlias, false);
             log(`[handleSignalData] fromAlias=${fromAlias}, pc=${pc}, state=${pc?.signalingState}`);
             if (!pc) return;
 
@@ -293,6 +323,9 @@
                     }
                     pc._iceQueue = [];
                 }
+
+                // Ensure local mic track is added BEFORE answering so the answer establishes sendrecv audio!
+                ensureMicTracksAttached(pc);
 
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
@@ -319,6 +352,7 @@
                 }
             } else if (data.type === 'candidate' || data.candidate) {
                 const cand = data.candidate || data;
+                if (!cand || !cand.candidate) return; // Skip empty candidate strings
                 if (!pc.remoteDescription) {
                     if (!pc._iceQueue) pc._iceQueue = [];
                     pc._iceQueue.push(cand);
@@ -334,8 +368,9 @@
 
         async function handleDirectOffer(cam, sdp) {
             const alias = 'Cam ' + cam;
-            const pc = await getOrCreatePeer(alias);
+            const pc = await getOrCreatePeer(alias, false);
             if (!pc) return;
+            ensureMicTracksAttached(pc);
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -351,8 +386,8 @@
 
         async function handleDirectIce(cam, candidate) {
             const alias = 'Cam ' + cam;
-            const pc = await getOrCreatePeer(alias);
-            if (pc && candidate) {
+            const pc = await getOrCreatePeer(alias, false);
+            if (pc && candidate && candidate.candidate) {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 } catch (e) {
@@ -366,6 +401,10 @@
             if (pc) {
                 try { pc.close(); } catch (e) {}
                 delete peers[alias];
+            }
+            if (window._audioSources && window._audioSources[alias]) {
+                try { window._audioSources[alias].disconnect(); } catch (_) {}
+                delete window._audioSources[alias];
             }
             const el = document.getElementById('audio-peer-' + alias);
             if (el) el.remove();
@@ -387,11 +426,15 @@
             postToWpf('intercom_disconnected');
         }
 
+        // WebAudio periodic keepalive
+        setInterval(() => {
+            if (window._audioCtx && window._audioCtx.state === 'suspended') {
+                window._audioCtx.resume();
+            }
+        }, 1500);
+
         window.addEventListener('DOMContentLoaded', () => {
-            initWebSocket();
-            setTimeout(() => {
-                connectIntercom();
-            }, 500);
+            connectIntercom();
         });
     </script>
 </body>

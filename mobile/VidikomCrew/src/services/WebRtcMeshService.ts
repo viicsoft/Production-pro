@@ -392,7 +392,20 @@ export class WebRtcMeshService {
     const isPolite = alias === 'Director' || myAlias.localeCompare(alias) > 0;
 
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:vidikom.app:3478' },
+        {
+          urls: [
+            'turn:vidikom.app:3478?transport=udp',
+            'turn:vidikom.app:3478?transport=tcp',
+          ],
+          username: 'vidikom',
+          credential: 'viicsoft',
+        },
+      ],
     });
 
     entry = {
@@ -439,7 +452,7 @@ export class WebRtcMeshService {
 
     // ICE candidates
     pc.onicecandidate = (event: any) => {
-      if (event.candidate && this.ws?.readyState === WebSocket.OPEN) {
+      if (event.candidate && event.candidate.candidate && this.ws?.readyState === WebSocket.OPEN) {
         this.sendSignal(alias, {
           type: 'candidate',
           candidate: event.candidate,
@@ -498,12 +511,27 @@ export class WebRtcMeshService {
       await this.flushIceQueue(fromAlias);
 
       if (isOffer) {
+        // Ensure local audio track is attached to pc before answering
+        if (this.localStream) {
+          const senders = (pc as any).getSenders ? (pc as any).getSenders() : [];
+          const hasAudio = senders.some((s: any) => s.track && s.track.kind === 'audio');
+          if (!hasAudio) {
+            this.localStream.getAudioTracks().forEach(track => {
+              try {
+                track.enabled = !this.isMuted;
+                pc.addTrack(track, this.localStream!);
+              } catch (_) {}
+            });
+          }
+        }
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         this.sendSignal(fromAlias, pc.localDescription);
       }
     } else if (data.type === 'candidate' || data.candidate) {
       const candidatePayload = data.candidate || data;
+      if (!candidatePayload || !candidatePayload.candidate) return; // Skip empty candidate strings
       if (!pc.remoteDescription) {
         entry.iceQueue.push(candidatePayload);
       } else {
@@ -552,6 +580,7 @@ export class WebRtcMeshService {
 
   private applyPeerVolume(peer: PeerConnectionEntry): void {
     if (!peer.remoteTrack) return;
+    peer.remoteTrack.enabled = !peer.muted;
     const gain = peer.muted ? 0.0 : Math.max(0.0, Math.min(10.0, this.masterVolume * peer.volume));
     if (typeof (peer.remoteTrack as any)._setVolume === 'function') {
       (peer.remoteTrack as any)._setVolume(gain);

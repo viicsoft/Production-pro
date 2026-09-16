@@ -190,6 +190,27 @@ export interface ShotSuggestionsProviderProps {
   };
 }
 
+export const buildVoiceCueScript = (camId: number, sug: ShotSuggestion, eventType?: string): string => {
+  if (sug.voiceScript && sug.voiceScript.trim().length > 0) {
+    return sug.voiceScript.trim();
+  }
+  const def = findShotDefinition(sug.mediaUrl || sug.id, eventType as any);
+  if (def?.voiceScript && def.voiceScript.trim().length > 0) {
+    return def.voiceScript.trim();
+  }
+
+  const title = sug.title?.trim() || 'Shot';
+  const desc = sug.description?.trim();
+  const prefix = title.toLowerCase().startsWith(`camera ${camId}`) || title.toLowerCase().startsWith('camera')
+    ? title
+    : `Camera ${camId}, ${title}`;
+
+  if (desc && !title.toLowerCase().includes(desc.toLowerCase())) {
+    return `${prefix}. ${desc}. Stand by!`;
+  }
+  return `${prefix}. Stand by!`;
+};
+
 export const ShotSuggestionsProvider: React.FC<ShotSuggestionsProviderProps> = ({
   children,
   socketService = directorSocketService,
@@ -322,12 +343,11 @@ export const ShotSuggestionsProvider: React.FC<ShotSuggestionsProviderProps> = (
 
       // Broadcast director voice verbal callout
       if (settings?.aiDirectorVoice) {
-        const def = findShotDefinition(suggestion.mediaUrl || suggestion.id, settings?.eventType);
-        const script = def?.voiceScript || `Camera ${cameraId}, ${suggestion.title}. Stand by!`;
+        const script = buildVoiceCueScript(cameraId, suggestion, settings?.eventType);
         speakDirectorCue(script);
       }
     },
-    [isTargetedToCamera, triggerHaptic, settings?.aiDirectorVoice, settings?.aiShotFrequency, settings?.eventType, cameraId]
+    [isTargetedToCamera, triggerHaptic, settings?.aiDirectorVoice, settings?.eventType, cameraId]
   );
 
   // Handle incoming reminder
@@ -608,8 +628,7 @@ export const ShotSuggestionsProvider: React.FC<ShotSuggestionsProviderProps> = (
       speakDirectorCue(`Camera ${cameraId}, standby for next live cue.`);
       return;
     }
-    const def = findShotDefinition(activeSuggestion.mediaUrl || activeSuggestion.id, settings?.eventType);
-    const script = def?.voiceScript || `Camera ${cameraId}, ${activeSuggestion.title}. Stand by!`;
+    const script = buildVoiceCueScript(cameraId, activeSuggestion, settings?.eventType);
     speakDirectorCue(script);
   }, [activeSuggestion, cameraId, settings?.eventType]);
 
@@ -747,8 +766,26 @@ export const ShotSuggestionsProvider: React.FC<ShotSuggestionsProviderProps> = (
           ? rawCat
           : `SWITCHER • ${rawCat}`;
 
+        let mediaUrl = data.suggestion.mediaUrl;
+        if (mediaUrl && typeof mediaUrl === 'string') {
+          if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://') && !mediaUrl.startsWith('viewfinder://') && !mediaUrl.startsWith('data:') && !mediaUrl.startsWith('file://')) {
+            const base = settings?.serverIp ? `http://${settings.serverIp}:8080` : 'https://vidikom.app';
+            mediaUrl = `${base.replace(/\/+$/, '')}/${mediaUrl.replace(/^\/+/, '')}`;
+          }
+        }
+
+        let thumbnail = data.suggestion.thumbnail;
+        if (thumbnail && typeof thumbnail === 'string') {
+          if (!thumbnail.startsWith('http://') && !thumbnail.startsWith('https://') && !thumbnail.startsWith('viewfinder://') && !thumbnail.startsWith('data:') && !thumbnail.startsWith('file://')) {
+            const base = settings?.serverIp ? `http://${settings.serverIp}:8080` : 'https://vidikom.app';
+            thumbnail = `${base.replace(/\/+$/, '')}/${thumbnail.replace(/^\/+/, '')}`;
+          }
+        }
+
         const taggedSuggestion: ShotSuggestion = {
           ...data.suggestion,
+          mediaUrl,
+          thumbnail,
           category: switcherCat,
         };
         addIncomingSuggestion(data.targetCameras || [], taggedSuggestion);

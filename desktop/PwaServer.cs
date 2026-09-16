@@ -608,47 +608,126 @@ namespace Desktop
         public HashSet<string> ConnectedCameras => new HashSet<string>(_clientCameras.Values.Concat(_remoteCrewCameras.Values));
 
         public RelayClient? Relay { get; set; }
-        private static readonly System.Net.Http.HttpClient _httpClient = new System.Net.Http.HttpClient();
+        private static readonly System.Net.Http.HttpClient _httpClient = new System.Net.Http.HttpClient(new System.Net.Http.HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
+        });
 
         public async Task BroadcastTallyAsync(SwitcherState state)
         {
             await BroadcastJsonAsync(new { type = "tally", mes = state.MEs });
         }
 
+        private string GetLocalIpAddress()
+        {
+            try
+            {
+                var interfaces = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                    .Where(nic => nic.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up &&
+                                  nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    .OrderBy(nic =>
+                    {
+                        var name = nic.Name.ToLowerInvariant();
+                        var desc = nic.Description.ToLowerInvariant();
+                        if (name.Contains("vethernet") || desc.Contains("hyper-v") || desc.Contains("virtual") || desc.Contains("wsl") || name.Contains("docker"))
+                            return 10;
+                        if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211 || name.Contains("wi-fi") || desc.Contains("wireless"))
+                            return 0;
+                        if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Ethernet)
+                            return 1;
+                        return 2;
+                    });
+
+                foreach (var nic in interfaces)
+                {
+                    var ipProps = nic.GetIPProperties();
+                    foreach (var addr in ipProps.UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                            !System.Net.IPAddress.IsLoopback(addr.Address))
+                        {
+                            return addr.Address.ToString();
+                        }
+                    }
+                }
+            }
+            catch { }
+            return "127.0.0.1";
+        }
+
         public async Task BroadcastSuggestionAsync(ShotSuggestion suggestion, IEnumerable<int> targetCameras)
         {
             var sugToBroadcast = suggestion;
-            if (!string.IsNullOrEmpty(suggestion.MediaPath))
+            if (!string.IsNullOrEmpty(suggestion.MediaPath) && System.IO.File.Exists(suggestion.MediaPath))
             {
                 var fileName = System.IO.Path.GetFileName(suggestion.MediaPath);
-                if (Relay != null && Relay.IsConnected && System.IO.File.Exists(suggestion.MediaPath))
+                var ext = System.IO.Path.GetExtension(fileName).ToLowerInvariant();
+                var isVideo = ext is ".mp4" or ".mov" or ".webm" or ".avi";
+                var isImage = ext is ".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif" or ".webp";
+
+                // For images, generate base64 thumbnail if possible for instant rendering on mobile
+                string? inlineThumb = null;
+                if (isImage)
                 {
                     try
                     {
+                        var fileBytes = await System.IO.File.ReadAllBytesAsync(suggestion.MediaPath);
+                        if (fileBytes.Length <= 600 * 1024) // up to 600KB
+                        {
+                            var b64 = Convert.ToBase64String(fileBytes);
+                            var mime = ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+                            inlineThumb = $"data:{mime};base64,{b64}";
+                        }
+                    }
+                    catch { }
+                }
+
+                if (Relay != null && Relay.IsConnected)
+                {
+                    try
+                    {
+                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                         using var content = new System.Net.Http.MultipartFormDataContent();
-                        var fs = new System.IO.FileStream(suggestion.MediaPath, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+                        using var fs = new System.IO.FileStream(suggestion.MediaPath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
                         var fileContent = new System.Net.Http.StreamContent(fs);
                         
-                        var ext = System.IO.Path.GetExtension(fileName).ToLowerInvariant();
                         var mimeType = ext switch { ".jpg" or ".jpeg" => "image/jpeg", ".png" => "image/png", ".mp4" => "video/mp4", ".webm" => "video/webm", _ => "application/octet-stream" };
                         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
                         content.Add(fileContent, "file", fileName);
 
                         var uri = new Uri(Relay.RelayUrl);
-                        var uploadUri = (uri.Scheme == "wss" ? "https://" : "http://") + uri.Authority + "/api/upload-media";
-                        var response = await _httpClient.PostAsync(uploadUri, content);
+                        var baseUrl = (uri.Scheme == "wss" ? "https://" : "http://") + uri.Authority;
+                        var uploadUri = baseUrl + "/api/upload-media";
+                        var response = await _httpClient.PostAsync(uploadUri, content, cts.Token);
                         if (response.IsSuccessStatusCode)
                         {
                             var resultStr = await response.Content.ReadAsStringAsync();
-                            sugToBroadcast = suggestion with { MediaUrl = JsonDocument.Parse(resultStr).RootElement.GetProperty("mediaUrl").GetString() };
+                            var relPath = JsonDocument.Parse(resultStr).RootElement.GetProperty("mediaUrl").GetString();
+                            if (!string.IsNullOrEmpty(relPath))
+                            {
+                                var fullUrl = relPath.StartsWith("http") ? relPath : (baseUrl + relPath);
+                                sugToBroadcast = suggestion with { 
+                                    MediaUrl = fullUrl,
+                                    MediaType = isVideo ? "video" : "image",
+                                    Thumbnail = inlineThumb ?? suggestion.Thumbnail
+                                };
+                            }
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[PwaServer] Upload media error: {ex.Message}");
+                    }
                 }
                 
                 if (string.IsNullOrEmpty(sugToBroadcast.MediaUrl))
                 {
-                    sugToBroadcast = suggestion with { MediaUrl = $"/api/suggestions/media/{fileName}" };
+                    var localIp = GetLocalIpAddress();
+                    sugToBroadcast = suggestion with { 
+                        MediaUrl = $"http://{localIp}:8080/api/suggestions/media/{fileName}",
+                        MediaType = isVideo ? "video" : "image",
+                        Thumbnail = inlineThumb ?? suggestion.Thumbnail
+                    };
                 }
             }
             await BroadcastJsonAsync(new { type = "suggestion", targetCameras, suggestion = sugToBroadcast });

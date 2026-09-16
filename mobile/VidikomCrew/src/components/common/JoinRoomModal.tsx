@@ -110,27 +110,6 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
     }
   }, [applyParsedConfig]);
 
-  // Scan QR code directly using device camera (Google Code Scanner)
-  const handleScanQrCamera = useCallback(async () => {
-    try {
-      setStatusMessage('Opening camera scanner...');
-      setStatusType('info');
-      const scannedText = await QrScannerService.scanWithCamera();
-      if (scannedText) {
-        setQuickInput(scannedText);
-        const parsed = parseJoinInput(scannedText);
-        applyParsedConfig(parsed);
-      } else {
-        setStatusType('info');
-        setStatusMessage('QR scan cancelled.');
-      }
-    } catch (e: any) {
-      setStatusType('info');
-      setStatusMessage('Camera scanner unavailable. Opening photo picker fallback...');
-      handlePickQrPhoto();
-    }
-  }, [applyParsedConfig, handlePickQrPhoto]);
-
   // Pick QR image from local gallery
   const handlePickQrPhoto = useCallback(async () => {
     try {
@@ -151,6 +130,27 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
       setStatusMessage('Photo selection cancelled or unavailable.');
     }
   }, [applyParsedConfig]);
+
+  // Scan QR code directly using device camera (Google Code Scanner)
+  const handleScanQrCamera = useCallback(async () => {
+    try {
+      setStatusMessage('Opening camera scanner...');
+      setStatusType('info');
+      const scannedText = await QrScannerService.scanWithCamera();
+      if (scannedText) {
+        setQuickInput(scannedText);
+        const parsed = parseJoinInput(scannedText);
+        applyParsedConfig(parsed);
+      } else {
+        setStatusType('info');
+        setStatusMessage('QR scan cancelled.');
+      }
+    } catch (e: any) {
+      setStatusType('info');
+      setStatusMessage('Camera scanner unavailable. Opening photo picker fallback...');
+      handlePickQrPhoto();
+    }
+  }, [applyParsedConfig, handlePickQrPhoto]);
 
   // Quick LAN Auto-Discovery
   const handleAutoDiscover = useCallback(async () => {

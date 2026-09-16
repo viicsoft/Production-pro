@@ -442,8 +442,8 @@ namespace Desktop
                 _intercomWindow = new Window
                 {
                     Owner = this,
-                    Width = 1,
-                    Height = 1,
+                    Width = 2,
+                    Height = 2,
                     ShowInTaskbar = false,
                     WindowStyle = WindowStyle.None,
                     AllowsTransparency = false,
@@ -451,8 +451,9 @@ namespace Desktop
                     IsHitTestVisible = false,
                     ShowActivated = false,
                     Topmost = false,
-                    Left = -10000,
-                    Top = -10000
+                    Left = 0,
+                    Top = 0,
+                    Opacity = 0.01
                 };
                 _intercomWindow.Content = IntercomWebView;
                 _intercomWindow.Show();

@@ -224,6 +224,14 @@ class IntercomForegroundService : Service() {
             audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
             audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
             setSpeakerphoneState(this, true)
+            audioManager?.isMicrophoneMute = false
+
+            // Ensure voice call volume is at an audible level (at least 85% of max)
+            val maxVoiceVol = audioManager?.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL) ?: 0
+            val curVoiceVol = audioManager?.getStreamVolume(AudioManager.STREAM_VOICE_CALL) ?: 0
+            if (maxVoiceVol > 0 && curVoiceVol < (maxVoiceVol * 0.75).toInt()) {
+                audioManager?.setStreamVolume(AudioManager.STREAM_VOICE_CALL, (maxVoiceVol * 0.85).toInt(), 0)
+            }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)

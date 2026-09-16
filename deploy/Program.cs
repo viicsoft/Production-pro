@@ -36,6 +36,18 @@ if (args.Length > 0 && args[0] == "quick")
     return;
 }
 
+if (args.Length > 1 && args[0] == "cmd")
+{
+    var cmd = string.Join(" ", args.Skip(1));
+    Console.WriteLine($"Running remote command: {cmd}");
+    var res = ssh.RunCommand(cmd);
+    Console.WriteLine(res.Result);
+    if (!string.IsNullOrEmpty(res.Error)) Console.Error.WriteLine(res.Error);
+    sftp.Disconnect();
+    ssh.Disconnect();
+    return;
+}
+
 string Run(string label, string cmd)
 {
     Console.WriteLine($"\n>> [{label}]: {cmd}");
@@ -119,6 +131,7 @@ var nginxConfig = @"server {
     listen 80;
     listen [::]:80;
     server_name vidikom.app www.vidikom.app;
+    client_max_body_size 250M;
 
     location / {
         proxy_pass http://127.0.0.1:5160;

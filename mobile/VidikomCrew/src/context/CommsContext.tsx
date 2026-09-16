@@ -239,6 +239,9 @@ export const CommsProvider: React.FC<CommsProviderProps> = ({
         setPeers(prev => prev.filter(p => p.peerId !== leftPeerId));
       },
       onTrackAdded: (peerId: string, track: MediaStreamTrack) => {
+        try {
+          ForegroundService.setSpeakerphone(true).catch(() => {});
+        } catch (_) {}
         setPeers(prev =>
           prev.map(p => {
             if (p.peerId === peerId) {

@@ -13,6 +13,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  Linking,
   StyleProp,
   ViewStyle,
 } from 'react-native';
@@ -128,32 +129,66 @@ export const SuggestionCard: React.FC<SuggestionCardProps> = ({
         </Text>
       </TouchableOpacity>
 
-      {/* Media Preview / Viewfinder */}
-      {suggestion.mediaUrl?.startsWith('viewfinder://') ? (
-        <ViewfinderPreview
-          viewfinderType={suggestion.mediaUrl}
-          category={suggestion.category}
-          height={145}
-        />
-      ) : suggestion.mediaUrl && !imageError ? (
-        <View style={styles.mediaContainer}>
-          <Image
-            testID="suggestion-media-preview"
-            source={{ uri: suggestion.mediaUrl }}
-            style={styles.mediaImage}
-            onError={() => setImageError(true)}
-            resizeMode="cover"
-          />
-        </View>
-      ) : null}
+      {/* Media Preview / Viewfinder / Video */}
+      {(() => {
+        const isVideo = suggestion.mediaType === 'video' ||
+          (suggestion.mediaUrl && /\.(mp4|mov|avi|webm)($|\?)/i.test(suggestion.mediaUrl));
+        const mediaSource = suggestion.thumbnail || suggestion.mediaUrl;
 
-      {imageError && (
-        <View style={[styles.placeholderContainer, { backgroundColor: theme.surfaceElevated }]}>
-          <Text style={[styles.placeholderText, { color: theme.textMuted }]}>
-            Preview Image Unavailable
-          </Text>
-        </View>
-      )}
+        if (suggestion.mediaUrl?.startsWith('viewfinder://')) {
+          return (
+            <ViewfinderPreview
+              viewfinderType={suggestion.mediaUrl}
+              category={suggestion.category}
+              height={145}
+            />
+          );
+        }
+
+        if (isVideo && suggestion.mediaUrl) {
+          return (
+            <View style={[styles.mediaContainer, { backgroundColor: '#181818', justifyContent: 'center', alignItems: 'center', minHeight: 100 }]}>
+              <Text style={{ color: theme.primary, fontWeight: 'bold', fontSize: 12, marginBottom: 8 }}>
+                📹 VIDEO REFERENCE
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  if (suggestion.mediaUrl) Linking.openURL(suggestion.mediaUrl);
+                }}
+                style={{ backgroundColor: theme.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 6 }}
+              >
+                <Text style={{ color: '#000000', fontWeight: 'bold', fontSize: 12 }}>▶ Play Video</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+
+        if (mediaSource && !imageError) {
+          return (
+            <View style={styles.mediaContainer}>
+              <Image
+                testID="suggestion-media-preview"
+                source={{ uri: mediaSource }}
+                style={styles.mediaImage}
+                onError={() => setImageError(true)}
+                resizeMode="cover"
+              />
+            </View>
+          );
+        }
+
+        if (imageError) {
+          return (
+            <View style={[styles.placeholderContainer, { backgroundColor: theme.surfaceElevated }]}>
+              <Text style={[styles.placeholderText, { color: theme.textMuted }]}>
+                Preview Image Unavailable
+              </Text>
+            </View>
+          );
+        }
+
+        return null;
+      })()}
 
       {/* Acknowledge Button & Status */}
       <TouchableOpacity

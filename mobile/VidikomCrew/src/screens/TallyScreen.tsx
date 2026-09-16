@@ -12,11 +12,11 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
 import { useTally } from '../context/TallyContext';
-import { useShotSuggestions } from '../context/ShotSuggestionsContext';
+import { useShotSuggestions, buildVoiceCueScript } from '../context/ShotSuggestionsContext';
 import TallyIndicator from '../components/tally/TallyIndicator';
 import ViewfinderPreview from '../components/suggestions/ViewfinderPreview';
 import JoinRoomModal from '../components/common/JoinRoomModal';
@@ -209,14 +209,55 @@ export const TallyScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Visual Framing Storyboard Preview */}
-            <ViewfinderPreview
-              viewfinderType={activeSuggestion.mediaUrl || activeShotDefinition?.viewfinderType}
-              focalLength={activeShotDefinition?.focalLength}
-              movement={activeShotDefinition?.movement}
-              category={activeSuggestion.category}
-              height={155}
-            />
+            {/* Visual Framing Storyboard / Reference Media Preview */}
+            {(() => {
+              const media = activeSuggestion.mediaUrl || activeSuggestion.thumbnail;
+              const isVideo = activeSuggestion.mediaType === 'video' ||
+                (activeSuggestion.mediaUrl && /\.(mp4|mov|avi|webm)($|\?)/i.test(activeSuggestion.mediaUrl));
+              const isImage = !isVideo && (
+                Boolean(activeSuggestion.thumbnail?.startsWith('data:image')) ||
+                activeSuggestion.mediaType === 'image' ||
+                Boolean(activeSuggestion.mediaUrl && (activeSuggestion.mediaUrl.startsWith('http') || activeSuggestion.mediaUrl.startsWith('data:image') || activeSuggestion.mediaUrl.startsWith('file:')))
+              );
+
+              if (isVideo && activeSuggestion.mediaUrl) {
+                return (
+                  <View style={[styles.mediaCardContainer, { backgroundColor: '#181818', borderColor: theme.primary }]}>
+                    <Text style={[styles.videoBadge, { color: theme.primary }]}>📹 VIDEO REFERENCE ATTACHED</Text>
+                    <TouchableOpacity
+                      style={[styles.playVideoBtn, { backgroundColor: theme.primary }]}
+                      onPress={() => {
+                        if (activeSuggestion.mediaUrl) Linking.openURL(activeSuggestion.mediaUrl);
+                      }}
+                    >
+                      <Text style={styles.playVideoText}>▶ Play Reference Video</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              }
+
+              if (isImage && media) {
+                return (
+                  <View style={styles.imageCardContainer}>
+                    <Image
+                      source={{ uri: media }}
+                      style={styles.storyboardImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                );
+              }
+
+              return (
+                <ViewfinderPreview
+                  viewfinderType={activeSuggestion.mediaUrl || activeShotDefinition?.viewfinderType}
+                  focalLength={activeShotDefinition?.focalLength}
+                  movement={activeShotDefinition?.movement}
+                  category={activeSuggestion.category}
+                  height={155}
+                />
+              );
+            })()}
 
             <Text style={[styles.cueDesc, { color: theme.textSecondary, fontSize: 13, marginTop: 4 }]}>
               {activeSuggestion.description}
@@ -236,7 +277,7 @@ export const TallyScreen: React.FC = () => {
                 </TouchableOpacity>
               </View>
               <Text style={[styles.voiceScript, { color: theme.textPrimary }]}>
-                "{activeShotDefinition?.voiceScript || `Camera ${settings.cameraId}, stand by for ${activeSuggestion.title}!`}"
+                "{buildVoiceCueScript(settings.cameraId || 1, activeSuggestion, settings.eventType)}"
               </Text>
             </View>
 
@@ -511,6 +552,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  mediaCardContainer: {
+    height: 155,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 8,
+  },
+  videoBadge: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  playVideoBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  playVideoText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  imageCardContainer: {
+    height: 155,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
+    marginBottom: 8,
+  },
+  storyboardImage: {
+    width: '100%',
+    height: '100%',
   },
 });
 

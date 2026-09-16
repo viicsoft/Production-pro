@@ -126,6 +126,15 @@ namespace AtemDirector.Server
             
             builder.Services.AddHostedService<AiDirectorService>();
 
+            builder.WebHost.ConfigureKestrel(options =>
+            {
+                options.Limits.MaxRequestBodySize = 250 * 1024 * 1024; // 250MB
+            });
+            builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+            {
+                options.MultipartBodyLengthLimit = 250 * 1024 * 1024;
+            });
+
             // Relax Antiforgery for local IP access
             builder.Services.AddAntiforgery(options =>
             {
@@ -254,7 +263,7 @@ namespace AtemDirector.Server
                 }
 
                 return Results.Ok(new { mediaUrl = $"/uploads/{newFileName}" });
-            });
+            }).DisableAntiforgery();
 
             app.Run("http://0.0.0.0:5160");
         }

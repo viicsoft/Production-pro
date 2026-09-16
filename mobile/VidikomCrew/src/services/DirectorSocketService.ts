@@ -43,6 +43,7 @@ export interface ShotSuggestion {
   mediaPath?: string | null;
   mediaType?: 'image' | 'video' | null;
   mediaUrl?: string | null;
+  voiceScript?: string | null;
   isAiGenerated?: boolean;
   targetCameraId?: number;
   timestamp?: number;

@@ -76,6 +76,7 @@ export const parseJoinInput = (input: string): {
   roomPin?: string;
   directorPort?: number;
   voicePort?: number;
+  isCloudRelay?: boolean;
 } | null => {
   const trimmed = input.trim();
   if (!trimmed) return null;
