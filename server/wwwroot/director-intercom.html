@@ -73,16 +73,29 @@
         window.toggleMicMute = toggleMicMute;
 
         function setHighBitrateOpus(sdp) {
+            if (!sdp) return sdp;
             let lines = sdp.split('\r\n');
-            let modified = false;
+            let opusPayloadType = null;
             for (let i = 0; i < lines.length; i++) {
-                if (lines[i].indexOf('a=fmtp:') === 0 && lines[i].toLowerCase().includes('opus')) {
-                    if (lines[i].includes('maxaveragebitrate')) {
-                        lines[i] = lines[i].replace(/maxaveragebitrate=\d+/, 'maxaveragebitrate=128000');
-                    } else {
-                        lines[i] += ';maxaveragebitrate=128000;stereo=1';
+                if (lines[i].startsWith('a=rtpmap:') && lines[i].toLowerCase().includes('opus')) {
+                    const match = lines[i].match(/a=rtpmap:(\d+)/);
+                    if (match) opusPayloadType = match[1];
+                }
+            }
+            if (opusPayloadType) {
+                let fmtpFound = false;
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].startsWith(`a=fmtp:${opusPayloadType}`)) {
+                        fmtpFound = true;
+                        if (lines[i].includes('maxaveragebitrate')) {
+                            lines[i] = lines[i].replace(/maxaveragebitrate=\d+/, 'maxaveragebitrate=128000');
+                        } else {
+                            lines[i] += ';maxaveragebitrate=128000;stereo=1';
+                        }
                     }
-                    modified = true;
+                }
+                if (!fmtpFound) {
+                    lines.push(`a=fmtp:${opusPayloadType} maxaveragebitrate=128000;stereo=1`);
                 }
             }
             return lines.join('\r\n');
@@ -191,35 +204,11 @@
         
         let audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
         if (!audioSender) {
-            // Check if there is a transceiver we can use
-            if (typeof pc.getTransceivers === 'function') {
-                const transceiver = pc.getTransceivers().find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'audio');
-                if (transceiver && !transceiver.sender.track) {
-                    directorStream.getAudioTracks().forEach(track => {
-                        track.enabled = !isMicMuted;
-                        try {
-                            transceiver.sender.replaceTrack(track);
-                            transceiver.direction = 'sendrecv';
-                            log('Replaced track on existing transceiver (enabled=' + track.enabled + ')');
-                        } catch (e) {
-                            log('Error replacing track: ' + e.message);
-                        }
-                    });
-                    return;
-                }
-            }
-            
-            // Fallback to addTrack
             directorStream.getAudioTracks().forEach(track => {
                 track.enabled = !isMicMuted;
                 try { 
-                    if (typeof pc.addTransceiver === 'function') {
-                        pc.addTransceiver(track, { direction: 'sendrecv', streams: [directorStream] });
-                        log('Attached microphone track via addTransceiver (enabled=' + track.enabled + ')');
-                    } else {
-                        pc.addTrack(track, directorStream); 
-                        log('Attached microphone track via addTrack (enabled=' + track.enabled + ')');
-                    }
+                    pc.addTrack(track, directorStream); 
+                    log('Attached microphone track via addTrack (enabled=' + track.enabled + ')');
                 } catch (e) {
                     log('Error attaching microphone track: ' + e.message);
                 }
@@ -321,7 +310,7 @@
                             roomId: roomId,
                             from: 'Director',
                             to: alias,
-                            data: pc.localDescription
+                            data: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
                         }));
                     }
                 } catch (e) {
@@ -399,7 +388,7 @@
                             roomId: roomId,
                             from: 'Director',
                             to: alias,
-                            data: offer
+                            data: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
                         }));
                     }
                 } catch (e) {
@@ -458,7 +447,7 @@
                         roomId: roomId,
                         from: 'Director',
                         to: fromAlias,
-                        data: answer
+                        data: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
                     }));
                 }
             } else if (data.type === 'answer') {

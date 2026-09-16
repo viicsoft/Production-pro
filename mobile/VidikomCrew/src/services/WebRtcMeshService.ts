@@ -484,7 +484,7 @@ export class WebRtcMeshService {
         if (pc.signalingState === 'stable') {
           const modifiedSdp = this.setHighBitrateOpus(offer.sdp);
           await pc.setLocalDescription({ type: offer.type, sdp: modifiedSdp });
-          this.sendSignal(alias, pc.localDescription);
+          this.sendSignal(alias, { type: pc.localDescription!.type, sdp: pc.localDescription!.sdp });
         }
       } catch (err) {
         console.error(`[WebRtcMeshService] Error creating initial offer for ${alias}:`, err);
@@ -498,14 +498,28 @@ export class WebRtcMeshService {
 
   private setHighBitrateOpus(sdp: string): string {
     if (!sdp) return sdp;
-    let lines = sdp.split('\r\n');
+    const lines = sdp.split('\r\n');
+    let opusPayloadType: string | null = null;
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].indexOf('a=fmtp:') === 0 && lines[i].toLowerCase().includes('opus')) {
-        if (lines[i].includes('maxaveragebitrate')) {
-          lines[i] = lines[i].replace(/maxaveragebitrate=\d+/, 'maxaveragebitrate=128000');
-        } else {
-          lines[i] += ';maxaveragebitrate=128000;stereo=1';
+      if (lines[i].startsWith('a=rtpmap:') && lines[i].toLowerCase().includes('opus')) {
+        const match = lines[i].match(/a=rtpmap:(\d+)/);
+        if (match) opusPayloadType = match[1];
+      }
+    }
+    if (opusPayloadType) {
+      let fmtpFound = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith(`a=fmtp:${opusPayloadType}`)) {
+          fmtpFound = true;
+          if (lines[i].includes('maxaveragebitrate')) {
+            lines[i] = lines[i].replace(/maxaveragebitrate=\d+/, 'maxaveragebitrate=128000');
+          } else {
+            lines[i] += ';maxaveragebitrate=128000;stereo=1';
+          }
         }
+      }
+      if (!fmtpFound) {
+        lines.push(`a=fmtp:${opusPayloadType} maxaveragebitrate=128000;stereo=1`);
       }
     }
     return lines.join('\r\n');
@@ -551,7 +565,7 @@ export class WebRtcMeshService {
         const answer = await pc.createAnswer();
         const modifiedSdp = this.setHighBitrateOpus(answer.sdp);
         await pc.setLocalDescription({ type: answer.type, sdp: modifiedSdp });
-        this.sendSignal(fromAlias, pc.localDescription);
+        this.sendSignal(fromAlias, { type: pc.localDescription!.type, sdp: pc.localDescription!.sdp });
       }
     } else if (data.type === 'candidate' || data.candidate) {
       const candidatePayload = data.candidate || data;
