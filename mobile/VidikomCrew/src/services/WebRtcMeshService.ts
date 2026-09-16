@@ -482,8 +482,8 @@ export class WebRtcMeshService {
         entry.makingOffer = true;
         const offer = await pc.createOffer();
         if (pc.signalingState === 'stable') {
-          offer.sdp = this.setHighBitrateOpus(offer.sdp);
-          await pc.setLocalDescription(offer);
+          const modifiedSdp = this.setHighBitrateOpus(offer.sdp);
+          await pc.setLocalDescription({ type: offer.type, sdp: modifiedSdp });
           this.sendSignal(alias, pc.localDescription);
         }
       } catch (err) {
@@ -549,8 +549,8 @@ export class WebRtcMeshService {
         }
 
         const answer = await pc.createAnswer();
-        answer.sdp = this.setHighBitrateOpus(answer.sdp);
-        await pc.setLocalDescription(answer);
+        const modifiedSdp = this.setHighBitrateOpus(answer.sdp);
+        await pc.setLocalDescription({ type: answer.type, sdp: modifiedSdp });
         this.sendSignal(fromAlias, pc.localDescription);
       }
     } else if (data.type === 'candidate' || data.candidate) {

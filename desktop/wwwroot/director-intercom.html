@@ -313,8 +313,8 @@
                     pc._makingOffer = true;
                     const offer = await pc.createOffer();
                     if (pc.signalingState !== 'stable') return;
-                    offer.sdp = setHighBitrateOpus(offer.sdp);
-                    await pc.setLocalDescription(offer);
+                    const modifiedSdp = setHighBitrateOpus(offer.sdp);
+                    await pc.setLocalDescription({ type: offer.type, sdp: modifiedSdp });
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
                             type: 'signal',
@@ -391,8 +391,8 @@
                 try {
                     pc._makingOffer = true;
                     const offer = await pc.createOffer();
-                    offer.sdp = setHighBitrateOpus(offer.sdp);
-                    await pc.setLocalDescription(offer);
+                    const modifiedSdp = setHighBitrateOpus(offer.sdp);
+                    await pc.setLocalDescription({ type: offer.type, sdp: modifiedSdp });
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
                             type: 'signal',
@@ -449,8 +449,8 @@
                 ensureMicTracksAttached(pc);
 
                 const answer = await pc.createAnswer();
-                answer.sdp = setHighBitrateOpus(answer.sdp);
-                await pc.setLocalDescription(answer);
+                const modifiedSdp = setHighBitrateOpus(answer.sdp);
+                await pc.setLocalDescription({ type: answer.type, sdp: modifiedSdp });
 
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
