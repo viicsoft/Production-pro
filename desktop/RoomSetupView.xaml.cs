@@ -13,8 +13,33 @@ namespace Desktop
             InitializeComponent();
             try
             {
-                TxtProductionName.Text = $"Untitled Production - {DateTime.Now:MMM dd}";
-                TxtDirectorName.Text = Environment.UserName;
+                if (RoomManager.ActiveRoom != null)
+                {
+                    TxtProductionName.Text = string.IsNullOrWhiteSpace(RoomManager.ActiveRoom.ProductionName)
+                        ? $"Untitled Production - {DateTime.Now:MMM dd}"
+                        : RoomManager.ActiveRoom.ProductionName;
+                    TxtDirectorName.Text = string.IsNullOrWhiteSpace(RoomManager.ActiveRoom.DirectorName)
+                        ? Environment.UserName
+                        : RoomManager.ActiveRoom.DirectorName;
+                    CmbNetworkMode.SelectedIndex = RoomManager.ActiveRoom.NetworkMode == NetworkMode.Online ? 1 : 0;
+                    if (!string.IsNullOrWhiteSpace(RoomManager.ActiveRoom.RelayUrl))
+                    {
+                        TxtRelayUrl.Text = RoomManager.ActiveRoom.RelayUrl;
+                    }
+                }
+                else
+                {
+                    TxtProductionName.Text = $"Untitled Production - {DateTime.Now:MMM dd}";
+                    TxtDirectorName.Text = Environment.UserName;
+                    CmbNetworkMode.SelectedIndex = 1;
+                }
+
+                if (PnlRelayUrl != null)
+                {
+                    PnlRelayUrl.Visibility = CmbNetworkMode.SelectedIndex == 1 
+                        ? Visibility.Visible 
+                        : Visibility.Collapsed;
+                }
             }
             catch { }
         }
