@@ -376,17 +376,21 @@ namespace Desktop
                 {
                     if (_voiceRooms.TryGetValue(me.RoomId, out var room))
                     {
-                        room.TryRemove(me.Alias, out _);
-                        var leftJson = JsonSerializer.Serialize(new { type = "peer-left", alias = me.Alias });
-                        var leftBytes = Encoding.UTF8.GetBytes(leftJson);
-                        foreach (var kv in room)
+                        // Only remove and send peer-left if this closing socket is STILL the active registered connection for this alias
+                        if (room.TryGetValue(me.Alias, out var currentWs) && currentWs == ws)
                         {
-                            if (kv.Value.State == WebSocketState.Open)
+                            room.TryRemove(me.Alias, out _);
+                            var leftJson = JsonSerializer.Serialize(new { type = "peer-left", alias = me.Alias });
+                            var leftBytes = Encoding.UTF8.GetBytes(leftJson);
+                            foreach (var kv in room)
                             {
-                                _ = kv.Value.SendAsync(new ArraySegment<byte>(leftBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                                if (kv.Value.State == WebSocketState.Open)
+                                {
+                                    _ = kv.Value.SendAsync(new ArraySegment<byte>(leftBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                                }
                             }
+                            if (room.IsEmpty) _voiceRooms.TryRemove(me.RoomId, out _);
                         }
-                        if (room.IsEmpty) _voiceRooms.TryRemove(me.RoomId, out _);
                     }
                     _voiceClientInfo.TryRemove(ws, out _);
                 }

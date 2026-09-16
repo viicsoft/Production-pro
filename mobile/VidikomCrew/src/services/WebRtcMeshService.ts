@@ -385,7 +385,14 @@ export class WebRtcMeshService {
     initiateOffer: boolean
   ): Promise<PeerConnectionEntry> {
     let entry = this.peers.get(alias);
-    if (entry) return entry;
+    if (entry) {
+      if (initiateOffer || entry.pc.connectionState === 'failed' || entry.pc.connectionState === 'closed') {
+        this.removePeer(alias);
+        entry = undefined;
+      } else {
+        return entry;
+      }
+    }
 
     const myAlias = this.options?.callsign || this.options?.alias || 'Cam 1';
     // Camera is always polite to Director to ensure Director's offer/answer takes precedence without glare

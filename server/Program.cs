@@ -541,19 +541,22 @@ namespace AtemDirector.Server
                 {
                     if (VoiceRooms.TryGetValue(me.RoomId, out var room))
                     {
-                        room.TryRemove(me.Alias, out _);
-
-                        var leftBytes = JsonSerializer.SerializeToUtf8Bytes(
-                            new { type = "peer-left", alias = me.Alias }
-                        );
-
-                        foreach (var kv in room)
+                        if (room.TryGetValue(me.Alias, out var currentWs) && currentWs == ws)
                         {
-                            await SafeSendAsync(kv.Value, leftBytes, CancellationToken.None);
-                        }
+                            room.TryRemove(me.Alias, out _);
 
-                        if (room.IsEmpty)
-                            VoiceRooms.TryRemove(me.RoomId, out _);
+                            var leftBytes = JsonSerializer.SerializeToUtf8Bytes(
+                                new { type = "peer-left", alias = me.Alias }
+                            );
+
+                            foreach (var kv in room)
+                            {
+                                await SafeSendAsync(kv.Value, leftBytes, CancellationToken.None);
+                            }
+
+                            if (room.IsEmpty)
+                                VoiceRooms.TryRemove(me.RoomId, out _);
+                        }
                     }
 
                     VoiceClientInfo.TryRemove(ws, out _);

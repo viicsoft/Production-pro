@@ -552,7 +552,8 @@
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0">
                 <Button x:Name="BtnRegenPin" Content="Regen PIN" Visibility="Collapsed" Background="#0078D4" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,10,0" FontWeight="Bold" Click="BtnRegenPin_Click" Cursor="Hand"/>
                 <Button x:Name="BtnEndRoom" Content="End Room" Visibility="Collapsed" Background="#D32F2F" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,20,0" FontWeight="Bold" Click="BtnEndRoom_Click" Cursor="Hand"/>
-                <Button x:Name="BtnToggleIntercom" Content="🎙️ INTERCOM: OFF" Background="#333" Foreground="#AAA" BorderThickness="0" Padding="10,5" Margin="0,0,20,0" FontWeight="Bold" Click="BtnToggleIntercom_Click" Cursor="Hand"/>
+                <Button x:Name="BtnToggleMicMute" Content="🎙️ MIC: LIVE" Visibility="Collapsed" Background="#2E7D32" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,10,0" FontWeight="Bold" Click="BtnToggleMicMute_Click" Cursor="Hand" ToolTip="Mute or Unmute Director Microphone"/>
+                <Button x:Name="BtnToggleIntercom" Content="🎙️ INTERCOM: OFF" Background="#333" Foreground="#AAA" BorderThickness="0" Padding="10,5" Margin="0,0,20,0" FontWeight="Bold" Click="BtnToggleIntercom_Click" Cursor="Hand" ToolTip="Toggle Director Voice Intercom"/>
                 <TextBlock Text="Viicsoft design" Foreground="White" FontSize="14" FontFamily="Segoe UI Semilight" VerticalAlignment="Center"/>
                 <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                     <Border Width="5" Height="5" Background="#FFA500" CornerRadius="3" Margin="0,1"/>

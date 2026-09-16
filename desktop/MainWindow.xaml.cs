@@ -484,18 +484,10 @@ namespace Desktop
                     }
                 };
 
-                IntercomWebView.CoreWebView2.NavigationCompleted += async (s, e) =>
+                IntercomWebView.CoreWebView2.NavigationCompleted += (s, e) =>
                 {
                     LogIntercom($"WebView2 navigation completed: success={e.IsSuccess}, errorStatus={e.WebErrorStatus}");
-                    if (e.IsSuccess)
-                    {
-                        try
-                        {
-                            await Task.Delay(500);
-                            await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
-                        }
-                        catch { }
-                    }
+                    // Explicitly do NOT auto-connect here. Intercom audio and mic are strictly activated when user clicks INTERCOM: ON.
                 };
 
                 IntercomWebView.CoreWebView2.WebMessageReceived += (s, e) =>
@@ -517,6 +509,12 @@ namespace Desktop
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x43, 0xA0, 0x47)); // Green
                             BtnToggleIntercom.Foreground = Brushes.White;
                             BtnToggleIntercom.Content = "🎙️ INTERCOM: ON";
+
+                            BtnToggleMicMute.Visibility = Visibility.Visible;
+                            BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
+                            BtnToggleMicMute.Foreground = Brushes.White;
+                            BtnToggleMicMute.Content = "🎙️ MIC: LIVE";
+                            _isMicMuted = false;
                         });
                     }
                     else if (msg == "intercom_disconnected" || msg == "intercom_error")
@@ -527,6 +525,29 @@ namespace Desktop
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                             BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
                             BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+
+                            BtnToggleMicMute.Visibility = Visibility.Collapsed;
+                            _isMicMuted = false;
+                        });
+                    }
+                    else if (msg == "mic_muted")
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            _isMicMuted = true;
+                            BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F)); // Red
+                            BtnToggleMicMute.Foreground = Brushes.White;
+                            BtnToggleMicMute.Content = "🔇 MIC: MUTED";
+                        });
+                    }
+                    else if (msg == "mic_live")
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            _isMicMuted = false;
+                            BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
+                            BtnToggleMicMute.Foreground = Brushes.White;
+                            BtnToggleMicMute.Content = "🎙️ MIC: LIVE";
                         });
                     }
                 };
@@ -1627,6 +1648,34 @@ namespace Desktop
         }
 
         private bool _isIntercomActive = false;
+        private bool _isMicMuted = false;
+
+        private async void BtnToggleMicMute_Click(object sender, RoutedEventArgs e)
+        {
+            if (IntercomWebView?.CoreWebView2 == null || !_isIntercomActive) return;
+            try
+            {
+                _isMicMuted = !_isMicMuted;
+                if (_isMicMuted)
+                {
+                    BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F)); // Red
+                    BtnToggleMicMute.Foreground = Brushes.White;
+                    BtnToggleMicMute.Content = "🔇 MIC: MUTED";
+                }
+                else
+                {
+                    BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
+                    BtnToggleMicMute.Foreground = Brushes.White;
+                    BtnToggleMicMute.Content = "🎙️ MIC: LIVE";
+                }
+                await IntercomWebView.CoreWebView2.ExecuteScriptAsync($"setMicMute({(_isMicMuted ? "true" : "false")});");
+            }
+            catch (Exception ex)
+            {
+                LogIntercom("Mic toggle failed", ex);
+            }
+        }
+
         private async void BtnToggleIntercom_Click(object sender, RoutedEventArgs e)
         {
             if (IntercomWebView?.CoreWebView2 == null)
@@ -1657,13 +1706,20 @@ namespace Desktop
                                 BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                                 BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
                                 BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                                BtnToggleMicMute.Visibility = Visibility.Collapsed;
                                 _isIntercomActive = false;
+                                _isMicMuted = false;
                             }
                         });
                     });
                 }
                 else
                 {
+                    BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
+                    BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
+                    BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                    BtnToggleMicMute.Visibility = Visibility.Collapsed;
+                    _isMicMuted = false;
                     await IntercomWebView.CoreWebView2.ExecuteScriptAsync("disconnectIntercom();");
                 }
             }
@@ -1673,6 +1729,8 @@ namespace Desktop
                 System.Windows.MessageBox.Show("The Intercom backend process encountered an error and cannot be reached. Please restart the application.", "Intercom Error");
                 _isIntercomActive = false;
                 BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                BtnToggleMicMute.Visibility = Visibility.Collapsed;
+                _isMicMuted = false;
             }
         }
 

@@ -133,87 +133,128 @@
                 }
             };
 
-            ws.onclose = () => {
-                log('Signaling WebSocket closed. Reconnecting in 2s...');
-                setTimeout(initWebSocket, 2000);
-            };
+        let isMicMuted = false;
 
-            ws.onerror = (err) => {
-                log('WebSocket error: ' + err);
-            };
-        }
-
-        function ensureMicTracksAttached(pc) {
-            if (!directorStream) return;
-            const senders = pc.getSenders();
-            const hasAudioSender = senders.some(s => s.track && s.track.kind === 'audio');
-            if (!hasAudioSender) {
+        function setMicMute(muted) {
+            isMicMuted = !!muted;
+            if (directorStream) {
                 directorStream.getAudioTracks().forEach(track => {
-                    track.enabled = true;
-                    try { 
-                        pc.addTrack(track, directorStream); 
-                        log('Attached microphone track to peer');
-                    } catch (e) {
-                        log('Error attaching microphone track: ' + e.message);
-                    }
+                    track.enabled = !isMicMuted;
                 });
             }
+            postToWpf(isMicMuted ? 'mic_muted' : 'mic_live');
+            log('Director microphone muted: ' + isMicMuted);
         }
 
-        async function connectIntercom() {
-            if (isConnecting || isConnected) return;
-            isConnecting = true;
-            log('Starting Director intercom...');
+        function toggleMicMute() {
+            setMicMute(!isMicMuted);
+        }
 
-            try {
-                // 1. Initialize WebAudio context
-                try {
-                    if (!window._audioCtx) {
-                        window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        ws.onclose = () => {
+            log('Signaling WebSocket closed.');
+            ws = null;
+            if (isConnected || isConnecting) {
+                log('Attempting signaling reconnect in 2s...');
+                setTimeout(() => {
+                    if (isConnected || isConnecting) {
+                        initWebSocket();
                     }
-                    if (window._audioCtx.state === 'suspended') {
-                        await window._audioCtx.resume();
-                    }
-                } catch (_) {}
-
-                // 2. Capture Director microphone
-                log('Requesting microphone access...');
-                try {
-                    directorStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
-                            sampleRate: 48000,
-                            channelCount: 1
-                        },
-                        video: false
-                    });
-                    log('Microphone acquired successfully with ' + directorStream.getAudioTracks().length + ' track(s)');
-                    
-                    // Attach to any peers already created
-                    Object.values(peers).forEach(pc => ensureMicTracksAttached(pc));
-                } catch (micErr) {
-                    log('Microphone warning: ' + micErr.message + ' (continuing in listen mode)');
-                }
-
-                isConnected = true;
-                isConnecting = false;
-
-                // 3. Connect to WebSocket signaling NOW that mic is ready
-                initWebSocket();
-
-                postToWpf('intercom_connected');
-            } catch (err) {
-                log('Intercom connect error: ' + err.message);
-                isConnecting = false;
-                isConnected = false;
-                postToWpf('intercom_error');
+                }, 2000);
             }
+        };
+
+        ws.onerror = (err) => {
+            log('WebSocket error: ' + err);
+        };
+    }
+
+    function ensureMicTracksAttached(pc) {
+        if (!directorStream) return;
+        const senders = pc.getSenders();
+        const hasAudioSender = senders.some(s => s.track && s.track.kind === 'audio');
+        if (!hasAudioSender) {
+            directorStream.getAudioTracks().forEach(track => {
+                track.enabled = !isMicMuted;
+                try { 
+                    pc.addTrack(track, directorStream); 
+                    log('Attached microphone track to peer (enabled=' + track.enabled + ')');
+                } catch (e) {
+                    log('Error attaching microphone track: ' + e.message);
+                }
+            });
         }
+    }
+
+    async function connectIntercom() {
+        if (isConnecting || isConnected) {
+            log('connectIntercom called but already connecting/connected.');
+            return;
+        }
+        isConnecting = true;
+        log('Starting Director intercom...');
+
+        try {
+            // 1. Initialize WebAudio context
+            try {
+                if (!window._audioCtx) {
+                    window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (window._audioCtx.state === 'suspended') {
+                    await window._audioCtx.resume();
+                }
+            } catch (_) {}
+
+            // 2. Capture Director microphone
+            log('Requesting microphone access...');
+            try {
+                directorStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    },
+                    video: false
+                });
+            } catch (micErr1) {
+                try {
+                    directorStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                } catch (micErr2) {
+                    log('Microphone warning: ' + micErr2.message + ' (continuing in listen mode)');
+                }
+            }
+
+            if (directorStream) {
+                directorStream.getAudioTracks().forEach(track => {
+                    track.enabled = !isMicMuted;
+                });
+                log('Microphone acquired successfully with ' + directorStream.getAudioTracks().length + ' track(s)');
+                Object.values(peers).forEach(pc => ensureMicTracksAttached(pc));
+            }
+
+            isConnected = true;
+            isConnecting = false;
+
+            // 3. Connect to WebSocket signaling NOW that mic is ready
+            initWebSocket();
+
+            postToWpf('intercom_connected');
+        } catch (err) {
+            log('Intercom connect error: ' + err.message);
+            isConnecting = false;
+            isConnected = false;
+            postToWpf('intercom_error');
+        }
+    }
 
         async function getOrCreatePeer(alias, initiateOffer = false) {
-            if (peers[alias]) return peers[alias];
+            if (peers[alias]) {
+                if (initiateOffer || peers[alias].connectionState === 'failed' || peers[alias].connectionState === 'closed') {
+                    log(`Recreating peer connection for ${alias} (initiateOffer=${initiateOffer}, state=${peers[alias].connectionState})`);
+                    cleanupPeer(alias);
+                } else {
+                    return peers[alias];
+                }
+            }
 
             log('Creating RTCPeerConnection for: ' + alias);
             const pc = new RTCPeerConnection({
@@ -414,27 +455,49 @@
         function disconnectIntercom() {
             log('Disconnecting Director intercom...');
             if (directorStream) {
-                directorStream.getTracks().forEach(t => t.stop());
+                directorStream.getTracks().forEach(t => {
+                    try { t.stop(); } catch (_) {}
+                });
                 directorStream = null;
+                log('Microphone hardware released.');
+            }
+
+            if (ws) {
+                try {
+                    ws.onopen = null;
+                    ws.onmessage = null;
+                    ws.onerror = null;
+                    ws.onclose = null;
+                    ws.close();
+                } catch (_) {}
+                ws = null;
+                log('Signaling WebSocket closed.');
             }
 
             Object.keys(peers).forEach(alias => cleanupPeer(alias));
             isConnected = false;
             isConnecting = false;
 
-            document.getElementById('audio-container').innerHTML = '';
+            if (window._audioCtx && window._audioCtx.state !== 'closed') {
+                try { window._audioCtx.suspend(); } catch (_) {}
+            }
+
+            const container = document.getElementById('audio-container');
+            if (container) container.innerHTML = '';
+
             postToWpf('intercom_disconnected');
+            log('Director intercom disconnected.');
         }
 
         // WebAudio periodic keepalive
         setInterval(() => {
-            if (window._audioCtx && window._audioCtx.state === 'suspended') {
+            if (isConnected && window._audioCtx && window._audioCtx.state === 'suspended') {
                 window._audioCtx.resume();
             }
         }, 1500);
 
         window.addEventListener('DOMContentLoaded', () => {
-            connectIntercom();
+            log('Director Intercom initialized in idle state. Microphone not accessed until Intercom is ON.');
         });
     </script>
 </body>
