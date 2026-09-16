@@ -515,6 +515,8 @@ namespace Desktop
                             BtnToggleMicMute.Foreground = Brushes.White;
                             BtnToggleMicMute.Content = "🎙️ MIC: LIVE";
                             _isMicMuted = false;
+                            
+                            _ = IntercomWebView.CoreWebView2.ExecuteScriptAsync("setMicMute(false);");
                         });
                     }
                     else if (msg == "intercom_disconnected" || msg == "intercom_error")

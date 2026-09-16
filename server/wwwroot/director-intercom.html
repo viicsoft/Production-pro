@@ -172,14 +172,38 @@
 
     function ensureMicTracksAttached(pc) {
         if (!directorStream) return;
-        const senders = pc.getSenders();
-        const hasAudioSender = senders.some(s => s.track && s.track.kind === 'audio');
-        if (!hasAudioSender) {
+        
+        let audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+        if (!audioSender) {
+            // Check if there is a transceiver we can use
+            if (typeof pc.getTransceivers === 'function') {
+                const transceiver = pc.getTransceivers().find(t => t.receiver && t.receiver.track && t.receiver.track.kind === 'audio');
+                if (transceiver && !transceiver.sender.track) {
+                    directorStream.getAudioTracks().forEach(track => {
+                        track.enabled = !isMicMuted;
+                        try {
+                            transceiver.sender.replaceTrack(track);
+                            transceiver.direction = 'sendrecv';
+                            log('Replaced track on existing transceiver (enabled=' + track.enabled + ')');
+                        } catch (e) {
+                            log('Error replacing track: ' + e.message);
+                        }
+                    });
+                    return;
+                }
+            }
+            
+            // Fallback to addTrack
             directorStream.getAudioTracks().forEach(track => {
                 track.enabled = !isMicMuted;
                 try { 
-                    pc.addTrack(track, directorStream); 
-                    log('Attached microphone track to peer (enabled=' + track.enabled + ')');
+                    if (typeof pc.addTransceiver === 'function') {
+                        pc.addTransceiver(track, { direction: 'sendrecv', streams: [directorStream] });
+                        log('Attached microphone track via addTransceiver (enabled=' + track.enabled + ')');
+                    } else {
+                        pc.addTrack(track, directorStream); 
+                        log('Attached microphone track via addTrack (enabled=' + track.enabled + ')');
+                    }
                 } catch (e) {
                     log('Error attaching microphone track: ' + e.message);
                 }
@@ -265,6 +289,30 @@
             });
 
             peers[alias] = pc;
+            
+            pc._makingOffer = false;
+            pc.onnegotiationneeded = async () => {
+                log('Negotiation needed for: ' + alias);
+                try {
+                    pc._makingOffer = true;
+                    const offer = await pc.createOffer();
+                    if (pc.signalingState !== 'stable') return;
+                    await pc.setLocalDescription(offer);
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'signal',
+                            roomId: roomId,
+                            from: 'Director',
+                            to: alias,
+                            data: pc.localDescription
+                        }));
+                    }
+                } catch (e) {
+                    log('Negotiation error for ' + alias + ': ' + e.message);
+                } finally {
+                    pc._makingOffer = false;
+                }
+            };
 
             ensureMicTracksAttached(pc);
 
@@ -350,7 +398,15 @@
 
             if (data.type === 'offer') {
                 log(`Handling offer from: ${fromAlias}`);
-                if (pc.signalingState !== 'stable') {
+                const offerCollision = (data.type === 'offer') && (pc._makingOffer || pc.signalingState !== 'stable');
+                pc._ignoreOffer = !true && offerCollision; // Director is always impolite because Camera is polite
+
+                if (pc._ignoreOffer) {
+                    log(`Offer collision detected for ${fromAlias}, ignoring remote offer`);
+                    return;
+                }
+
+                if (offerCollision) {
                     log(`Offer collision detected for ${fromAlias}, rolling back local offer`);
                     try {
                         await pc.setLocalDescription({ type: 'rollback' });
