@@ -52,7 +52,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
     
-    $installerFile = Get-ChildItem ".\installer-output\AtemDirector-Setup-*.exe" | Select-Object -First 1
+    $installerFile = Get-ChildItem ".\installer-output\AtemDirector-Setup-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($installerFile) {
         $fileSize = [math]::Round($installerFile.Length / 1MB, 2)
         Write-Host "Installer: $($installerFile.Name)" -ForegroundColor Cyan
