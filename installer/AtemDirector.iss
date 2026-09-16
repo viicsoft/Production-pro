@@ -2,7 +2,7 @@
 ; Creates a Windows installer with all dependencies bundled
 
 #define MyAppName "AtemDirector"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "1.0.4"
 #define MyAppPublisher "VIICSOFT"
 #define MyAppURL "https://viicsoft.com"
 #define MyAppExeName "desktop\desktop.exe"

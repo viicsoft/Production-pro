@@ -14,6 +14,7 @@
         const peers = {}; // alias/cam -> RTCPeerConnection
         let isConnecting = false;
         let isConnected = false;
+        let isMicMuted = false;
 
         const urlParams = new URLSearchParams(window.location.search);
         const rawRoomId = urlParams.get('roomId') || urlParams.get('roomName') || 'intercom';
@@ -52,6 +53,24 @@
                 console.warn('postToWpf error:', e);
             }
         }
+
+        function setMicMute(muted) {
+            isMicMuted = !!muted;
+            if (directorStream) {
+                directorStream.getAudioTracks().forEach(track => {
+                    track.enabled = !isMicMuted;
+                });
+            }
+            postToWpf(isMicMuted ? 'mic_muted' : 'mic_live');
+            log('Director microphone muted: ' + isMicMuted);
+        }
+
+        function toggleMicMute() {
+            setMicMute(!isMicMuted);
+        }
+
+        window.setMicMute = setMicMute;
+        window.toggleMicMute = toggleMicMute;
 
         function initWebSocket() {
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
@@ -133,24 +152,7 @@
                 }
             };
 
-        let isMicMuted = false;
-
-        function setMicMute(muted) {
-            isMicMuted = !!muted;
-            if (directorStream) {
-                directorStream.getAudioTracks().forEach(track => {
-                    track.enabled = !isMicMuted;
-                });
-            }
-            postToWpf(isMicMuted ? 'mic_muted' : 'mic_live');
-            log('Director microphone muted: ' + isMicMuted);
-        }
-
-        function toggleMicMute() {
-            setMicMute(!isMicMuted);
-        }
-
-        ws.onclose = () => {
+            ws.onclose = () => {
             log('Signaling WebSocket closed.');
             ws = null;
             if (isConnected || isConnecting) {
@@ -245,6 +247,7 @@
             postToWpf('intercom_error');
         }
     }
+    window.connectIntercom = connectIntercom;
 
         async function getOrCreatePeer(alias, initiateOffer = false) {
             if (peers[alias]) {
@@ -488,6 +491,7 @@
             postToWpf('intercom_disconnected');
             log('Director intercom disconnected.');
         }
+        window.disconnectIntercom = disconnectIntercom;
 
         // WebAudio periodic keepalive
         setInterval(() => {
