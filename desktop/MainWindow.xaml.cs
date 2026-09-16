@@ -442,12 +442,11 @@ namespace Desktop
                 _intercomWindow = new Window
                 {
                     Owner = this,
-                    Width = 100,
-                    Height = 100,
+                    Width = 1,
+                    Height = 1,
                     ShowInTaskbar = false,
                     WindowStyle = WindowStyle.None,
-                    AllowsTransparency = true,
-                    Opacity = 0,
+                    AllowsTransparency = false,
                     Title = "BackgroundIntercom",
                     IsHitTestVisible = false,
                     ShowActivated = false,
@@ -461,6 +460,16 @@ namespace Desktop
                 LogIntercom("Intercom init: awaiting EnsureCoreWebView2Async");
                 await initTask;
                 LogIntercom("Intercom init: EnsureCoreWebView2Async completed");
+
+                var wwwrootPath = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
+                if (System.IO.Directory.Exists(wwwrootPath))
+                {
+                    IntercomWebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                        "intercom.atem",
+                        wwwrootPath,
+                        Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+                    LogIntercom($"Virtual host mapped: intercom.atem -> {wwwrootPath}");
+                }
 
                 IntercomWebView.CoreWebView2.ProcessFailed += (s, e) =>
                     LogIntercom($"WebView2 process failed: {e.ProcessFailedKind}");
@@ -555,7 +564,8 @@ namespace Desktop
                 {
                     voiceServer = "127.0.0.1:8080";
                 }
-                var url = $"http://127.0.0.1:8080/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&_v={DateTime.UtcNow.Ticks}";
+                // Load from virtual host mapping so page loads locally without depending on network port 8080
+                var url = $"https://intercom.atem/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&_v={DateTime.UtcNow.Ticks}";
                 LogIntercom($"Intercom navigating to: {url}");
                 IntercomWebView.Source = new Uri(url);
                 LogIntercom("Intercom navigation initiated");
@@ -1631,7 +1641,25 @@ namespace Desktop
                 if (_isIntercomActive)
                 {
                     BtnToggleIntercom.Content = "🎙️ CONNECTING...";
-                    await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
+                    var scriptRes = await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
+                    LogIntercom($"connectIntercom() invoked: {scriptRes}");
+
+                    // Safety watchdog: reset to OFF if no connection response received in 6 seconds
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(6000);
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (BtnToggleIntercom.Content?.ToString() == "🎙️ CONNECTING...")
+                            {
+                                LogIntercom("Intercom toggle timeout, resetting button to OFF");
+                                BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
+                                BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
+                                BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                                _isIntercomActive = false;
+                            }
+                        });
+                    });
                 }
                 else
                 {

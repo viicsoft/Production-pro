@@ -142,29 +142,33 @@
                     }
                 } catch (_) {}
 
-                // 2. Capture Director microphone FIRST before connecting signaling
+                // 2. Capture Director microphone (non-fatal if no microphone connected)
                 log('Requesting microphone access...');
-                directorStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                        sampleRate: 48000,
-                        channelCount: 1
-                    },
-                    video: false
-                });
+                try {
+                    directorStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            sampleRate: 48000,
+                            channelCount: 1
+                        },
+                        video: false
+                    });
+                    log('Microphone acquired successfully');
+                } catch (micErr) {
+                    log('Microphone warning: ' + micErr.message + ' (continuing in listen mode)');
+                }
 
-                log('Microphone acquired successfully');
                 isConnected = true;
                 isConnecting = false;
 
-                // 3. Now connect to WebSocket with microphone already live
+                // 3. Connect to WebSocket
                 initWebSocket();
 
                 postToWpf('intercom_connected');
             } catch (err) {
-                log('Microphone capture error: ' + err.message);
+                log('Intercom connect error: ' + err.message);
                 isConnecting = false;
                 isConnected = false;
                 postToWpf('intercom_error');

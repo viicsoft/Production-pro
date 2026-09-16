@@ -45,27 +45,7 @@ namespace Desktop
             PinCode = new Random().Next(1000, 9999).ToString();
             var builder = WebApplication.CreateBuilder();
             builder.Environment.WebRootPath = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
-            bool canBind5160 = false;
-            if (port != 5160)
-            {
-                try
-                {
-                    using var testListener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, 5160);
-                    testListener.Start();
-                    testListener.Stop();
-                    canBind5160 = true;
-                }
-                catch { }
-            }
-
-            if (canBind5160)
-            {
-                builder.WebHost.UseUrls($"http://0.0.0.0:{port}", "http://0.0.0.0:5160");
-            }
-            else
-            {
-                builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-            }
+            builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
             _app = builder.Build();
 
             _app.UseWebSockets();
@@ -260,10 +240,22 @@ namespace Desktop
             try
             {
                 await _app.StartAsync();
+                try
+                {
+                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [PwaServer] Successfully started on http://0.0.0.0:{port}\n");
+                }
+                catch { }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[PwaServer] StartAsync error: {ex.Message}");
+                try
+                {
+                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [PwaServer] StartAsync FAILED on http://0.0.0.0:{port}: {ex}\n");
+                }
+                catch { }
             }
         }
 
