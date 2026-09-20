@@ -622,33 +622,44 @@ public sealed class SimAtem : IAtemSwitch
     }
 
     // Audio
-    public Task SetAudioVolumeAsync(long inputId, double volume)
+        public Task SetAudioVolumeAsync(long inputId, double volume)
     {
         lock (_syncLock)
         {
             if (inputId >= 1 && inputId <= 5)
                 _audioInputs[inputId - 1] = _audioInputs[inputId - 1] with { Volume = volume };
         }
+        AudioVolumeChanged?.Invoke(inputId, volume);
         return Task.CompletedTask;
     }
 
-    public Task SetAudioAfvAsync(long inputId, bool afv)
+        public Task SetAudioAfvAsync(long inputId, bool afv)
     {
+        bool currentOn = false;
         lock (_syncLock)
         {
             if (inputId >= 1 && inputId <= 5)
+            {
                 _audioInputs[inputId - 1] = _audioInputs[inputId - 1] with { Afv = afv };
+                currentOn = _audioInputs[inputId - 1].On;
+            }
         }
+        AudioStateChanged?.Invoke(inputId, currentOn, afv);
         return Task.CompletedTask;
     }
 
-    public Task SetAudioOnAsync(long inputId, bool on)
+        public Task SetAudioOnAsync(long inputId, bool on)
     {
+        bool currentAfv = false;
         lock (_syncLock)
         {
             if (inputId >= 1 && inputId <= 5)
+            {
                 _audioInputs[inputId - 1] = _audioInputs[inputId - 1] with { On = on };
+                currentAfv = _audioInputs[inputId - 1].Afv;
+            }
         }
+        AudioStateChanged?.Invoke(inputId, on, currentAfv);
         return Task.CompletedTask;
     }
 
@@ -1227,3 +1238,4 @@ public sealed class SimAtem : IAtemSwitch
     public Task SetLimiterReleaseAsync(long inputId, double release) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Release: release))); return Task.CompletedTask; }
     #endregion
 }
+

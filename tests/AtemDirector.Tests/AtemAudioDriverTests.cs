@@ -13,8 +13,7 @@ namespace AtemDirector.Tests
         private object GetAudioInputState(SimAtem sim, long channel)
         {
             var field = typeof(SimAtem).GetField("_audioInputs", BindingFlags.NonPublic | BindingFlags.Instance);
-            var dict = field.GetValue(sim) as System.Collections.IDictionary;
-            return dict[channel];
+            var arr = field.GetValue(sim) as System.Array; return arr.GetValue(channel - 1);
         }
 
         private double GetVolume(object audioInputState)
@@ -78,3 +77,4 @@ namespace AtemDirector.Tests
         }
     }
 }
+
