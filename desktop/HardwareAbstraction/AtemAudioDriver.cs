@@ -66,11 +66,11 @@ namespace Desktop.HardwareAbstraction
         public bool SupportsChannelCapability(long physicalChannel, AudioCapability capability)
         {
             // Master (100) supports Volume and Metering only
-            if (physicalChannel == 100)
+            if (physicalChannel == AtemPhysicalAudioChannels.MasterOut)
                 return capability == AudioCapability.Volume || capability == AudioCapability.Metering;
 
             // Media players (2001-2004) do not support 'On' (only AFV and Off per ATEM hardware constraint 0x5)
-            if (physicalChannel >= 2001 && physicalChannel <= 2004)
+            if (physicalChannel >= AtemPhysicalAudioChannels.Media1 && physicalChannel <= AtemPhysicalAudioChannels.Media4)
             {
                 if (capability == AudioCapability.On) return false;
             }

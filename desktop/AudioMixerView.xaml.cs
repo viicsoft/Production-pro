@@ -75,15 +75,15 @@ namespace Desktop
             // Divider
             FaderPanel.Children.Add(CreateDivider());
 
-            // 2. Media Player Strip — Fairlight Audio Input ID = 2001 (confirmed forensic audit)
-            FaderPanel.Children.Add(CreateFairlightChannelStrip(2001, "MEDIA", "Media 1", false));
+            // 2. Media Player Strip — Canonical Logical ID (Media 1)
+            FaderPanel.Children.Add(CreateFairlightChannelStrip((int)LogicalAudioChannels.Media1, "MEDIA", "Media 1", false));
 
             // Divider
             FaderPanel.Children.Add(CreateDivider());
 
-            // 3. XLR / Audio-In Inputs — Fairlight Audio Input IDs = 1301, 1401 (confirmed forensic audit)
-            FaderPanel.Children.Add(CreateFairlightChannelStrip(1301, "MIC 1", "XLR In 1", false));
-            FaderPanel.Children.Add(CreateFairlightChannelStrip(1401, "MIC 2", "XLR In 2", false));
+            // 3. XLR / Audio-In Inputs — Canonical Logical IDs (XLR 1, XLR 2)
+            FaderPanel.Children.Add(CreateFairlightChannelStrip((int)LogicalAudioChannels.Xlr1, "MIC 1", "XLR In 1", false));
+            FaderPanel.Children.Add(CreateFairlightChannelStrip((int)LogicalAudioChannels.Xlr2, "MIC 2", "XLR In 2", false));
 
             // 4. Audio Groups (if any)
             if (config.AudioGroups != null && config.AudioGroups.Count > 0)
@@ -599,11 +599,11 @@ namespace Desktop
         private UIElement CreateMasterStrip()
         {
             var config = MainWindow.Instance?.GetConfig() ?? InputConfig.Load();
-            var settings = config.GetChannelAudio(100);
+            var settings = config.GetChannelAudio((int)LogicalAudioChannels.Master);
 
             var ctrl = new ChannelStripController
             {
-                InputId = 100,
+                InputId = (int)LogicalAudioChannels.Master,
                 IsMaster = true,
                 Settings = settings
             };
@@ -654,7 +654,7 @@ namespace Desktop
             ctrl.RedrawEq = () => DrawMiniEqCurve(ctrl.EqCanvas, settings.Eq);
             ctrl.EqCanvas.Loaded += (s, e) => ctrl.RedrawEq();
 
-            eqContainer.Click += (s, e) => { OpenEqWindow(100, "Master Out"); };
+            eqContainer.Click += (s, e) => { OpenEqWindow(LogicalAudioChannels.Master, "Master Out"); };
             stripStack.Children.Add(eqContainer);
 
             // 5. Master Dynamics ("Wave Adjuster")
@@ -669,7 +669,7 @@ namespace Desktop
             ctrl.RedrawDyn = () => DrawMiniDynCurve(ctrl.DynCanvas, settings.Dynamics);
             ctrl.DynCanvas.Loaded += (s, e) => ctrl.RedrawDyn();
 
-            dynContainer.Click += (s, e) => { OpenDynWindow(100, "Master Out"); };
+            dynContainer.Click += (s, e) => { OpenDynWindow(LogicalAudioChannels.Master, "Master Out"); };
             stripStack.Children.Add(dynContainer);
 
             // 6. Master dB Peak Numeric Readout
@@ -711,7 +711,7 @@ namespace Desktop
             {
                 settings.FaderLevel = e.NewValue;
                 ctrl.TxtFaderDb.Text = e.NewValue <= -59 ? "-INF" : $"{e.NewValue:+0.00;-0.00;0.00}";
-                try { await _audioService.SetVolumeAsync(100, e.NewValue); } catch { }
+                try { await _audioService.SetVolumeAsync(LogicalAudioChannels.Master, e.NewValue); } catch { }
             };
             Grid.SetColumn(ctrl.FaderSlider, 0);
             faderAreaGrid.Children.Add(ctrl.FaderSlider);

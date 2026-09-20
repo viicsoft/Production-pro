@@ -1,248 +1,223 @@
-using System;
+ï»¿using System;
 using System.Threading.Tasks;
 using Xunit;
 using Desktop;
 using Core;
 using Desktop.HardwareAbstraction;
+using System.Collections.Concurrent;
 
 namespace AtemDirector.Tests
 {
-    /// <summary>
-    /// Tests for Part 14 of the Fairlight Audio Repair — channel mapping,
-    /// master volume delegation, AFV defaults, and missing-source diagnostics.
-    /// </summary>
     public class FairlightChannelMappingTests
     {
-        // -----------------------------------------------------------------------
-        // Helpers
-        // -----------------------------------------------------------------------
-
-        private (AudioControlService service, AudioRoutingMap map) CreateServiceWithProductionMap()
+        private (AudioControlService service, AudioRoutingMap map, MockAtemDriver driver) CreateServiceWithCanonicalMap()
         {
-            var sim = new SimAtem();
             var registry = new AudioHardwareRegistry();
-            registry.RegisterDriver(new AtemAudioDriver("atem-main", "ATEM", sim));
-            var map = new AudioRoutingMap();
-            for (long i = 1; i <= 100; i++) map.SetMapping(i, "atem-main", i);
-            for (long i = 1001; i <= 1020; i++) map.SetMapping(i, "atem-main", i);
-            for (long i = 2001; i <= 2020; i++) map.SetMapping(i, "atem-main", i);
-            map.SetMapping(1301, "atem-main", 1301); // XLR In 1
-            map.SetMapping(1401, "atem-main", 1401); // XLR In 2
-            return (new AudioControlService(registry, map), map);
-        }
+            var driver = new MockAtemDriver("atem-main");
+            registry.RegisterDriver(driver);
 
-        // -----------------------------------------------------------------------
-        // Mapping correctness
-        // -----------------------------------------------------------------------
+            var map = AudioRoutingMap.CreateDefaultAtemMap("atem-main", 40);
+
+            var service = new AudioControlService(registry, map);
+            return (service, map, driver);
+        }
 
         [Fact]
         public void RoutingMap_Camera1_MapsToPhysical1()
         {
-            var (_, map) = CreateServiceWithProductionMap();
-            Assert.True(map.TryGetPhysicalRoute(1, out var deviceId, out var physCh));
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Camera1, out var deviceId, out var physCh));
             Assert.Equal("atem-main", deviceId);
-            Assert.Equal(1L, physCh);
+            Assert.Equal(AtemPhysicalAudioChannels.Camera(1), physCh);
         }
 
         [Fact]
         public void RoutingMap_Camera40_MapsToPhysical40()
         {
-            var (_, map) = CreateServiceWithProductionMap();
-            Assert.True(map.TryGetPhysicalRoute(40, out var deviceId, out var physCh));
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Camera(40), out var deviceId, out var physCh));
             Assert.Equal("atem-main", deviceId);
-            Assert.Equal(40L, physCh);
+            Assert.Equal(AtemPhysicalAudioChannels.Camera(40), physCh);
         }
 
         [Fact]
-        public void RoutingMap_Media1_MapsTo2001()
+        public void RoutingMap_Master_MapsToPhysical100()
         {
-            var (_, map) = CreateServiceWithProductionMap();
-            Assert.True(map.TryGetPhysicalRoute(2001, out var deviceId, out var physCh));
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Master, out var deviceId, out var physCh));
             Assert.Equal("atem-main", deviceId);
-            Assert.Equal(2001L, physCh);
+            Assert.Equal(AtemPhysicalAudioChannels.MasterOut, physCh);
         }
 
         [Fact]
-        public void RoutingMap_XlrIn1_MapsTo1301()
+        public void RoutingMap_Media1_MapsToPhysical2001()
         {
-            var (_, map) = CreateServiceWithProductionMap();
-            Assert.True(map.TryGetPhysicalRoute(1301, out var deviceId, out var physCh));
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Media1, out var deviceId, out var physCh));
             Assert.Equal("atem-main", deviceId);
-            Assert.Equal(1301L, physCh);
+            Assert.Equal(AtemPhysicalAudioChannels.Media1, physCh);
         }
 
         [Fact]
-        public void RoutingMap_XlrIn2_MapsTo1401()
+        public void RoutingMap_Media4_MapsToPhysical2004()
         {
-            var (_, map) = CreateServiceWithProductionMap();
-            Assert.True(map.TryGetPhysicalRoute(1401, out var deviceId, out var physCh));
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Media4, out var deviceId, out var physCh));
             Assert.Equal("atem-main", deviceId);
-            Assert.Equal(1401L, physCh);
+            Assert.Equal(AtemPhysicalAudioChannels.Media4, physCh);
         }
 
         [Fact]
-        public void RoutingMap_OldIncorrectIds_DoNotProduceWrongMappings()
+        public void RoutingMap_XlrIn1_MapsToPhysical1301()
         {
-            var (_, map) = CreateServiceWithProductionMap();
-            // The old wrong IDs 17, 20, 21 still map (they are camera channels),
-            // but they must NOT be used for Media/Mic — this test documents the contract.
-            // Camera 17 is a legitimate video channel, but UI must NOT route Media to it.
-            Assert.True(map.TryGetPhysicalRoute(17, out _, out var physCh17));
-            Assert.Equal(17L, physCh17); // It maps to Camera 17, not Media Player
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Xlr1, out var deviceId, out var physCh));
+            Assert.Equal("atem-main", deviceId);
+            Assert.Equal(AtemPhysicalAudioChannels.Xlr1, physCh);
         }
 
-        // -----------------------------------------------------------------------
-        // Master volume delegation
-        // -----------------------------------------------------------------------
+        [Fact]
+        public void RoutingMap_XlrIn2_MapsToPhysical1401()
+        {
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Xlr2, out var deviceId, out var physCh));
+            Assert.Equal("atem-main", deviceId);
+            Assert.Equal(AtemPhysicalAudioChannels.Xlr2, physCh);
+        }
+
+        [Fact]
+        public void RoutingMap_MadiIn1_MapsToPhysical1501()
+        {
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+            Assert.True(map.TryGetPhysicalRoute(LogicalAudioChannels.Madi1, out var deviceId, out var physCh));
+            Assert.Equal("atem-main", deviceId);
+            Assert.Equal(AtemPhysicalAudioChannels.Madi1, physCh);
+        }
+
+        [Fact]
+        public void RoutingMap_ReverseFeedback_PhysicalToLogicalTranslation_IsAccurate()
+        {
+            var (_, map, _) = CreateServiceWithCanonicalMap();
+
+            Assert.True(map.TryGetLogicalRoute("atem-main", AtemPhysicalAudioChannels.Camera(1), out var logCam1));
+            Assert.Equal(LogicalAudioChannels.Camera1, logCam1);
+
+            Assert.True(map.TryGetLogicalRoute("atem-main", AtemPhysicalAudioChannels.Media1, out var logMed1));
+            Assert.Equal(LogicalAudioChannels.Media1, logMed1);
+
+            Assert.True(map.TryGetLogicalRoute("atem-main", AtemPhysicalAudioChannels.Xlr1, out var logXlr1));
+            Assert.Equal(LogicalAudioChannels.Xlr1, logXlr1);
+
+            Assert.True(map.TryGetLogicalRoute("atem-main", AtemPhysicalAudioChannels.Xlr2, out var logXlr2));
+            Assert.Equal(LogicalAudioChannels.Xlr2, logXlr2);
+
+            Assert.True(map.TryGetLogicalRoute("atem-main", AtemPhysicalAudioChannels.Madi1, out var logMadi1));
+            Assert.Equal(LogicalAudioChannels.Madi1, logMadi1);
+
+            Assert.True(map.TryGetLogicalRoute("atem-main", AtemPhysicalAudioChannels.MasterOut, out var logMaster));
+            Assert.Equal(LogicalAudioChannels.Master, logMaster);
+        }
 
         [Fact]
         public async Task SetVolumeAsync_Master_DelegatesToDriver_NotSilentlyDropped()
         {
-            // Verify that channel 100 (master) reaches the driver without being silently dropped.
-            var sim = new SimAtem();
-            long? capturedId = null;
-            double? capturedVol = null;
-            var registry = new AudioHardwareRegistry();
-            var driver = new CapturingDriver("atem-main");
-            registry.RegisterDriver(driver);
-            var map = new AudioRoutingMap();
-            for (long i = 1; i <= 100; i++) map.SetMapping(i, "atem-main", i);
-            var service = new AudioControlService(registry, map);
+            var (service, _, driver) = CreateServiceWithCanonicalMap();
+            await service.SetVolumeAsync(LogicalAudioChannels.Master, -12.5);
 
-            await service.SetVolumeAsync(100, -6.0);
-
-            Assert.True(driver.SetVolumeWasCalled, "Master fader (channel 100) must reach the driver. It was silently dropped.");
-            Assert.Equal(100L, driver.LastVolumeInputId);
-            Assert.Equal(-6.0, driver.LastVolumeValue);
-        }
-
-        // -----------------------------------------------------------------------
-        // AFV defaults
-        // -----------------------------------------------------------------------
-
-        [Fact]
-        public void AFV_DefaultState_IsFalse_Camera1()
-        {
-            var config = new Desktop.InputConfig();
-            Assert.False(config.GetChannelAudio(1).IsAfv, "AFV must default to false for camera channels.");
+            Assert.Equal(AtemPhysicalAudioChannels.MasterOut, driver.LastVolumePhysicalChannel);
+            Assert.Equal(-12.5, driver.LastVolume);
         }
 
         [Fact]
-        public void AFV_DefaultState_IsFalse_Camera40()
+        public async Task SetVolumeAsync_Media1_DelegatesToPhysical2001()
         {
-            var config = new Desktop.InputConfig();
-            Assert.False(config.GetChannelAudio(40).IsAfv, "AFV must default to false.");
+            var (service, _, driver) = CreateServiceWithCanonicalMap();
+            await service.SetVolumeAsync(LogicalAudioChannels.Media1, -6.0);
+
+            Assert.Equal(AtemPhysicalAudioChannels.Media1, driver.LastVolumePhysicalChannel);
+            Assert.Equal(-6.0, driver.LastVolume);
         }
 
         [Fact]
-        public async Task AFV_ExplicitSet_ToggleOn_ThenOff()
+        public async Task SetVolumeAsync_Xlr1_DelegatesToPhysical1301()
         {
-            var (service, _) = CreateServiceWithProductionMap();
-            // Default is off
-            var stateBefore = service.GetState(1);
-            Assert.False(stateBefore?.IsAfv ?? false);
+            var (service, _, driver) = CreateServiceWithCanonicalMap();
+            await service.SetVolumeAsync(LogicalAudioChannels.Xlr1, -3.0);
 
-            // Enable AFV
-            await service.SetAfvAsync(1, true);
-            var stateOn = service.GetState(1);
-            Assert.True(stateOn?.IsAfv, "AFV should be ON after SetAfvAsync(true).");
-
-            // Disable AFV
-            await service.SetAfvAsync(1, false);
-            var stateOff = service.GetState(1);
-            Assert.False(stateOff?.IsAfv, "AFV should be OFF after SetAfvAsync(false).");
+            Assert.Equal(AtemPhysicalAudioChannels.Xlr1, driver.LastVolumePhysicalChannel);
+            Assert.Equal(-3.0, driver.LastVolume);
         }
 
         [Fact]
-        public async Task SetOnAsync_DoesNotImplicitlyEnableAFV()
+        public async Task HardwareFeedback_Physical2001_UpdatesLogicalMedia1State()
         {
-            var (service, _) = CreateServiceWithProductionMap();
-            await service.SetOnAsync(1, true);
-            var state = service.GetState(1);
-            Assert.NotNull(state);
-            Assert.True(state.IsOn, "IsOn should be true.");
-            Assert.False(state.IsAfv, "AFV must NOT be enabled by SetOnAsync.");
-        }
-
-        // -----------------------------------------------------------------------
-        // Camera channel range unchanged
-        // -----------------------------------------------------------------------
-
-        [Fact]
-        public void RoutingMap_AllCameras1To40_ArePresent()
-        {
-            var (_, map) = CreateServiceWithProductionMap();
-            for (long i = 1; i <= 40; i++)
+            var (service, _, driver) = CreateServiceWithCanonicalMap();
+            bool fired = false;
+            service.StateChanged += s =>
             {
-                Assert.True(map.TryGetPhysicalRoute(i, out _, out var physCh),
-                    $"Camera channel {i} must be routed.");
-                Assert.Equal(i, physCh);
-            }
+                if (s.InputId == LogicalAudioChannels.Media1 && Math.Abs(s.Volume - (-8.0)) < 0.01)
+                    fired = true;
+            };
+
+            driver.TriggerFeedback("atem-main", AtemPhysicalAudioChannels.Media1, -8.0, null, null);
+            await Task.Delay(50);
+
+            Assert.True(fired);
+            Assert.Equal(-8.0, service.GetState(LogicalAudioChannels.Media1)?.Volume);
         }
 
         [Fact]
-        public async Task SetVolumeAsync_Camera1_UpdatesState()
+        public async Task HardwareFeedback_Physical1301_UpdatesLogicalXlr1State()
         {
-            var (service, _) = CreateServiceWithProductionMap();
-            await service.SetVolumeAsync(1, -12.0);
-            var state = service.GetState(1);
-            Assert.NotNull(state);
-            Assert.Equal(-12.0, state.Volume);
+            var (service, _, driver) = CreateServiceWithCanonicalMap();
+            bool fired = false;
+            service.StateChanged += s =>
+            {
+                if (s.InputId == LogicalAudioChannels.Xlr1 && s.IsOn)
+                    fired = true;
+            };
+
+            driver.TriggerFeedback("atem-main", AtemPhysicalAudioChannels.Xlr1, null, true, false);
+            await Task.Delay(50);
+
+            Assert.True(fired);
+            Assert.True(service.GetState(LogicalAudioChannels.Xlr1)?.IsOn);
         }
 
-        [Fact]
-        public async Task SetVolumeAsync_Camera2_UpdatesState()
+        private class MockAtemDriver : IAudioHardwareDriver
         {
-            var (service, _) = CreateServiceWithProductionMap();
-            await service.SetVolumeAsync(2, -8.0);
-            var state = service.GetState(2);
-            Assert.NotNull(state);
-            Assert.Equal(-8.0, state.Volume);
-        }
-
-        // -----------------------------------------------------------------------
-        // Helper: Capturing driver for delegation tests
-        // -----------------------------------------------------------------------
-
-        private class CapturingDriver : IAudioHardwareDriver
-        {
+            public MockAtemDriver(string deviceId) { DeviceId = deviceId; }
             public string DeviceId { get; }
-            public string DisplayName => "Capturing Test Driver";
-            public string HardwareType => "TEST";
+            public string DisplayName => "Mock ATEM";
+            public string HardwareType => "ATEM";
             public bool IsConnected => true;
 
-            public bool SetVolumeWasCalled { get; private set; }
-            public long LastVolumeInputId { get; private set; }
-            public double LastVolumeValue { get; private set; }
+            public long LastVolumePhysicalChannel { get; private set; }
+            public double LastVolume { get; private set; }
 
             public event Action<string, long, double?, bool?, bool?>? HardwareStateChanged;
-            public event Action<string, long, bool?, Core.EqBandUpdate?>? HardwareEqStateChanged;
-
-            public CapturingDriver(string deviceId) { DeviceId = deviceId; }
+            public event Action<string, long, bool?, EqBandUpdate?>? HardwareEqStateChanged;
 
             public bool SupportsCapability(AudioCapability capability) => true;
 
+            public bool SupportsChannelCapability(long physicalChannel, AudioCapability capability)
+            {
+                if (physicalChannel == AtemPhysicalAudioChannels.MasterOut)
+                    return capability == AudioCapability.Volume || capability == AudioCapability.Metering;
+                if (physicalChannel >= AtemPhysicalAudioChannels.Media1 && physicalChannel <= AtemPhysicalAudioChannels.Media4)
+                    return capability != AudioCapability.On;
+                return true;
+            }
+
             public Task SetVolumeAsync(long physicalChannel, double volume)
             {
-                SetVolumeWasCalled = true;
-                LastVolumeInputId = physicalChannel;
-                LastVolumeValue = volume;
-                // Fire the hardware event so AudioControlService updates its state cache
-                HardwareStateChanged?.Invoke(DeviceId, physicalChannel, volume, null, null);
+                LastVolumePhysicalChannel = physicalChannel;
+                LastVolume = volume;
                 return Task.CompletedTask;
             }
 
-            public Task SetOnAsync(long physicalChannel, bool isOn)
-            {
-                HardwareStateChanged?.Invoke(DeviceId, physicalChannel, null, isOn, null);
-                return Task.CompletedTask;
-            }
-
-            public Task SetAfvAsync(long physicalChannel, bool isAfv)
-            {
-                HardwareStateChanged?.Invoke(DeviceId, physicalChannel, null, null, isAfv);
-                return Task.CompletedTask;
-            }
+            public Task SetOnAsync(long physicalChannel, bool isOn) => Task.CompletedTask;
+            public Task SetAfvAsync(long physicalChannel, bool isAfv) => Task.CompletedTask;
 
             public Task SetEqBandFrequencyAsync(long physicalChannel, int bandIndex, double frequency) => Task.CompletedTask;
             public Task SetEqBandGainAsync(long physicalChannel, int bandIndex, double gain) => Task.CompletedTask;
@@ -250,6 +225,11 @@ namespace AtemDirector.Tests
             public Task SetEqBandShapeAsync(long physicalChannel, int bandIndex, int shape) => Task.CompletedTask;
             public Task SetEqBandEnabledAsync(long physicalChannel, int bandIndex, bool enabled) => Task.CompletedTask;
             public Task SetEqEnabledAsync(long physicalChannel, bool enabled) => Task.CompletedTask;
+
+            public void TriggerFeedback(string deviceId, long physicalChannel, double? volume, bool? isOn, bool? isAfv)
+            {
+                HardwareStateChanged?.Invoke(deviceId, physicalChannel, volume, isOn, isAfv);
+            }
         }
     }
 }

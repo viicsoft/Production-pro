@@ -29,7 +29,7 @@ namespace Desktop
                 try
                 {
                     // Master channel: route directly to the mixer's master output fader
-                    if (inputId == 100)
+                    if (inputId == AtemPhysicalAudioChannels.MasterOut)
                     {
                         if (_fairlightMixer != null)
                             _fairlightMixer.SetMasterOutFaderGain(volumeDb);
@@ -334,7 +334,7 @@ namespace Desktop
                     if (_fairlightMixer != null)
                     {
                         _fairlightMixer.GetMasterOutFaderGain(out double vol);
-                        _volumeCallback?.Invoke(100, vol);
+                        _volumeCallback?.Invoke(AtemPhysicalAudioChannels.MasterOut, vol);
                     }
                 }
                 catch (Exception ex)
@@ -348,7 +348,7 @@ namespace Desktop
         {
             double left = levels;
             double right = numLevels > 1 ? Unsafe.Add(ref levels, 1) : left;
-            _levelCallback(100, left, right); // 100 is Master
+            _levelCallback(AtemPhysicalAudioChannels.MasterOut, left, right);
         }
 
         // --- Old Mixer Callback (Master Out) ---
@@ -356,7 +356,7 @@ namespace Desktop
 
         public void ProgramOutLevelNotification(double left, double right, double peakLeft, double peakRight)
         {
-            _levelCallback(100, left, right); // 100 is Master
+            _levelCallback(AtemPhysicalAudioChannels.MasterOut, left, right);
         }
         
         // --- Inner callback classes ---
