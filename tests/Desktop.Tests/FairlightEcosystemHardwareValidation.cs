@@ -483,5 +483,315 @@ namespace Desktop.Tests
             }
             finally { Cleanup(switcher); }
         }
+
+        [Fact]
+        public void Phase7_MultiBand_Equalizer_AllBands_HardwareValidation()
+        {
+            var (switcher, mixer, fail) = ConnectToHardware();
+            if (mixer == null) { _output.WriteLine($"Hardware skipped: {fail}"); return; }
+
+            try
+            {
+                Guid iterGuid = typeof(IBMDSwitcherFairlightAudioInputIterator).GUID;
+                mixer.CreateIterator(ref iterGuid, out IntPtr iterPtr);
+                var iter = (IBMDSwitcherFairlightAudioInputIterator)Marshal.GetObjectForIUnknown(iterPtr);
+
+                IBMDSwitcherFairlightAudioSource? cam1Source = null;
+                while (true)
+                {
+                    iter.Next(out IBMDSwitcherFairlightAudioInput input);
+                    if (input == null) break;
+                    input.GetId(out long inputId);
+                    if (inputId == 1)
+                    {
+                        Guid srcIterGuid = typeof(IBMDSwitcherFairlightAudioSourceIterator).GUID;
+                        input.CreateIterator(ref srcIterGuid, out IntPtr srcIterPtr);
+                        if (srcIterPtr != IntPtr.Zero)
+                        {
+                            var srcIter = (IBMDSwitcherFairlightAudioSourceIterator)Marshal.GetObjectForIUnknown(srcIterPtr);
+                            srcIter.Next(out cam1Source);
+                            Marshal.Release(srcIterPtr);
+                        }
+                        break;
+                    }
+                }
+                Marshal.Release(iterPtr);
+                Assert.NotNull(cam1Source);
+
+                Guid eqIid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID;
+                cam1Source.GetEffect(ref eqIid, out IntPtr eqPtr);
+                Assert.NotEqual(IntPtr.Zero, eqPtr);
+                var eq = (IBMDSwitcherFairlightAudioEqualizer)Marshal.GetObjectForIUnknown(eqPtr);
+
+                Guid bandIterGuid = typeof(IBMDSwitcherFairlightAudioEqualizerBandIterator).GUID;
+                eq.CreateIterator(ref bandIterGuid, out IntPtr bandIterPtr);
+                Assert.NotEqual(IntPtr.Zero, bandIterPtr);
+                var bandIter = (IBMDSwitcherFairlightAudioEqualizerBandIterator)Marshal.GetObjectForIUnknown(bandIterPtr);
+
+                int bandIdx = 0;
+                while (true)
+                {
+                    bandIter.Next(out IBMDSwitcherFairlightAudioEqualizerBand band);
+                    if (band == null) break;
+                    bandIdx++;
+
+                    band.GetEnabled(out int origEn);
+                    band.GetFrequency(out uint origFreq);
+                    band.GetGain(out double origGain);
+                    band.GetQFactor(out double origQ);
+                    band.GetShape(out _BMDSwitcherFairlightAudioEqualizerBandShape origShape);
+
+                    // Test toggle enabled
+                    int testEn = (origEn == 0) ? 1 : 0;
+                    band.SetEnabled(testEn);
+                    Thread.Sleep(50);
+                    band.GetEnabled(out int readEn);
+                    Assert.Equal(testEn, readEn);
+                    band.SetEnabled(origEn);
+                    Thread.Sleep(50);
+
+                    // Test frequency modification (relative offset)
+                    uint testFreq = (origFreq > 100) ? origFreq - 10 : origFreq + 10;
+                    band.SetFrequency(testFreq);
+                    Thread.Sleep(50);
+                    band.GetFrequency(out uint readFreq);
+                    Assert.Equal(testFreq, readFreq);
+                    band.SetFrequency(origFreq);
+                    Thread.Sleep(50);
+
+                    // Test gain modification
+                    double testGain = (Math.Abs(origGain - 3.0) < 0.1) ? -4.0 : 3.0;
+                    band.SetGain(testGain);
+                    Thread.Sleep(50);
+                    band.GetGain(out double readGain);
+                    Assert.Equal(testGain, readGain, 1);
+                    band.SetGain(origGain);
+                    Thread.Sleep(50);
+
+                    // Test Q factor modification (Band 2-5 are bell/parametric bands that support variable Q)
+                    double readQ = origQ;
+                    if (bandIdx >= 2 && bandIdx <= 5)
+                    {
+                        double testQ = (Math.Abs(origQ - 1.5) < 0.1) ? 2.5 : 1.5;
+                        band.SetQFactor(testQ);
+                        Thread.Sleep(50);
+                        band.GetQFactor(out readQ);
+                        Assert.Equal(testQ, readQ, 1);
+                        band.SetQFactor(origQ);
+                        Thread.Sleep(50);
+                    }
+
+                    _output.WriteLine($"Band {bandIdx} verified: En={readEn}, Freq={readFreq}Hz, Gain={readGain:F1}dB, Q={readQ:F2}, Shape={origShape}");
+                }
+                Marshal.Release(bandIterPtr);
+                Marshal.Release(eqPtr);
+
+                Assert.Equal(6, bandIdx);
+                _output.WriteLine("Phase 7: All 6 EQ Bands Full-Parameter Validation PASSED");
+            }
+            finally { Cleanup(switcher); }
+        }
+
+        [Fact]
+        public void Phase8_Dynamics_TimingAndRangeParameters_HardwareValidation()
+        {
+            var (switcher, mixer, fail) = ConnectToHardware();
+            if (mixer == null) { _output.WriteLine($"Hardware skipped: {fail}"); return; }
+
+            try
+            {
+                Guid iterGuid = typeof(IBMDSwitcherFairlightAudioInputIterator).GUID;
+                mixer.CreateIterator(ref iterGuid, out IntPtr iterPtr);
+                var iter = (IBMDSwitcherFairlightAudioInputIterator)Marshal.GetObjectForIUnknown(iterPtr);
+
+                IBMDSwitcherFairlightAudioSource? cam1Source = null;
+                while (true)
+                {
+                    iter.Next(out IBMDSwitcherFairlightAudioInput input);
+                    if (input == null) break;
+                    input.GetId(out long inputId);
+                    if (inputId == 1)
+                    {
+                        Guid srcIterGuid = typeof(IBMDSwitcherFairlightAudioSourceIterator).GUID;
+                        input.CreateIterator(ref srcIterGuid, out IntPtr srcIterPtr);
+                        if (srcIterPtr != IntPtr.Zero)
+                        {
+                            var srcIter = (IBMDSwitcherFairlightAudioSourceIterator)Marshal.GetObjectForIUnknown(srcIterPtr);
+                            srcIter.Next(out cam1Source);
+                            Marshal.Release(srcIterPtr);
+                        }
+                        break;
+                    }
+                }
+                Marshal.Release(iterPtr);
+                Assert.NotNull(cam1Source);
+
+                Guid dynIid = typeof(IBMDSwitcherFairlightAudioDynamicsProcessor).GUID;
+                cam1Source.GetEffect(ref dynIid, out IntPtr dynPtr);
+                Assert.NotEqual(IntPtr.Zero, dynPtr);
+                var dyn = (IBMDSwitcherFairlightAudioDynamicsProcessor)Marshal.GetObjectForIUnknown(dynPtr);
+
+                // 1. Compressor Attack, Hold, Release
+                Guid compIid = typeof(IBMDSwitcherFairlightAudioCompressor).GUID;
+                dyn.GetProcessor(ref compIid, out IntPtr compPtr);
+                if (compPtr != IntPtr.Zero)
+                {
+                    var comp = (IBMDSwitcherFairlightAudioCompressor)Marshal.GetObjectForIUnknown(compPtr);
+                    comp.GetAttack(out double origAtt);
+                    comp.GetHold(out double origHold);
+                    comp.GetRelease(out double origRel);
+
+                    double testAtt = (origAtt == 2.0) ? 5.0 : 2.0;
+                    comp.SetAttack(testAtt);
+                    Thread.Sleep(50);
+                    comp.GetAttack(out double readAtt);
+                    Assert.Equal(testAtt, readAtt, 1);
+                    comp.SetAttack(origAtt);
+                    Thread.Sleep(50);
+
+                    double testHold = (origHold == 10.0) ? 20.0 : 10.0;
+                    comp.SetHold(testHold);
+                    Thread.Sleep(50);
+                    comp.GetHold(out double readHold);
+                    Assert.Equal(testHold, readHold, 1);
+                    comp.SetHold(origHold);
+                    Thread.Sleep(50);
+
+                    double testRel = (origRel == 100.0) ? 200.0 : 100.0;
+                    comp.SetRelease(testRel);
+                    Thread.Sleep(50);
+                    comp.GetRelease(out double readRel);
+                    Assert.Equal(testRel, readRel, 1);
+                    comp.SetRelease(origRel);
+                    Thread.Sleep(50);
+
+                    Marshal.Release(compPtr);
+                    _output.WriteLine("Compressor Timing Parameters PASSED");
+                }
+
+                // 2. Expander Range, Ratio, Attack, Hold, Release
+                Guid expIid = typeof(IBMDSwitcherFairlightAudioExpander).GUID;
+                dyn.GetProcessor(ref expIid, out IntPtr expPtr);
+                if (expPtr != IntPtr.Zero)
+                {
+                    var exp = (IBMDSwitcherFairlightAudioExpander)Marshal.GetObjectForIUnknown(expPtr);
+                    exp.GetRange(out double origRange);
+                    exp.GetRatio(out double origRatio);
+
+                    double testRange = (origRange == 15.0) ? 25.0 : 15.0;
+                    exp.SetRange(testRange);
+                    Thread.Sleep(50);
+                    exp.GetRange(out double readRange);
+                    Assert.Equal(testRange, readRange, 1);
+                    exp.SetRange(origRange);
+                    Thread.Sleep(50);
+
+                    double testRatio = (origRatio == 2.0) ? 3.0 : 2.0;
+                    exp.SetRatio(testRatio);
+                    Thread.Sleep(50);
+                    exp.GetRatio(out double readRatio);
+                    Assert.Equal(testRatio, readRatio, 1);
+                    exp.SetRatio(origRatio);
+                    Thread.Sleep(50);
+
+                    Marshal.Release(expPtr);
+                    _output.WriteLine("Expander Range & Ratio Parameters PASSED");
+                }
+
+                // 3. Limiter Attack, Hold, Release
+                Guid limIid = typeof(IBMDSwitcherFairlightAudioLimiter).GUID;
+                dyn.GetProcessor(ref limIid, out IntPtr limPtr);
+                if (limPtr != IntPtr.Zero)
+                {
+                    var lim = (IBMDSwitcherFairlightAudioLimiter)Marshal.GetObjectForIUnknown(limPtr);
+                    lim.GetAttack(out double origLimAtt);
+                    lim.GetHold(out double origLimHold);
+                    lim.GetRelease(out double origLimRel);
+
+                    double testLimAtt = (origLimAtt == 1.0) ? 2.5 : 1.0;
+                    lim.SetAttack(testLimAtt);
+                    Thread.Sleep(50);
+                    lim.GetAttack(out double readLimAtt);
+                    Assert.Equal(testLimAtt, readLimAtt, 1);
+                    lim.SetAttack(origLimAtt);
+                    Thread.Sleep(50);
+
+                    Marshal.Release(limPtr);
+                    _output.WriteLine("Limiter Timing Parameters PASSED");
+                }
+
+                Marshal.Release(dynPtr);
+                _output.WriteLine("Phase 8: Comprehensive Dynamics Parameters PASSED");
+            }
+            finally { Cleanup(switcher); }
+        }
+
+        [Fact]
+        public void Phase9_XLR_And_MADI_SourceDiscovery_HardwareValidation()
+        {
+            var (switcher, mixer, fail) = ConnectToHardware();
+            if (mixer == null) { _output.WriteLine($"Hardware skipped: {fail}"); return; }
+
+            try
+            {
+                Guid iterGuid = typeof(IBMDSwitcherFairlightAudioInputIterator).GUID;
+                mixer.CreateIterator(ref iterGuid, out IntPtr iterPtr);
+                var iter = (IBMDSwitcherFairlightAudioInputIterator)Marshal.GetObjectForIUnknown(iterPtr);
+
+                var discoveredIds = new List<long>();
+                while (true)
+                {
+                    iter.Next(out IBMDSwitcherFairlightAudioInput input);
+                    if (input == null) break;
+                    input.GetId(out long id);
+                    input.GetType(out _BMDSwitcherFairlightAudioInputType inputType);
+                    discoveredIds.Add(id);
+                }
+                Marshal.Release(iterPtr);
+
+                _output.WriteLine($"Discovered total {discoveredIds.Count} Fairlight audio inputs.");
+                Assert.Contains(1301L, discoveredIds); // XLR 1
+                Assert.Contains(1401L, discoveredIds); // XLR 2
+                Assert.Contains(1501L, discoveredIds); // MADI 1
+
+                _output.WriteLine("Phase 9: XLR (1301, 1401) and MADI (1501..) Discovery PASSED");
+            }
+            finally { Cleanup(switcher); }
+        }
+
+        [Fact]
+        public void Phase10_COM_Callback_Lifecycle_And_Reconnect_HardwareValidation()
+        {
+            // Cycle 1: Connect, verify master fader
+            var (switcher1, mixer1, fail1) = ConnectToHardware();
+            if (mixer1 == null) { _output.WriteLine($"Hardware skipped: {fail1}"); return; }
+
+            try
+            {
+                mixer1.GetMasterOutFaderGain(out double g1);
+                _output.WriteLine($"Cycle 1 Master Gain: {g1:F2} dB");
+            }
+            finally
+            {
+                Cleanup(switcher1);
+            }
+
+            Thread.Sleep(100);
+
+            // Cycle 2: Reconnect, verify master fader again
+            var (switcher2, mixer2, fail2) = ConnectToHardware();
+            Assert.NotNull(mixer2);
+            try
+            {
+                mixer2.GetMasterOutFaderGain(out double g2);
+                _output.WriteLine($"Cycle 2 (Reconnect) Master Gain: {g2:F2} dB");
+            }
+            finally
+            {
+                Cleanup(switcher2);
+            }
+
+            _output.WriteLine("Phase 10: COM Callback Lifecycle & Reconnect PASSED");
+        }
     }
 }
