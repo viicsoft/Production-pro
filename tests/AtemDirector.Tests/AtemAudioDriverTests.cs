@@ -32,9 +32,9 @@ namespace AtemDirector.Tests
             var sim = new SimAtem();
             var driver = new AtemAudioDriver("test-atem", "Test", sim);
             
-            await driver.SetVolumeAsync(42, -15.0);
+            await driver.SetVolumeAsync(3, -15.0);
             
-            var state = GetAudioInputState(sim, 42);
+            var state = GetAudioInputState(sim, 3);
             Assert.NotNull(state);
             Assert.Equal(-15.0, GetVolume(state));
         }
@@ -45,9 +45,9 @@ namespace AtemDirector.Tests
             var sim = new SimAtem();
             var driver = new AtemAudioDriver("test-atem", "Test", sim);
             
-            await driver.SetOnAsync(99, true);
+            await driver.SetOnAsync(3, true);
             
-            var state = GetAudioInputState(sim, 99);
+            var state = GetAudioInputState(sim, 3);
             Assert.NotNull(state);
             Assert.True(GetOn(state));
         }

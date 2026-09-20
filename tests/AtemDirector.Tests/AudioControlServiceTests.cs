@@ -9,6 +9,13 @@ namespace AtemDirector.Tests
 {
     public class AudioControlServiceTests
     {
+        [Fact]
+        public void AFV_DefaultState_IsFalse_OnInitialization()
+        {
+            var config = new Desktop.InputConfig();
+            Assert.False(config.GetChannelAudio(1).IsAfv, "AFV should be false by default to prevent taking over ATEM audio behavior.");
+        }
+
         private AudioControlService CreateTestService(SimAtem sim)
         {
             var registry = new AudioHardwareRegistry();

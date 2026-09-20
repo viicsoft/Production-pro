@@ -644,7 +644,7 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
                                         (inputId, eqEnabled, update) => { EqStateChanged?.Invoke(inputId, eqEnabled, update); },
                                         (inputId, vol) => { AudioVolumeChanged?.Invoke(inputId, vol); });
                                     _audioMonitor.DynamicsStateChanged += (inputId, dynamicsUpdate) => { DynamicsStateChanged?.Invoke(inputId, dynamicsUpdate); };
-                                    _audioMonitor.Start();
+                                    try { _audioMonitor.Start(); } catch (Exception ex) { Console.WriteLine("Audio Init Error: " + ex.Message); }
                                     _meBlock = meBlock;
                                     _deviceName = prodName ?? "Blackmagic ATEM Switcher";
                                     _meCallback = meCallback;
@@ -867,6 +867,7 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
         public SwitcherCallbackSink? SwitcherCallback;
         public IBMDSwitcherMixEffectBlock? MeBlock;
         public MixEffectBlockCallbackSink? MeCallback;
+        public AtemAudioMonitor? AudioMonitor;
     }
 
     private ComCleanupContainer ExtractAndClearComObjects_Locked()
@@ -889,9 +890,11 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
             MeBlock = _meBlock,
             MeCallback = _meCallback,
             AuxCallbacks = new List<(IBMDSwitcherInputAux Aux, InputAuxCallbackSink Sink)>(_auxCallbacks.Values),
-            InputCallbacks = new List<(IBMDSwitcherInput Input, InputCallbackSink Sink)>(_inputCallbacks.Values)
+            InputCallbacks = new List<(IBMDSwitcherInput Input, InputCallbackSink Sink)>(_inputCallbacks.Values),
+            AudioMonitor = _audioMonitor
         };
 
+        _audioMonitor = null;
         _streamRtmp = null;
         _streamCallback = null;
         _recordAv = null;
@@ -918,6 +921,11 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
     {
         try
         {
+            if (container.AudioMonitor != null)
+            {
+                try { container.AudioMonitor.Stop(); } catch { }
+            }
+
             if (container.StreamRtmp != null && container.StreamCallback != null)
             {
                 try { container.StreamRtmp.RemoveCallback(container.StreamCallback); } catch { }
@@ -1859,9 +1867,21 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
     public Task SetSuperSourceBoxCropAsync(int box, bool cropped, double top, double bottom, double left, double right) => _fallback.SetSuperSourceBoxCropAsync(box, cropped, top, bottom, left, right);
     public Task SetSuperSourceArtAsync(long fillInput, long keyInput, bool artOption) => _fallback.SetSuperSourceArtAsync(fillInput, keyInput, artOption);
 
-    public Task SetAudioVolumeAsync(long inputId, double volume) => _fallback.SetAudioVolumeAsync(inputId, volume);
-    public Task SetAudioAfvAsync(long inputId, bool afv) => _fallback.SetAudioAfvAsync(inputId, afv);
-    public Task SetAudioOnAsync(long inputId, bool on) => _fallback.SetAudioOnAsync(inputId, on);
+    public Task SetAudioVolumeAsync(long inputId, double volume)
+    {
+        _audioMonitor?.SetAudioVolume(inputId, volume);
+        return _fallback.SetAudioVolumeAsync(inputId, volume);
+    }
+    public Task SetAudioAfvAsync(long inputId, bool afv)
+    {
+        _audioMonitor?.SetAudioMixOption(inputId, afv ? "AFV" : "Off");
+        return _fallback.SetAudioAfvAsync(inputId, afv);
+    }
+    public Task SetAudioOnAsync(long inputId, bool on)
+    {
+        _audioMonitor?.SetAudioMixOption(inputId, on ? "On" : "Off");
+        return _fallback.SetAudioOnAsync(inputId, on);
+    }
 
     public Task SetCameraIrisAsync(long cameraId, double iris) => _fallback.SetCameraIrisAsync(cameraId, iris);
     public Task SetCameraFocusAsync(long cameraId, double focus) => _fallback.SetCameraFocusAsync(cameraId, focus);
@@ -3165,12 +3185,36 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
     public event Action<long, bool?, Core.EqBandUpdate?>? EqStateChanged;
 
     public Task<Core.EqState?> GetEqStateAsync(long inputId) => _fallback.GetEqStateAsync(inputId);
-    public Task SetEqEnabledAsync(long inputId, bool enabled) => _fallback.SetEqEnabledAsync(inputId, enabled);
-    public Task SetEqBandEnabledAsync(long inputId, int bandIndex, bool enabled) => _fallback.SetEqBandEnabledAsync(inputId, bandIndex, enabled);
-    public Task SetEqBandShapeAsync(long inputId, int bandIndex, int shape) => _fallback.SetEqBandShapeAsync(inputId, bandIndex, shape);
-    public Task SetEqBandFrequencyAsync(long inputId, int bandIndex, double frequency) => _fallback.SetEqBandFrequencyAsync(inputId, bandIndex, frequency);
-    public Task SetEqBandGainAsync(long inputId, int bandIndex, double gain) => _fallback.SetEqBandGainAsync(inputId, bandIndex, gain);
-    public Task SetEqBandQFactorAsync(long inputId, int bandIndex, double qFactor) => _fallback.SetEqBandQFactorAsync(inputId, bandIndex, qFactor);
+    public Task SetEqEnabledAsync(long inputId, bool enabled)
+    {
+        _audioMonitor?.SetEqEnabled(inputId, enabled);
+        return _fallback.SetEqEnabledAsync(inputId, enabled);
+    }
+    public Task SetEqBandEnabledAsync(long inputId, int bandIndex, bool enabled)
+    {
+        _audioMonitor?.SetEqBandEnabled(inputId, bandIndex, enabled);
+        return _fallback.SetEqBandEnabledAsync(inputId, bandIndex, enabled);
+    }
+    public Task SetEqBandShapeAsync(long inputId, int bandIndex, int shape)
+    {
+        _audioMonitor?.SetEqBandShape(inputId, bandIndex, shape);
+        return _fallback.SetEqBandShapeAsync(inputId, bandIndex, shape);
+    }
+    public Task SetEqBandFrequencyAsync(long inputId, int bandIndex, double frequency)
+    {
+        _audioMonitor?.SetEqBandFrequency(inputId, bandIndex, frequency);
+        return _fallback.SetEqBandFrequencyAsync(inputId, bandIndex, frequency);
+    }
+    public Task SetEqBandGainAsync(long inputId, int bandIndex, double gain)
+    {
+        _audioMonitor?.SetEqBandGain(inputId, bandIndex, gain);
+        return _fallback.SetEqBandGainAsync(inputId, bandIndex, gain);
+    }
+    public Task SetEqBandQFactorAsync(long inputId, int bandIndex, double qFactor)
+    {
+        _audioMonitor?.SetEqBandQFactor(inputId, bandIndex, qFactor);
+        return _fallback.SetEqBandQFactorAsync(inputId, bandIndex, qFactor);
+    }
     public event Action<long, Core.DynamicsUpdate>? DynamicsStateChanged;
 
     public Task SetMakeupGainAsync(long inputId, double makeupGain) => _audioMonitor?.SetMakeupGainAsync(inputId, makeupGain) ?? _fallback.SetMakeupGainAsync(inputId, makeupGain);

@@ -7,7 +7,7 @@ using Desktop.HardwareAbstraction;
 
 namespace Desktop
 {
-        public record AudioState(long InputId, double Volume = 0.0, bool IsOn = false, bool IsAfv = false, Core.EqState? Eq = null, Core.DynamicsState? Dynamics = null);
+    public record AudioState(long InputId, double Volume = 0.0, bool IsOn = false, bool IsAfv = false, Core.EqState? Eq = null, Core.DynamicsState? Dynamics = null);
 
     public class AudioControlService
     {
@@ -29,7 +29,7 @@ namespace Desktop
 
         private SemaphoreSlim GetLock(long logicalChannel) => _locks.GetOrAdd(logicalChannel, _ => new SemaphoreSlim(1, 1));
 
-                private void OnHardwareEqStateChanged(string deviceId, long physicalChannel, bool? eqEnabled, Core.EqBandUpdate? update)
+        private void OnHardwareEqStateChanged(string deviceId, long physicalChannel, bool? eqEnabled, Core.EqBandUpdate? update)
         {
             if (!_map.TryGetLogicalRoute(deviceId, physicalChannel, out long logicalChannel))
                 return;
@@ -92,7 +92,10 @@ namespace Desktop
             {
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 
-                double newVol = volume ?? state.Volume; bool newOn = isOn ?? state.IsOn; bool newAfv = isAfv ?? state.IsAfv; if (Math.Abs(state.Volume - newVol) > 0.001 || state.IsOn != newOn || state.IsAfv != newAfv)
+                double newVol = volume ?? state.Volume;
+                bool newOn = isOn ?? state.IsOn;
+                bool newAfv = isAfv ?? state.IsAfv;
+                if (Math.Abs(state.Volume - newVol) > 0.001 || state.IsOn != newOn || state.IsAfv != newAfv)
                 {
                     var newState = state with { Volume = newVol, IsOn = newOn, IsAfv = newAfv };
                     _stateCache[logicalChannel] = newState;
@@ -113,7 +116,7 @@ namespace Desktop
             
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.SupportsCapability(AudioCapability.Volume)) return;
+            if (driver == null || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Volume)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -140,7 +143,7 @@ namespace Desktop
         {
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.SupportsCapability(AudioCapability.On)) return;
+            if (driver == null || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.On)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -166,7 +169,7 @@ namespace Desktop
         {
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.SupportsCapability(AudioCapability.Afv)) return;
+            if (driver == null || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Afv)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -197,11 +200,21 @@ namespace Desktop
         {
             return _stateCache.Values.ToArray();
         }
-            public async Task SetEqBandGainAsync(long logicalChannel, int bandIndex, double gain)
+
+        public bool SupportsCapability(long logicalChannel, AudioCapability capability)
         {
+            if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return false;
+            var driver = _registry.GetDriver(deviceId);
+            if (driver == null || !driver.IsConnected) return false;
+            return driver.SupportsChannelCapability(physicalChannel, capability);
+        }
+
+        public async Task SetEqBandGainAsync(long logicalChannel, int bandIndex, double gain)
+        {
+            ValidateNumeric(gain);
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.IsConnected || !driver.SupportsCapability(AudioCapability.Eq)) return;
+            if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -221,9 +234,10 @@ namespace Desktop
 
         public async Task SetEqBandFrequencyAsync(long logicalChannel, int bandIndex, double frequency)
         {
+            ValidateNumeric(frequency);
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.IsConnected || !driver.SupportsCapability(AudioCapability.Eq)) return;
+            if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -243,9 +257,10 @@ namespace Desktop
 
         public async Task SetEqBandQFactorAsync(long logicalChannel, int bandIndex, double qFactor)
         {
+            ValidateNumeric(qFactor);
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.IsConnected || !driver.SupportsCapability(AudioCapability.Eq)) return;
+            if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -263,11 +278,33 @@ namespace Desktop
             finally { sem.Release(); }
         }
 
+        public async Task SetEqBandShapeAsync(long logicalChannel, int bandIndex, int shape)
+        {
+            if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
+            var driver = _registry.GetDriver(deviceId);
+            if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
+
+            var sem = GetLock(logicalChannel);
+            await sem.WaitAsync();
+            try
+            {
+                await driver.SetEqBandShapeAsync(physicalChannel, bandIndex, shape);
+                var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
+                var eq = state.Eq ?? Core.EqState.CreateDefault();
+                var bands = new System.Collections.Generic.List<Core.EqBandState>(eq.Bands!);
+                bands[bandIndex] = bands[bandIndex] with { Shape = shape };
+                var newState = state with { Eq = eq with { Bands = bands } };
+                _stateCache[logicalChannel] = newState;
+                StateChanged?.Invoke(newState);
+            }
+            finally { sem.Release(); }
+        }
+
         public async Task SetEqBandEnabledAsync(long logicalChannel, int bandIndex, bool enabled)
         {
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.IsConnected || !driver.SupportsCapability(AudioCapability.Eq)) return;
+            if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -289,7 +326,7 @@ namespace Desktop
         {
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.IsConnected || !driver.SupportsCapability(AudioCapability.Eq)) return;
+            if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();
@@ -304,7 +341,8 @@ namespace Desktop
             }
             finally { sem.Release(); }
         }
-            private void OnHardwareDynamicsStateChanged(string deviceId, long physicalChannel, Core.DynamicsUpdate update)
+
+        private void OnHardwareDynamicsStateChanged(string deviceId, long physicalChannel, Core.DynamicsUpdate update)
         {
             if (!_map.TryGetLogicalRoute(deviceId, physicalChannel, out long logicalChannel)) return;
             var sem = GetLock(logicalChannel);
@@ -315,16 +353,16 @@ namespace Desktop
                 var dyn = state.Dynamics ?? Core.DynamicsState.CreateDefault();
                 bool changed = false;
 
-                if (update.MakeupGain.HasValue && dyn.MakeupGain != update.MakeupGain.Value) { dyn = dyn with { MakeupGain = update.MakeupGain.Value }; changed = true; }
+                if (update.MakeupGain.HasValue && Math.Abs(dyn.MakeupGain - update.MakeupGain.Value) > 0.001) { dyn = dyn with { MakeupGain = update.MakeupGain.Value }; changed = true; }
                 
                 if (update.Compressor != null) {
                     var c = dyn.Compressor ?? new Core.CompressorState();
                     if (update.Compressor.Enabled.HasValue && c.Enabled != update.Compressor.Enabled.Value) { c = c with { Enabled = update.Compressor.Enabled.Value }; changed = true; }
-                    if (update.Compressor.Threshold.HasValue && c.Threshold != update.Compressor.Threshold.Value) { c = c with { Threshold = update.Compressor.Threshold.Value }; changed = true; }
-                    if (update.Compressor.Ratio.HasValue && c.Ratio != update.Compressor.Ratio.Value) { c = c with { Ratio = update.Compressor.Ratio.Value }; changed = true; }
-                    if (update.Compressor.Attack.HasValue && c.Attack != update.Compressor.Attack.Value) { c = c with { Attack = update.Compressor.Attack.Value }; changed = true; }
-                    if (update.Compressor.Hold.HasValue && c.Hold != update.Compressor.Hold.Value) { c = c with { Hold = update.Compressor.Hold.Value }; changed = true; }
-                    if (update.Compressor.Release.HasValue && c.Release != update.Compressor.Release.Value) { c = c with { Release = update.Compressor.Release.Value }; changed = true; }
+                    if (update.Compressor.Threshold.HasValue && Math.Abs(c.Threshold - update.Compressor.Threshold.Value) > 0.001) { c = c with { Threshold = update.Compressor.Threshold.Value }; changed = true; }
+                    if (update.Compressor.Ratio.HasValue && Math.Abs(c.Ratio - update.Compressor.Ratio.Value) > 0.001) { c = c with { Ratio = update.Compressor.Ratio.Value }; changed = true; }
+                    if (update.Compressor.Attack.HasValue && Math.Abs(c.Attack - update.Compressor.Attack.Value) > 0.001) { c = c with { Attack = update.Compressor.Attack.Value }; changed = true; }
+                    if (update.Compressor.Hold.HasValue && Math.Abs(c.Hold - update.Compressor.Hold.Value) > 0.001) { c = c with { Hold = update.Compressor.Hold.Value }; changed = true; }
+                    if (update.Compressor.Release.HasValue && Math.Abs(c.Release - update.Compressor.Release.Value) > 0.001) { c = c with { Release = update.Compressor.Release.Value }; changed = true; }
                     dyn = dyn with { Compressor = c };
                 }
 
@@ -332,22 +370,22 @@ namespace Desktop
                     var e = dyn.Expander ?? new Core.ExpanderState();
                     if (update.Expander.Enabled.HasValue && e.Enabled != update.Expander.Enabled.Value) { e = e with { Enabled = update.Expander.Enabled.Value }; changed = true; }
                     if (update.Expander.GateMode.HasValue && e.GateMode != update.Expander.GateMode.Value) { e = e with { GateMode = update.Expander.GateMode.Value }; changed = true; }
-                    if (update.Expander.Threshold.HasValue && e.Threshold != update.Expander.Threshold.Value) { e = e with { Threshold = update.Expander.Threshold.Value }; changed = true; }
-                    if (update.Expander.Range.HasValue && e.Range != update.Expander.Range.Value) { e = e with { Range = update.Expander.Range.Value }; changed = true; }
-                    if (update.Expander.Ratio.HasValue && e.Ratio != update.Expander.Ratio.Value) { e = e with { Ratio = update.Expander.Ratio.Value }; changed = true; }
-                    if (update.Expander.Attack.HasValue && e.Attack != update.Expander.Attack.Value) { e = e with { Attack = update.Expander.Attack.Value }; changed = true; }
-                    if (update.Expander.Hold.HasValue && e.Hold != update.Expander.Hold.Value) { e = e with { Hold = update.Expander.Hold.Value }; changed = true; }
-                    if (update.Expander.Release.HasValue && e.Release != update.Expander.Release.Value) { e = e with { Release = update.Expander.Release.Value }; changed = true; }
+                    if (update.Expander.Threshold.HasValue && Math.Abs(e.Threshold - update.Expander.Threshold.Value) > 0.001) { e = e with { Threshold = update.Expander.Threshold.Value }; changed = true; }
+                    if (update.Expander.Range.HasValue && Math.Abs(e.Range - update.Expander.Range.Value) > 0.001) { e = e with { Range = update.Expander.Range.Value }; changed = true; }
+                    if (update.Expander.Ratio.HasValue && Math.Abs(e.Ratio - update.Expander.Ratio.Value) > 0.001) { e = e with { Ratio = update.Expander.Ratio.Value }; changed = true; }
+                    if (update.Expander.Attack.HasValue && Math.Abs(e.Attack - update.Expander.Attack.Value) > 0.001) { e = e with { Attack = update.Expander.Attack.Value }; changed = true; }
+                    if (update.Expander.Hold.HasValue && Math.Abs(e.Hold - update.Expander.Hold.Value) > 0.001) { e = e with { Hold = update.Expander.Hold.Value }; changed = true; }
+                    if (update.Expander.Release.HasValue && Math.Abs(e.Release - update.Expander.Release.Value) > 0.001) { e = e with { Release = update.Expander.Release.Value }; changed = true; }
                     dyn = dyn with { Expander = e };
                 }
 
                 if (update.Limiter != null) {
                     var l = dyn.Limiter ?? new Core.LimiterState();
                     if (update.Limiter.Enabled.HasValue && l.Enabled != update.Limiter.Enabled.Value) { l = l with { Enabled = update.Limiter.Enabled.Value }; changed = true; }
-                    if (update.Limiter.Threshold.HasValue && l.Threshold != update.Limiter.Threshold.Value) { l = l with { Threshold = update.Limiter.Threshold.Value }; changed = true; }
-                    if (update.Limiter.Attack.HasValue && l.Attack != update.Limiter.Attack.Value) { l = l with { Attack = update.Limiter.Attack.Value }; changed = true; }
-                    if (update.Limiter.Hold.HasValue && l.Hold != update.Limiter.Hold.Value) { l = l with { Hold = update.Limiter.Hold.Value }; changed = true; }
-                    if (update.Limiter.Release.HasValue && l.Release != update.Limiter.Release.Value) { l = l with { Release = update.Limiter.Release.Value }; changed = true; }
+                    if (update.Limiter.Threshold.HasValue && Math.Abs(l.Threshold - update.Limiter.Threshold.Value) > 0.001) { l = l with { Threshold = update.Limiter.Threshold.Value }; changed = true; }
+                    if (update.Limiter.Attack.HasValue && Math.Abs(l.Attack - update.Limiter.Attack.Value) > 0.001) { l = l with { Attack = update.Limiter.Attack.Value }; changed = true; }
+                    if (update.Limiter.Hold.HasValue && Math.Abs(l.Hold - update.Limiter.Hold.Value) > 0.001) { l = l with { Hold = update.Limiter.Hold.Value }; changed = true; }
+                    if (update.Limiter.Release.HasValue && Math.Abs(l.Release - update.Limiter.Release.Value) > 0.001) { l = l with { Release = update.Limiter.Release.Value }; changed = true; }
                     dyn = dyn with { Limiter = l };
                 }
 
@@ -359,11 +397,12 @@ namespace Desktop
             }
             finally { sem.Release(); }
         }
+
         private async Task ExecuteDynamicsCommandAsync(long logicalChannel, Func<Desktop.HardwareAbstraction.IAudioDynamicsDriver, long, Task> action, Func<Core.DynamicsState, Core.DynamicsState> stateUpdate)
         {
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.IsConnected || !(driver is Desktop.HardwareAbstraction.IAudioDynamicsDriver dynDriver)) return;
+            if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Dynamics) || !(driver is Desktop.HardwareAbstraction.IAudioDynamicsDriver dynDriver)) return;
 
             var sem = GetLock(logicalChannel);
             await sem.WaitAsync();

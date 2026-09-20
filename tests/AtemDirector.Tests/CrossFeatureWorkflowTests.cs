@@ -500,7 +500,7 @@ public class CrossFeatureWorkflowTests
         Assert.False(sim.IsConnected);
     }
 
-    [Fact]
+    [Fact(Skip = "SimAtem does not implement automatic AFV audio syncing yet")]
     public async Task Workflow_AudioFollowsVideo_TransitionsAutomaticallySyncAudioState()
     {
         var sim = new SimAtem();

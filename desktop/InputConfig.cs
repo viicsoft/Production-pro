@@ -82,7 +82,7 @@ namespace Desktop
         public bool Solo { get; set; } = false;
         public double FaderLevel { get; set; } = 0.0;
         public bool IsOn { get; set; } = false;
-        public bool IsAfv { get; set; } = true;
+        public bool IsAfv { get; set; } = false;
         public EqSettings Eq { get; set; } = new();
         public DynamicsSettings Dynamics { get; set; } = new();
     }

@@ -44,6 +44,11 @@ namespace Desktop.HardwareAbstraction
             HardwareEqStateChanged?.Invoke(DeviceId, physicalInput, enabled, update);
         }
 
+        private void OnSwitcherDynamicsStateChanged(long physicalInput, Core.DynamicsUpdate update)
+        {
+            HardwareDynamicsStateChanged?.Invoke(DeviceId, physicalInput, update);
+        }
+
         public bool SupportsCapability(AudioCapability capability)
         {
             return capability switch
@@ -51,9 +56,26 @@ namespace Desktop.HardwareAbstraction
                 AudioCapability.Volume => true,
                 AudioCapability.On => true,
                 AudioCapability.Afv => true,
+                AudioCapability.Metering => true,
                 AudioCapability.Eq => true,
+                AudioCapability.Dynamics => true,
                 _ => false
             };
+        }
+
+        public bool SupportsChannelCapability(long physicalChannel, AudioCapability capability)
+        {
+            // Master (100) supports Volume and Metering only
+            if (physicalChannel == 100)
+                return capability == AudioCapability.Volume || capability == AudioCapability.Metering;
+
+            // Media players (2001-2004) do not support 'On' (only AFV and Off per ATEM hardware constraint 0x5)
+            if (physicalChannel >= 2001 && physicalChannel <= 2004)
+            {
+                if (capability == AudioCapability.On) return false;
+            }
+
+            return SupportsCapability(capability);
         }
 
         public Task SetVolumeAsync(long physicalChannel, double volume) => _switcher.SetAudioVolumeAsync(physicalChannel, volume);
@@ -66,7 +88,8 @@ namespace Desktop.HardwareAbstraction
         public Task SetEqBandShapeAsync(long physicalChannel, int bandIndex, int shape) => _switcher.SetEqBandShapeAsync(physicalChannel, bandIndex, shape);
         public Task SetEqBandEnabledAsync(long physicalChannel, int bandIndex, bool enabled) => _switcher.SetEqBandEnabledAsync(physicalChannel, bandIndex, enabled);
         public Task SetEqEnabledAsync(long physicalChannel, bool enabled) => _switcher.SetEqEnabledAsync(physicalChannel, enabled);
-            public event System.Action<string, long, Core.DynamicsUpdate>? HardwareDynamicsStateChanged;
+
+        public event System.Action<string, long, Core.DynamicsUpdate>? HardwareDynamicsStateChanged;
 
         public async Task SetMakeupGainAsync(long physicalChannel, double makeupGain) { await _switcher.SetMakeupGainAsync(physicalChannel, makeupGain); }
 
@@ -91,9 +114,5 @@ namespace Desktop.HardwareAbstraction
         public async Task SetLimiterAttackAsync(long physicalChannel, double attack) { await _switcher.SetLimiterAttackAsync(physicalChannel, attack); }
         public async Task SetLimiterHoldAsync(long physicalChannel, double hold) { await _switcher.SetLimiterHoldAsync(physicalChannel, hold); }
         public async Task SetLimiterReleaseAsync(long physicalChannel, double release) { await _switcher.SetLimiterReleaseAsync(physicalChannel, release); }
-            private void OnSwitcherDynamicsStateChanged(long physicalInput, Core.DynamicsUpdate update)
-        {
-            HardwareDynamicsStateChanged?.Invoke(DeviceId, physicalInput, update);
-        }
     }
 }

@@ -325,7 +325,24 @@ namespace Desktop
         }
 
         // --- Fairlight Mixer Callback (Master Out) ---
-        public void Notify(_BMDSwitcherFairlightAudioMixerEventType eventType) { }
+        public void Notify(_BMDSwitcherFairlightAudioMixerEventType eventType)
+        {
+            if (eventType == _BMDSwitcherFairlightAudioMixerEventType.bmdSwitcherFairlightAudioMixerEventTypeMasterOutFaderGainChanged)
+            {
+                try
+                {
+                    if (_fairlightMixer != null)
+                    {
+                        _fairlightMixer.GetMasterOutFaderGain(out double vol);
+                        _volumeCallback?.Invoke(100, vol);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[AtemAudioMonitor] MasterOutFaderGainChanged error: {ex.Message}");
+                }
+            }
+        }
 
         public void MasterOutLevelNotification(uint numLevels, ref double levels, uint numPeakLevels, ref double peakLevels)
         {

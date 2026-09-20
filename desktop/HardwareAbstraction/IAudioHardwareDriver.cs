@@ -12,6 +12,7 @@ namespace Desktop.HardwareAbstraction
         bool IsConnected { get; }
 
         bool SupportsCapability(AudioCapability capability);
+        bool SupportsChannelCapability(long physicalChannel, AudioCapability capability) => SupportsCapability(capability);
 
         Task SetVolumeAsync(long physicalChannel, double volume);
         Task SetOnAsync(long physicalChannel, bool isOn);
