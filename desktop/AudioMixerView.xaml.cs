@@ -75,15 +75,15 @@ namespace Desktop
             // Divider
             FaderPanel.Children.Add(CreateDivider());
 
-            // 2. Media Player Strip (Channel 17)
-            FaderPanel.Children.Add(CreateFairlightChannelStrip(17, "MEDIA", "Media 1", false));
+            // 2. Media Player Strip — Fairlight Audio Input ID = 2001 (confirmed forensic audit)
+            FaderPanel.Children.Add(CreateFairlightChannelStrip(2001, "MEDIA", "Media 1", false));
 
             // Divider
             FaderPanel.Children.Add(CreateDivider());
 
-            // 3. Mic 1 & Mic 2 Inputs (Channels 20, 21)
-            FaderPanel.Children.Add(CreateFairlightChannelStrip(20, "MIC 1", "XLR In 1", false));
-            FaderPanel.Children.Add(CreateFairlightChannelStrip(21, "MIC 2", "XLR In 2", false));
+            // 3. XLR / Audio-In Inputs — Fairlight Audio Input IDs = 1301, 1401 (confirmed forensic audit)
+            FaderPanel.Children.Add(CreateFairlightChannelStrip(1301, "MIC 1", "XLR In 1", false));
+            FaderPanel.Children.Add(CreateFairlightChannelStrip(1401, "MIC 2", "XLR In 2", false));
 
             // 4. Audio Groups (if any)
             if (config.AudioGroups != null && config.AudioGroups.Count > 0)

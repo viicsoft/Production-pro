@@ -28,20 +28,37 @@ namespace Desktop
             {
                 try
                 {
-                    if (inputId == 100) return; // Master fader
-                                        if (_fairlightSources.TryGetValue(inputId, out var fSrcList))
+                    // Master channel: route directly to the mixer's master output fader
+                    if (inputId == 100)
                     {
-                                                foreach (var src in fSrcList)
+                        if (_fairlightMixer != null)
+                            _fairlightMixer.SetMasterOutFaderGain(volumeDb);
+                        else if (_oldMixer != null)
+                            _oldMixer.SetProgramOutGain(volumeDb);
+                        return;
+                    }
+
+                    if (_fairlightSources.TryGetValue(inputId, out var fSrcList))
+                    {
+                        foreach (var src in fSrcList)
                         {
-                            try {
-                                src.IsActive(out int active);
-                                if (active != 0) src.SetFaderGain(volumeDb);
-                            } catch { }
+                            src.IsActive(out int active);
+                            if (active != 0) src.SetFaderGain(volumeDb);
                         }
                     }
                     else if (_oldAudioInputs.TryGetValue(inputId, out var oSrc))
+                    {
                         oSrc.SetGain(volumeDb);
-                } catch { }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[AtemAudioMonitor] SetAudioVolume: Fairlight source not mapped. InputId={inputId}. Available keys: [{string.Join(", ", _fairlightSources.Keys)}]");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[AtemAudioMonitor] SetAudioVolume exception for InputId={inputId}: {ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
+                }
             });
         }
 
@@ -51,17 +68,15 @@ namespace Desktop
             {
                 try
                 {
-                                        if (_fairlightSources.TryGetValue(inputId, out var fSrcList))
+                    if (_fairlightSources.TryGetValue(inputId, out var fSrcList))
                     {
                         _BMDSwitcherFairlightAudioMixOption fOpt = _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionOff;
                         if (mode == "On") fOpt = _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionOn;
                         else if (mode == "AFV") fOpt = _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionAudioFollowVideo;
-                                                foreach (var src in fSrcList)
+                        foreach (var src in fSrcList)
                         {
-                            try {
-                                src.IsActive(out int active);
-                                if (active != 0) src.SetMixOption(fOpt);
-                            } catch { }
+                            src.IsActive(out int active);
+                            if (active != 0) src.SetMixOption(fOpt);
                         }
                     }
                     else if (_oldAudioInputs.TryGetValue(inputId, out var oSrc))
@@ -71,8 +86,18 @@ namespace Desktop
                         else if (mode == "AFV") oOpt = _BMDSwitcherAudioMixOption.bmdSwitcherAudioMixOptionAudioFollowVideo;
                         oSrc.SetMixOption(oOpt);
                     }
-                } catch { }
-}); }
+                    else
+                    {
+                        Console.WriteLine($"[AtemAudioMonitor] SetAudioMixOption: Fairlight source not mapped. InputId={inputId} Mode={mode}. Available keys: [{string.Join(", ", _fairlightSources.Keys)}]");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[AtemAudioMonitor] SetAudioMixOption exception for InputId={inputId} Mode={mode}: {ex.GetType().Name} 0x{ex.HResult:X8}: {ex.Message}");
+                }
+            });
+        }
+
 
                         private readonly Action<long, bool, bool>? _stateCallback;
             private readonly Action<long, double>? _volumeCallback;
@@ -170,7 +195,7 @@ namespace Desktop
             });
         }
 
-        public void SetEqEnabled(long inputId, bool enabled) { }
+        public void SetEqEnabled(long inputId, bool enabled) { Task.Run(() => { if (_fairlightSources.TryGetValue(inputId, out var sources)) { foreach (var src in sources) { src.IsActive(out int active); if (active != 0) { Guid iid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID; src.GetEffect(ref iid, out IntPtr ppv); if (ppv != IntPtr.Zero) { var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv); eq.SetEnabled(enabled ? 1 : 0); } } } } }); }
         public void SetEqBandEnabled(long inputId, int bandIndex, bool enabled) { WithEqBand(inputId, bandIndex, b => b.SetEnabled(enabled ? 1 : 0)); }
         public void SetEqBandShape(long inputId, int bandIndex, int shape) { WithEqBand(inputId, bandIndex, b => b.SetShape((_BMDSwitcherFairlightAudioEqualizerBandShape)shape)); }
         public void SetEqBandFrequency(long inputId, int bandIndex, double freq) { WithEqBand(inputId, bandIndex, b => b.SetFrequency((uint)freq)); }
@@ -287,14 +312,14 @@ namespace Desktop
         {
             try
             {
-                if (_fairlightMixer != null) _fairlightMixer.RemoveCallback(this);
-                if (_oldMixer != null) _oldMixer.RemoveCallback(this);
+                if (_fairlightMixer != null) { try { _fairlightMixer.RemoveCallback(this); } catch { } try { System.Runtime.InteropServices.Marshal.ReleaseComObject(_fairlightMixer); } catch { } _fairlightMixer = null; }
+                if (_oldMixer != null) { try { _oldMixer.RemoveCallback(this); } catch { } try { System.Runtime.InteropServices.Marshal.ReleaseComObject(_oldMixer); } catch { } _oldMixer = null; }
 
                 foreach (AttachedCallback ac in _callbacks)
                 {
                     ac.Detach();
                 }
-                _callbacks.Clear();
+                _callbacks.Clear(); foreach (var kvp in _fairlightSources) { foreach (var src in kvp.Value) { try { System.Runtime.InteropServices.Marshal.ReleaseComObject(src); } catch { } } } _fairlightSources.Clear(); foreach (var kvp in _oldAudioInputs) { try { System.Runtime.InteropServices.Marshal.ReleaseComObject(kvp.Value); } catch { } } _oldAudioInputs.Clear();
             }
             catch { }
         }
@@ -334,8 +359,7 @@ namespace Desktop
             {
                 try
                 {
-                    if (_source is IBMDSwitcherFairlightAudioSource fs) fs.RemoveCallback((IBMDSwitcherFairlightAudioSourceCallback)_callback);
-                    else if (_source is IBMDSwitcherAudioInput oi) oi.RemoveCallback((IBMDSwitcherAudioInputCallback)_callback);
+                    if (_source is IBMDSwitcherFairlightAudioSource fs) fs.RemoveCallback((IBMDSwitcherFairlightAudioSourceCallback)_callback); else if (_source is IBMDSwitcherAudioInput oi) oi.RemoveCallback((IBMDSwitcherAudioInputCallback)_callback); else if (_source is IBMDSwitcherFairlightAudioEqualizer eq) eq.RemoveCallback((IBMDSwitcherFairlightAudioEqualizerCallback)_callback); else if (_source is IBMDSwitcherFairlightAudioEqualizerBand bd) bd.RemoveCallback((IBMDSwitcherFairlightAudioEqualizerBandCallback)_callback); else if (_source is IBMDSwitcherFairlightAudioDynamicsProcessor dp) dp.RemoveCallback((IBMDSwitcherFairlightAudioDynamicsProcessorCallback)_callback); else if (_source is IBMDSwitcherFairlightAudioCompressor cp) cp.RemoveCallback((IBMDSwitcherFairlightAudioCompressorCallback)_callback); else if (_source is IBMDSwitcherFairlightAudioLimiter lm) lm.RemoveCallback((IBMDSwitcherFairlightAudioLimiterCallback)_callback); else if (_source is IBMDSwitcherFairlightAudioExpander xp) xp.RemoveCallback((IBMDSwitcherFairlightAudioExpanderCallback)_callback);
                 }
                 catch { }
             }
@@ -444,6 +468,9 @@ namespace Desktop
         }
     }
 }
+
+
+
 
 
 

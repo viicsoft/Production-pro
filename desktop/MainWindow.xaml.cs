@@ -182,6 +182,9 @@ namespace Desktop
             // Also map some common higher IDs (e.g., 1001, 2001) that ATEM uses for camera inputs or auxes
             for (long i = 1001; i <= 1020; i++) map.SetMapping(i, "atem-main", i);
             for (long i = 2001; i <= 2020; i++) map.SetMapping(i, "atem-main", i);
+            // XLR / Audio-In inputs confirmed by forensic audit on ATEM Constellation 40
+            map.SetMapping(1301, "atem-main", 1301); // XLR In 1
+            map.SetMapping(1401, "atem-main", 1401); // XLR In 2
             
             _audioService = new AudioControlService(registry, map);
 
