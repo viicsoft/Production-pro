@@ -274,7 +274,7 @@ namespace Desktop
             ctrl.RedrawDyn = () => DrawMiniDynCurve(ctrl.DynCanvas, settings.Dynamics);
             ctrl.DynCanvas.Loaded += (s, e) => ctrl.RedrawDyn();
 
-            dynContainer.Click += (s, e) => { OpenDynWindow(settings.Dynamics, $"{shortTag} ({labelName})", ctrl.RedrawDyn, config); };
+            dynContainer.Click += (s, e) => { OpenDynWindow(inputId, $"{shortTag} ({labelName})"); };
             stripStack.Children.Add(dynContainer);
 
             // 6. dB Peak Numeric Readout Row
@@ -669,7 +669,7 @@ namespace Desktop
             ctrl.RedrawDyn = () => DrawMiniDynCurve(ctrl.DynCanvas, settings.Dynamics);
             ctrl.DynCanvas.Loaded += (s, e) => ctrl.RedrawDyn();
 
-            dynContainer.Click += (s, e) => { OpenDynWindow(settings.Dynamics, "Master Out", ctrl.RedrawDyn, config); };
+            dynContainer.Click += (s, e) => { OpenDynWindow(100, "Master Out"); };
             stripStack.Children.Add(dynContainer);
 
             // 6. Master dB Peak Numeric Readout
@@ -973,19 +973,13 @@ win.ShowDialog();
             }
         }
 
-        private static void OpenDynWindow(DynamicsSettings dyn, string channelTitle, Action onCurveChanged, InputConfig config)
+        private void OpenDynWindow(long inputId, string channelTitle)
         {
             try
             {
-                var win = new FairlightDynamicsWindow(dyn, channelTitle);
+                var win = new FairlightDynamicsWindow(_audioService, inputId, channelTitle);
                 win.Owner = Application.Current.MainWindow;
-                win.OnSettingsChanged += () =>
-                {
-                    onCurveChanged();
-                    config.Save();
-                };
                 win.ShowDialog();
-                onCurveChanged();
             }
             catch (Exception ex)
             {
