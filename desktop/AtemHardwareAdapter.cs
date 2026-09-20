@@ -27,6 +27,7 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
 
     // COM Objects
     private IBMDSwitcher? _rawSwitcher;
+    private AtemAudioMonitor? _audioMonitor;
     private IBMDSwitcherMixEffectBlock? _meBlock;
     private MixEffectBlockCallbackSink? _meCallback;
     private SwitcherCallbackSink? _switcherCallback;
@@ -637,6 +638,13 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
                                 lock (_syncLock)
                                 {
                                     _rawSwitcher = switcher;
+                                    _audioMonitor = new AtemAudioMonitor(_rawSwitcher, 
+                                        (inputId, left, right) => { AudioLevelUpdated?.Invoke(inputId, left, right); },
+                                        (inputId, isOn, isAfv) => { AudioStateChanged?.Invoke(inputId, isOn, isAfv); },
+                                        (inputId, eqEnabled, update) => { EqStateChanged?.Invoke(inputId, eqEnabled, update); },
+                                        (inputId, vol) => { AudioVolumeChanged?.Invoke(inputId, vol); });
+                                    _audioMonitor.DynamicsStateChanged += (inputId, dynamicsUpdate) => { DynamicsStateChanged?.Invoke(inputId, dynamicsUpdate); };
+                                    _audioMonitor.Start();
                                     _meBlock = meBlock;
                                     _deviceName = prodName ?? "Blackmagic ATEM Switcher";
                                     _meCallback = meCallback;
@@ -3149,4 +3157,46 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
         _connectGate.Dispose();
         (_fallback as IDisposable)?.Dispose();
     }
+
+    
+    public event Action<long, double, double>? AudioLevelUpdated;
+    public event Action<long, double>? AudioVolumeChanged;
+    public event Action<long, bool, bool>? AudioStateChanged;
+    public event Action<long, bool?, Core.EqBandUpdate?>? EqStateChanged;
+
+    public Task<Core.EqState?> GetEqStateAsync(long inputId) => _fallback.GetEqStateAsync(inputId);
+    public Task SetEqEnabledAsync(long inputId, bool enabled) => _fallback.SetEqEnabledAsync(inputId, enabled);
+    public Task SetEqBandEnabledAsync(long inputId, int bandIndex, bool enabled) => _fallback.SetEqBandEnabledAsync(inputId, bandIndex, enabled);
+    public Task SetEqBandShapeAsync(long inputId, int bandIndex, int shape) => _fallback.SetEqBandShapeAsync(inputId, bandIndex, shape);
+    public Task SetEqBandFrequencyAsync(long inputId, int bandIndex, double frequency) => _fallback.SetEqBandFrequencyAsync(inputId, bandIndex, frequency);
+    public Task SetEqBandGainAsync(long inputId, int bandIndex, double gain) => _fallback.SetEqBandGainAsync(inputId, bandIndex, gain);
+    public Task SetEqBandQFactorAsync(long inputId, int bandIndex, double qFactor) => _fallback.SetEqBandQFactorAsync(inputId, bandIndex, qFactor);
+    public event Action<long, Core.DynamicsUpdate>? DynamicsStateChanged;
+
+    public Task SetMakeupGainAsync(long inputId, double makeupGain) => _audioMonitor?.SetMakeupGainAsync(inputId, makeupGain) ?? _fallback.SetMakeupGainAsync(inputId, makeupGain);
+    
+    public Task SetCompressorEnabledAsync(long inputId, bool enabled) => _audioMonitor?.SetCompressorEnabledAsync(inputId, enabled) ?? _fallback.SetCompressorEnabledAsync(inputId, enabled);
+    public Task SetCompressorThresholdAsync(long inputId, double threshold) => _audioMonitor?.SetCompressorThresholdAsync(inputId, threshold) ?? _fallback.SetCompressorThresholdAsync(inputId, threshold);
+    public Task SetCompressorRatioAsync(long inputId, double ratio) => _audioMonitor?.SetCompressorRatioAsync(inputId, ratio) ?? _fallback.SetCompressorRatioAsync(inputId, ratio);
+    public Task SetCompressorAttackAsync(long inputId, double attack) => _audioMonitor?.SetCompressorAttackAsync(inputId, attack) ?? _fallback.SetCompressorAttackAsync(inputId, attack);
+    public Task SetCompressorHoldAsync(long inputId, double hold) => _audioMonitor?.SetCompressorHoldAsync(inputId, hold) ?? _fallback.SetCompressorHoldAsync(inputId, hold);
+    public Task SetCompressorReleaseAsync(long inputId, double release) => _audioMonitor?.SetCompressorReleaseAsync(inputId, release) ?? _fallback.SetCompressorReleaseAsync(inputId, release);
+
+    public Task SetExpanderEnabledAsync(long inputId, bool enabled) => _audioMonitor?.SetExpanderEnabledAsync(inputId, enabled) ?? _fallback.SetExpanderEnabledAsync(inputId, enabled);
+    public Task SetExpanderGateModeAsync(long inputId, int gateMode) => _audioMonitor?.SetExpanderGateModeAsync(inputId, gateMode) ?? _fallback.SetExpanderGateModeAsync(inputId, gateMode);
+    public Task SetExpanderThresholdAsync(long inputId, double threshold) => _audioMonitor?.SetExpanderThresholdAsync(inputId, threshold) ?? _fallback.SetExpanderThresholdAsync(inputId, threshold);
+    public Task SetExpanderRangeAsync(long inputId, double range) => _audioMonitor?.SetExpanderRangeAsync(inputId, range) ?? _fallback.SetExpanderRangeAsync(inputId, range);
+    public Task SetExpanderRatioAsync(long inputId, double ratio) => _audioMonitor?.SetExpanderRatioAsync(inputId, ratio) ?? _fallback.SetExpanderRatioAsync(inputId, ratio);
+    public Task SetExpanderAttackAsync(long inputId, double attack) => _audioMonitor?.SetExpanderAttackAsync(inputId, attack) ?? _fallback.SetExpanderAttackAsync(inputId, attack);
+    public Task SetExpanderHoldAsync(long inputId, double hold) => _audioMonitor?.SetExpanderHoldAsync(inputId, hold) ?? _fallback.SetExpanderHoldAsync(inputId, hold);
+    public Task SetExpanderReleaseAsync(long inputId, double release) => _audioMonitor?.SetExpanderReleaseAsync(inputId, release) ?? _fallback.SetExpanderReleaseAsync(inputId, release);
+
+    public Task SetLimiterEnabledAsync(long inputId, bool enabled) => _audioMonitor?.SetLimiterEnabledAsync(inputId, enabled) ?? _fallback.SetLimiterEnabledAsync(inputId, enabled);
+    public Task SetLimiterThresholdAsync(long inputId, double threshold) => _audioMonitor?.SetLimiterThresholdAsync(inputId, threshold) ?? _fallback.SetLimiterThresholdAsync(inputId, threshold);
+    public Task SetLimiterAttackAsync(long inputId, double attack) => _audioMonitor?.SetLimiterAttackAsync(inputId, attack) ?? _fallback.SetLimiterAttackAsync(inputId, attack);
+    public Task SetLimiterHoldAsync(long inputId, double hold) => _audioMonitor?.SetLimiterHoldAsync(inputId, hold) ?? _fallback.SetLimiterHoldAsync(inputId, hold);
+    public Task SetLimiterReleaseAsync(long inputId, double release) => _audioMonitor?.SetLimiterReleaseAsync(inputId, release) ?? _fallback.SetLimiterReleaseAsync(inputId, release);
 }
+
+
+

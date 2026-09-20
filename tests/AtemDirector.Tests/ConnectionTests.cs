@@ -6,7 +6,7 @@ using Moq;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 public class ConnectionTests
 {

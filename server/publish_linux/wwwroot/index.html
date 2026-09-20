@@ -548,7 +548,7 @@
                 </div>
                 
                 <div class="version-info">
-                    AtemDirector PWA v2.0
+                    CuePilot PWA v2.0
                 </div>
             </div>
         </div>
@@ -970,7 +970,7 @@
             }
             
             // Determine connection mode
-            const isOnline = location.host.includes('vidikom.app') || location.host.includes('github.io');
+            const isOnline = location.host.includes('CuePilot.app') || location.host.includes('github.io');
             
             if (isOnline) {
                 // ONLINE MODE: connect to cloud relay WebSocket
@@ -1323,7 +1323,7 @@
 
         // Client-Side Ping
         setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN && !location.host.includes('vidikom.app')) {
+            if (ws && ws.readyState === WebSocket.OPEN && !location.host.includes('CuePilot.app')) {
                 const start = performance.now();
                 const pingId = Math.random().toString(36).substring(7);
                 // Listen for pong

@@ -11,9 +11,9 @@ Write-Host "================================================================"
 $results = @()
 
 for ($i = 1; $i -le $Iterations; $i++) {
-    Write-Host "`n>>> RUN $i / ${Iterations}: AtemDirector.Tests.csproj <<<"
+    Write-Host "`n>>> RUN $i / ${Iterations}: CuePilot.Tests.csproj <<<"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $output = dotnet test tests\AtemDirector.Tests\AtemDirector.Tests.csproj --no-restore
+    $output = dotnet test tests\CuePilot.Tests\CuePilot.Tests.csproj --no-restore
     $sw.Stop()
     $exitCode = $LASTEXITCODE
     
@@ -28,7 +28,7 @@ for ($i = 1; $i -le $Iterations; $i++) {
 
     $pass = ($exitCode -eq 0) -and ($failed -eq 0) -and ($skipped -eq 0) -and ($passed -eq 178)
     $results += [PSCustomObject]@{
-        Suite = "AtemDirector.Tests"
+        Suite = "CuePilot.Tests"
         Iteration = $i
         ExitCode = $exitCode
         Failed = $failed

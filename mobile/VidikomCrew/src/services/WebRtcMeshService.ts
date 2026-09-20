@@ -273,7 +273,10 @@ export class WebRtcMeshService {
         portSuffix = `:${voicePort}`;
       }
     } else {
-      const port = voicePort || 5160;
+      let port = voicePort || 8080;
+      if (port === 5160) {
+        port = 8080;
+      }
       if (port !== 80 && port !== 443) {
         portSuffix = `:${port}`;
       }

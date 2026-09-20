@@ -1,0 +1,1 @@
+ = [System.Reflection.Assembly]::LoadFrom('C:\Production-pro-main\Production-pro-main\desktop\Interop.BMDSwitcherAPI.dll').GetTypes(); foreach ($t in $types) { if ($t.Name -match 'Fairlight') { Write-Output $t.Name } }

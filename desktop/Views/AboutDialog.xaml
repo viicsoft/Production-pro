@@ -111,7 +111,7 @@
                 </Border>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="VIDIKOM ATEM SOFTWARE CONTROL" FontSize="16" FontWeight="Bold" Foreground="#FF9800"/>
+                    <TextBlock Text="CuePilot ATEM SOFTWARE CONTROL" FontSize="16" FontWeight="Bold" Foreground="#FF9800"/>
                     <TextBlock Text="Professional Broadcast Control Surface, SDK Automation &amp; AI Director" FontSize="11" Foreground="#A1A1AA" Margin="0,2,0,0"/>
                 </StackPanel>
 
@@ -194,8 +194,8 @@
                         <Border Style="{StaticResource CardBorderStyle}">
                             <StackPanel>
                                 <TextBlock Text="CREDITS &amp; COPYRIGHT" FontSize="12" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,6"/>
-                                <TextBlock Text="Designed &amp; Developed for Vidikom Broadcast Production Suites." Foreground="#E4E4E7" FontSize="11"/>
-                                <TextBlock Text="© 2026 Viicsoft / Vidikom. Blackmagic Design and ATEM are registered trademarks of Blackmagic Design Pty. Ltd." Foreground="#A1A1AA" FontSize="10" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                <TextBlock Text="Designed &amp; Developed for CuePilot Broadcast Production Suites." Foreground="#E4E4E7" FontSize="11"/>
+                                <TextBlock Text="© 2026 Vidikom / CuePilot. Blackmagic Design and ATEM are registered trademarks of Blackmagic Design Pty. Ltd." Foreground="#A1A1AA" FontSize="10" Margin="0,4,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -402,3 +402,4 @@
         </Border>
     </Grid>
 </Window>
+

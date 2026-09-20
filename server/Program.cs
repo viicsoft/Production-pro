@@ -10,13 +10,13 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
-using AtemDirector.Server.Data;
+using CuePilot.Server.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace AtemDirector.Server
+namespace CuePilot.Server
 {
     public class Program
     {
@@ -113,12 +113,12 @@ namespace AtemDirector.Server
 
             // Add services to the container.
             builder.Services.AddDbContext<Data.AppDbContext>(options =>
-                options.UseSqlite("Data Source=atemdirector.db"));
+                options.UseSqlite("Data Source=CuePilot.db"));
 
             builder.Services.AddAuthentication("CookieAuth")
                 .AddCookie("CookieAuth", options =>
                 {
-                    options.Cookie.Name = "AtemDirector.Auth";
+                    options.Cookie.Name = "CuePilot.Auth";
                     options.LoginPath = "/Admin/Login";
                     options.Cookie.SameSite = SameSiteMode.Lax;
                     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
@@ -155,7 +155,7 @@ namespace AtemDirector.Server
                 
                 if (!db.AdminUsers.Any())
                 {
-                    db.AdminUsers.Add(new Data.AdminUser { Email = "admin@vidikom.com", Password = "admin" });
+                    db.AdminUsers.Add(new Data.AdminUser { Email = "admin@CuePilot.com", Password = "admin" });
                     db.SaveChanges();
                 }
             }

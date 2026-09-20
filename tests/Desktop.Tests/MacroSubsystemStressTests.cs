@@ -10,7 +10,7 @@ using Desktop.Views;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical Stress & Boundary Test Suite for the ATEM Macro Subsystem.

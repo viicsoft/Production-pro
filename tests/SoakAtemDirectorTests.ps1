@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Continue"
 
 Write-Host "================================================================"
-Write-Host "  AtemDirector.Tests INDEPENDENT SOAK TEST ($Iterations RUNS)"
+Write-Host "  CuePilot.Tests INDEPENDENT SOAK TEST ($Iterations RUNS)"
 Write-Host "================================================================"
 
 $passes = 0
@@ -14,7 +14,7 @@ $results = @()
 
 for ($i = 1; $i -le $Iterations; $i++) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $out = dotnet test tests\AtemDirector.Tests\AtemDirector.Tests.csproj -c $Configuration --no-build
+    $out = dotnet test tests\CuePilot.Tests\CuePilot.Tests.csproj -c $Configuration --no-build
     $code = $LASTEXITCODE
     $sw.Stop()
     
@@ -44,7 +44,7 @@ for ($i = 1; $i -le $Iterations; $i++) {
 Write-Host "`nSummary: $passes of $Iterations runs PASSED."
 $results | Format-Table -AutoSize | Out-String | Write-Host
 if ($passes -eq $Iterations) {
-    Write-Host "VERDICT: APPROVE (AtemDirector.Tests has 0 flakiness and 100% stability)"
+    Write-Host "VERDICT: APPROVE (CuePilot.Tests has 0 flakiness and 100% stability)"
     exit 0
 } else {
     Write-Host "VERDICT: CHALLENGE_FAILED"

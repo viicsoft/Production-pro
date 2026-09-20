@@ -4,9 +4,9 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-Write-Host "Running dotnet test AtemDirector.sln..."
+Write-Host "Running dotnet test CuePilot.sln..."
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-$output = dotnet test AtemDirector.sln -c $Configuration --no-build
+$output = dotnet test CuePilot.sln -c $Configuration --no-build
 $exitCode = $LASTEXITCODE
 $sw.Stop()
 

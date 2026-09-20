@@ -17,6 +17,8 @@ class MainApplication : Application(), ReactApplication {
           // Packages that cannot be autolinked yet can be added manually here:
           add(IntercomPackage())
         },
+      useDevSupport = false,
+      jsBundleAssetPath = "index.android.bundle",
     )
   }
 

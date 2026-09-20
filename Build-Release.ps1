@@ -1,10 +1,10 @@
-# AtemDirector Build Script
+# CuePilot Build Script
 # Builds self-contained deployments for Server and Desktop
 
 $ErrorActionPreference = "Stop"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  AtemDirector Build Script" -ForegroundColor Cyan
+Write-Host "  CuePilot Build Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -43,7 +43,7 @@ Write-Host "[4/5] Copying Caddy..." -ForegroundColor Yellow
 $caddyFound = $false
 $caddyCandidates = @(
     ".\installer\caddy\caddy.exe",
-    "C:\Program Files\AtemDirector\caddy\caddy.exe",
+    "C:\Program Files\CuePilot\caddy\caddy.exe",
     "C:\caddy\caddy.exe"
 )
 

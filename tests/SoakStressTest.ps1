@@ -8,15 +8,15 @@ $ErrorActionPreference = "Stop"
 Write-Host "================================================================"
 Write-Host "  SOAK & CONCURRENCY STRESS TEST HARNESS"
 Write-Host "================================================================"
-Write-Host "Target Solution: AtemDirector.sln"
+Write-Host "Target Solution: CuePilot.sln"
 Write-Host "Configuration:   $Configuration"
 Write-Host "Soak Iterations: $Iterations"
 Write-Host "Timestamp:       $([System.DateTime]::UtcNow.ToString('o'))"
 Write-Host "================================================================"
 
 # First ensure solution is freshly built
-Write-Host "`n[PRE-RUN] Building AtemDirector.sln..."
-dotnet build AtemDirector.sln -c $Configuration
+Write-Host "`n[PRE-RUN] Building CuePilot.sln..."
+dotnet build CuePilot.sln -c $Configuration
 if ($LASTEXITCODE -ne 0) {
     throw "Initial solution build failed with code $LASTEXITCODE"
 }
@@ -32,10 +32,10 @@ Write-Host "================================================================"
 $soakResults = @()
 
 for ($i = 1; $i -le $Iterations; $i++) {
-    Write-Host "`n--- [Soak Iteration $i of $Iterations] Starting dotnet test AtemDirector.sln ---"
+    Write-Host "`n--- [Soak Iteration $i of $Iterations] Starting dotnet test CuePilot.sln ---"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     
-    $output = dotnet test AtemDirector.sln -c $Configuration --no-build 2>&1
+    $output = dotnet test CuePilot.sln -c $Configuration --no-build 2>&1
     $exitCode = $LASTEXITCODE
     $sw.Stop()
     
@@ -79,7 +79,7 @@ for ($i = 1; $i -le $Iterations; $i++) {
 Write-Host "`n================================================================"
 Write-Host "  SUITE 2: CONCURRENT PARALLEL EXECUTION (STATE ISOLATION)"
 Write-Host "================================================================"
-Write-Host "Launching AtemDirector.Tests and Desktop.Tests concurrently in parallel..."
+Write-Host "Launching CuePilot.Tests and Desktop.Tests concurrently in parallel..."
 
 $concurrentRuns = 3
 $concurrentResults = @()
@@ -92,11 +92,11 @@ for ($c = 1; $c -le $concurrentRuns; $c++) {
         param($config)
         Set-Location "C:\Production-pro-main\Production-pro-main"
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $out = dotnet test tests\AtemDirector.Tests\AtemDirector.Tests.csproj -c $config --no-build 2>&1
+        $out = dotnet test tests\CuePilot.Tests\CuePilot.Tests.csproj -c $config --no-build 2>&1
         $code = $LASTEXITCODE
         $sw.Stop()
         return [PSCustomObject]@{
-            Project = "AtemDirector.Tests"
+            Project = "CuePilot.Tests"
             ExitCode = $code
             Duration = $sw.Elapsed.TotalSeconds
             Output = ($out -join "`n")
@@ -139,7 +139,7 @@ for ($c = 1; $c -le $concurrentRuns; $c++) {
     $status1 = if ($res1.ExitCode -eq 0 -and $failed1 -eq 0) { "PASS" } else { "FAIL" }
     $status2 = if ($res2.ExitCode -eq 0 -and $failed2 -eq 0) { "PASS" } else { "FAIL" }
     
-    Write-Host "  Parallel Job 1 (AtemDirector.Tests): Status=$status1, Passed=$passed1, Failed=$failed1, Time=$([math]::Round($res1.Duration, 1))s"
+    Write-Host "  Parallel Job 1 (CuePilot.Tests): Status=$status1, Passed=$passed1, Failed=$failed1, Time=$([math]::Round($res1.Duration, 1))s"
     Write-Host "  Parallel Job 2 (Desktop.Tests):      Status=$status2, Passed=$passed2, Failed=$failed2, Time=$([math]::Round($res2.Duration, 1))s"
     Write-Host "  Total Concurrency Round $c Duration: $([math]::Round($swC.Elapsed.TotalSeconds, 1))s"
     

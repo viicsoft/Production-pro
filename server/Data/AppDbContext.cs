@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using System;
 
-namespace AtemDirector.Server.Data
+namespace CuePilot.Server.Data
 {
     public class AppDbContext : DbContext
     {

@@ -1,6 +1,6 @@
-#define MyAppName "Vidikom"
+#define MyAppName "CuePilot"
 #define MyAppVersion "1.0.20"
-#define MyAppPublisher "Vidikom"
+#define MyAppPublisher "CuePilot"
 #define MyAppExeName "Desktop.exe"
 
 [Setup]
@@ -16,7 +16,7 @@ SetupIconFile=icon.ico
 ; Remove the following line to run in administrative install mode (install for all users.)
 PrivilegesRequired=admin
 OutputDir=output
-OutputBaseFilename=VidikomSetup_v{#MyAppVersion}
+OutputBaseFilename=CuePilotSetup_v{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -50,7 +50,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     // Add inbound firewall rule for the application
-    Exec('netsh', 'advfirewall firewall add rule name="Vidikom PWA Server" dir=in action=allow program="' + ExpandConstant('{app}\{#MyAppExeName}') + '" enable=yes profile=any', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('netsh', 'advfirewall firewall add rule name="CuePilot PWA Server" dir=in action=allow program="' + ExpandConstant('{app}\{#MyAppExeName}') + '" enable=yes profile=any', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 
@@ -61,7 +61,7 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    Exec('netsh', 'advfirewall firewall delete rule name="Vidikom PWA Server" program="' + ExpandConstant('{app}\{#MyAppExeName}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('netsh', 'advfirewall firewall delete rule name="CuePilot PWA Server" program="' + ExpandConstant('{app}\{#MyAppExeName}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 

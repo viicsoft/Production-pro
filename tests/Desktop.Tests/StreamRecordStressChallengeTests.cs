@@ -10,7 +10,7 @@ using Desktop;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical Stress & Concurrency Challenge Test Suite for Milestone 3 (Stream & Record).

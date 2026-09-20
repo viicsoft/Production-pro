@@ -7,7 +7,7 @@ using Core;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical adversarial stress tests challenging SimAtem.IsStartupStateSaved

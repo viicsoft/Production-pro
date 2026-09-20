@@ -13,6 +13,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <NoWarn>$(NoWarn);CS8625;CS1998;CS8618;CS0618;CS8602;CS0414</NoWarn>
+    <AssemblyName>Vidikom</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -57,3 +58,4 @@
     <InternalsVisibleTo Include="Desktop.Tests" />
   </ItemGroup>
 </Project>
+

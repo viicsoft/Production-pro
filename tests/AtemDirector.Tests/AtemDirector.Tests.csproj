@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\core\core.csproj" />
     <ProjectReference Include="..\..\simulator\simulator.csproj" />
+    <ProjectReference Include="..\..\desktop\desktop.csproj" />
   </ItemGroup>
 
 </Project>

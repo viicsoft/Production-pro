@@ -38,6 +38,10 @@ namespace Desktop
 
         public Func<IEnumerable<object>>? GetActiveInputs { get; set; }
         public Action<string, long>? OnControlSwitch { get; set; }
+        public Action<long, double?, bool?, bool?>? OnAudioControl { get; set; }
+        public Action<string, bool>? OnAudioGroupTrigger { get; set; }
+        public Action<string>? OnAudioGroupConfig { get; set; }
+        public Func<Task<object>>? GetAudioStateAsync { get; set; }
 
         private PwaServer() { }
 
@@ -46,7 +50,7 @@ namespace Desktop
             PinCode = new Random().Next(1000, 9999).ToString();
             var builder = WebApplication.CreateBuilder();
             builder.Environment.WebRootPath = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
-            builder.WebHost.UseUrls($"http://0.0.0.0:{port}", "http://0.0.0.0:5160");
+            builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
             _app = builder.Build();
 
             _app.UseWebSockets();
@@ -66,7 +70,7 @@ namespace Desktop
                 });
             }
             
-            var mediaDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector", "media");
+            var mediaDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "media");
             if (!System.IO.Directory.Exists(mediaDir)) System.IO.Directory.CreateDirectory(mediaDir);
             
             _app.UseStaticFiles(new StaticFileOptions
@@ -106,6 +110,7 @@ namespace Desktop
                 if (activeRoom != null)
                 {
                     var isCloud = activeRoom.NetworkMode == NetworkMode.Online;
+                    var isHybrid = activeRoom.NetworkMode == NetworkMode.Hybrid;
                     return Results.Ok(new
                     {
                         active = true,
@@ -114,9 +119,9 @@ namespace Desktop
                         productionName = activeRoom.ProductionName,
                         directorName = activeRoom.DirectorName,
                         networkMode = activeRoom.NetworkMode.ToString(),
-                        isCloudRelay = isCloud,
-                        voiceServer = isCloud ? "vidikom.app" : "127.0.0.1:8080",
-                        serverIp = isCloud ? "vidikom.app" : null,
+                        isCloudRelay = isCloud || isHybrid,
+                        voiceServer = (isCloud || isHybrid) ? "CuePilot.app" : "127.0.0.1:8080",
+                        serverIp = isCloud ? "CuePilot.app" : null,
                         relayUrl = activeRoom.RelayUrl
                     });
                 }
@@ -243,7 +248,7 @@ namespace Desktop
                 await _app.StartAsync();
                 try
                 {
-                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
                     System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [PwaServer] Successfully started on http://0.0.0.0:{port}\n");
                 }
                 catch { }
@@ -253,7 +258,7 @@ namespace Desktop
                 System.Diagnostics.Debug.WriteLine($"[PwaServer] StartAsync error: {ex.Message}");
                 try
                 {
-                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                    var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
                     System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [PwaServer] StartAsync FAILED on http://0.0.0.0:{port}: {ex}\n");
                 }
                 catch { }
@@ -527,7 +532,10 @@ namespace Desktop
                         {
                             var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
                             var activeRoom = RoomManager.ActiveRoom;
-                            var success = activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode;
+                            var success = activeRoom != null && (
+                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                            );
                             var resp = JsonSerializer.Serialize(new { type = success ? "control-auth-success" : "control-auth-failed" });
                             if (_clients.TryGetValue(clientId, out var ws) && ws.State == WebSocketState.Open)
                             {
@@ -538,7 +546,10 @@ namespace Desktop
                         {
                             var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
                             var activeRoom = RoomManager.ActiveRoom;
-                            if (activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode)
+                            if (activeRoom != null && (
+                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                            ))
                             {
                                 var mode = root.TryGetProperty("mode", out var md) ? md.GetString() : "";
                                 if (root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var inputId))
@@ -546,6 +557,52 @@ namespace Desktop
                                     OnControlSwitch?.Invoke(mode, inputId);
                                 }
                             }
+                        }
+                        else if (type == "audio-control")
+                        {
+                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var activeRoom = RoomManager.ActiveRoom;
+                            if (activeRoom != null && (
+                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                            ))
+                            {
+                                long inputId = root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var id) ? id : 0;
+                                double? vol = root.TryGetProperty("volume", out var vp) && vp.TryGetDouble(out var v) ? v : null;
+                                bool? on = root.TryGetProperty("on", out var onp) && (onp.ValueKind == JsonValueKind.True || onp.ValueKind == JsonValueKind.False) ? onp.GetBoolean() : null;
+                                bool? afv = root.TryGetProperty("afv", out var afvp) && (afvp.ValueKind == JsonValueKind.True || afvp.ValueKind == JsonValueKind.False) ? afvp.GetBoolean() : null;
+                                OnAudioControl?.Invoke(inputId, vol, on, afv);
+                            }
+                        }
+                        else if (type == "audio-group-trigger")
+                        {
+                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var activeRoom = RoomManager.ActiveRoom;
+                            if (activeRoom != null && (
+                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                            ))
+                            {
+                                var groupId = root.TryGetProperty("groupId", out var gp) ? gp.GetString() ?? "" : "";
+                                bool active = root.TryGetProperty("active", out var ap) && ap.GetBoolean();
+                                OnAudioGroupTrigger?.Invoke(groupId, active);
+                            }
+                        }
+                        else if (type == "audio-group-config")
+                        {
+                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var activeRoom = RoomManager.ActiveRoom;
+                            if (activeRoom != null && (
+                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                            ))
+                            {
+                                OnAudioGroupConfig?.Invoke(json);
+                            }
+                        }
+                        else if (type == "audio-request-state")
+                        {
+                            BroadcastAudioState();
                         }
                     }
 
@@ -627,7 +684,10 @@ namespace Desktop
                 {
                     var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
                     var activeRoom = RoomManager.ActiveRoom;
-                    var success = activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode;
+                    var success = activeRoom != null && (
+                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                    );
                     var resp = JsonSerializer.Serialize(new { type = success ? "control-auth-success" : "control-auth-failed" });
                     if (Relay != null && Relay.IsConnected)
                     {
@@ -638,7 +698,10 @@ namespace Desktop
                 {
                     var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
                     var activeRoom = RoomManager.ActiveRoom;
-                    if (activeRoom != null && !string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode)
+                    if (activeRoom != null && (
+                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                    ))
                     {
                         var mode = root.TryGetProperty("mode", out var md) ? md.GetString() : "";
                         if (root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var inputId))
@@ -647,8 +710,69 @@ namespace Desktop
                         }
                     }
                 }
+                else if (type == "audio-control")
+                {
+                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var activeRoom = RoomManager.ActiveRoom;
+                    if (activeRoom != null && (
+                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                    ))
+                    {
+                        long inputId = root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var id) ? id : 0;
+                        double? vol = root.TryGetProperty("volume", out var vp) && vp.TryGetDouble(out var v) ? v : null;
+                        bool? on = root.TryGetProperty("on", out var onp) && (onp.ValueKind == JsonValueKind.True || onp.ValueKind == JsonValueKind.False) ? onp.GetBoolean() : null;
+                        bool? afv = root.TryGetProperty("afv", out var afvp) && (afvp.ValueKind == JsonValueKind.True || afvp.ValueKind == JsonValueKind.False) ? afvp.GetBoolean() : null;
+                        OnAudioControl?.Invoke(inputId, vol, on, afv);
+                    }
+                }
+                else if (type == "audio-group-trigger")
+                {
+                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var activeRoom = RoomManager.ActiveRoom;
+                    if (activeRoom != null && (
+                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                    ))
+                    {
+                        var groupId = root.TryGetProperty("groupId", out var gp) ? gp.GetString() ?? "" : "";
+                        bool active = root.TryGetProperty("active", out var ap) && ap.GetBoolean();
+                        OnAudioGroupTrigger?.Invoke(groupId, active);
+                    }
+                }
+                else if (type == "audio-group-config")
+                {
+                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var activeRoom = RoomManager.ActiveRoom;
+                    if (activeRoom != null && (
+                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
+                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
+                    ))
+                    {
+                        OnAudioGroupConfig?.Invoke(json);
+                    }
+                }
+                else if (type == "audio-request-state")
+                {
+                    BroadcastAudioState();
+                }
             }
             catch { }
+        }
+
+        public void BroadcastAudioState()
+        {
+            if (GetAudioStateAsync == null) return;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var state = await GetAudioStateAsync();
+                    var json = JsonSerializer.Serialize(new { type = "audio-state", payload = state });
+                    BroadcastToAllCrewAndRelay(json);
+                }
+                catch { }
+            });
         }
 
         private void NotifyConnectedCameras()

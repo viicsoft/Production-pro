@@ -1,0 +1,405 @@
+using Core;
+using System.Threading.Tasks;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using BMDSwitcherAPI;
+
+namespace Desktop
+{
+    public class AtemAudioMonitor : IBMDSwitcherAudioMixerCallback, IBMDSwitcherFairlightAudioMixerCallback
+    {
+        private readonly IBMDSwitcher _switcher;
+        private readonly Action<long, double, double> _levelCallback;
+        
+        private IBMDSwitcherAudioMixer? _oldMixer;
+        private IBMDSwitcherFairlightAudioMixer? _fairlightMixer;
+        
+                private readonly List<object> _callbacks = new List<object>();
+        private readonly Dictionary<long, List<IBMDSwitcherFairlightAudioSource>> _fairlightSources = new();
+        private readonly Dictionary<long, IBMDSwitcherAudioInput> _oldAudioInputs = new();
+
+                public void SetAudioVolume(long inputId, double volumeDb)
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (inputId == 100) return; // Master fader
+                                        if (_fairlightSources.TryGetValue(inputId, out var fSrcList))
+                    {
+                                                foreach (var src in fSrcList)
+                        {
+                            try {
+                                src.IsActive(out int active);
+                                if (active != 0) src.SetFaderGain(volumeDb);
+                            } catch { }
+                        }
+                    }
+                    else if (_oldAudioInputs.TryGetValue(inputId, out var oSrc))
+                        oSrc.SetGain(volumeDb);
+                } catch { }
+            });
+        }
+
+                        public void SetAudioMixOption(long inputId, string mode)
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                                        if (_fairlightSources.TryGetValue(inputId, out var fSrcList))
+                    {
+                        _BMDSwitcherFairlightAudioMixOption fOpt = _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionOff;
+                        if (mode == "On") fOpt = _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionOn;
+                        else if (mode == "AFV") fOpt = _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionAudioFollowVideo;
+                                                foreach (var src in fSrcList)
+                        {
+                            try {
+                                src.IsActive(out int active);
+                                if (active != 0) src.SetMixOption(fOpt);
+                            } catch { }
+                        }
+                    }
+                    else if (_oldAudioInputs.TryGetValue(inputId, out var oSrc))
+                    {
+                        _BMDSwitcherAudioMixOption oOpt = _BMDSwitcherAudioMixOption.bmdSwitcherAudioMixOptionOff;
+                        if (mode == "On") oOpt = _BMDSwitcherAudioMixOption.bmdSwitcherAudioMixOptionOn;
+                        else if (mode == "AFV") oOpt = _BMDSwitcherAudioMixOption.bmdSwitcherAudioMixOptionAudioFollowVideo;
+                        oSrc.SetMixOption(oOpt);
+                    }
+                } catch { } }); }
+
+                        private readonly Action<long, bool, bool>? _stateCallback;
+            private readonly Action<long, double>? _volumeCallback;
+        private readonly Action<long, EqState>? _eqStateCallback;
+
+                public Task<EqState?> GetEqStateAsync(long inputId) 
+        { 
+            return Task.Run(() => {
+                if (_fairlightSources.TryGetValue(inputId, out var sources))
+                {
+                    foreach (var src in sources)
+                    {
+                        src.IsActive(out int active);
+                        if (active != 0)
+                        {
+                            Guid iid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID;
+                            src.GetEffect(ref iid, out IntPtr ppv);
+                            if (ppv != IntPtr.Zero)
+                            {
+                                var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv);
+                                var state = new EqState();
+                                eq.GetEnabled(out int eqEnabled);
+                                state.Enabled = eqEnabled != 0;
+                                
+                                eq.CreateIterator(typeof(IBMDSwitcherFairlightAudioEqualizerBandIterator).GUID, out IntPtr iterPtr);
+                                if (iterPtr != IntPtr.Zero)
+                                {
+                                    var iter = (IBMDSwitcherFairlightAudioEqualizerBandIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(iterPtr);
+                                    int bIdx = 0;
+                                    while (bIdx < 6)
+                                    {
+                                        iter.Next(out IBMDSwitcherFairlightAudioEqualizerBand band);
+                                        if (band == null) break;
+                                        
+                                        band.GetEnabled(out int ben);
+                                        state.Bands[bIdx].Enabled = ben != 0;
+                                                                                band.GetFrequency(out uint freq);
+                                        state.Bands[bIdx].Frequency = freq;
+                                        band.GetGain(out double gain);
+                                        state.Bands[bIdx].Gain = gain;
+                                        
+                                        try { band.GetQFactor(out double qf); state.Bands[bIdx].QFactor = qf; } catch { }
+                                        try { band.GetShape(out _BMDSwitcherFairlightAudioEqualizerBandShape shape); state.Bands[bIdx].Shape = (int)shape; } catch { }
+                                        
+                                        bIdx++;
+                                    }
+                                }
+                                return state;
+                            }
+                        }
+                    }
+                }
+                return (EqState?)null;
+            });
+        }
+        
+                private void WithEqBand(long inputId, int bandIndex, Action<IBMDSwitcherFairlightAudioEqualizerBand> action)
+        {
+            Task.Run(() => {
+                if (_fairlightSources.TryGetValue(inputId, out var sources))
+                {
+                    foreach (var src in sources)
+                    {
+                        src.IsActive(out int active);
+                        if (active != 0)
+                        {
+                            Guid iid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID;
+                            src.GetEffect(ref iid, out IntPtr ppv);
+                            if (ppv != IntPtr.Zero)
+                            {
+                                var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv);
+                                eq.CreateIterator(typeof(IBMDSwitcherFairlightAudioEqualizerBandIterator).GUID, out IntPtr iterPtr);
+                                if (iterPtr != IntPtr.Zero)
+                                {
+                                    var iter = (IBMDSwitcherFairlightAudioEqualizerBandIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(iterPtr);
+                                    int bIdx = 0;
+                                    while (bIdx <= bandIndex)
+                                    {
+                                        iter.Next(out IBMDSwitcherFairlightAudioEqualizerBand band);
+                                        if (band == null) break;
+                                        if (bIdx == bandIndex) action(band);
+                                        bIdx++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        public void SetEqEnabled(long inputId, bool enabled) { }
+        public void SetEqBandEnabled(long inputId, int bandIndex, bool enabled) { WithEqBand(inputId, bandIndex, b => b.SetEnabled(enabled ? 1 : 0)); }
+        public void SetEqBandShape(long inputId, int bandIndex, int shape) { WithEqBand(inputId, bandIndex, b => b.SetShape((_BMDSwitcherFairlightAudioEqualizerBandShape)shape)); }
+        public void SetEqBandFrequency(long inputId, int bandIndex, double freq) { WithEqBand(inputId, bandIndex, b => b.SetFrequency((uint)freq)); }
+        public void SetEqBandGain(long inputId, int bandIndex, double gain) { WithEqBand(inputId, bandIndex, b => b.SetGain(gain)); }
+        public void SetEqBandQFactor(long inputId, int bandIndex, double q) { WithEqBand(inputId, bandIndex, b => b.SetQFactor(q)); }
+
+        public AtemAudioMonitor(IBMDSwitcher switcher, Action<long, double, double> levelCallback, Action<long, bool, bool>? stateCallback = null, Action<long, EqState>? eqStateCallback = null, Action<long, double>? volumeCallback = null)
+        {
+            _switcher = switcher;
+            _levelCallback = levelCallback;
+            _stateCallback = stateCallback;
+            _eqStateCallback = eqStateCallback;
+            _volumeCallback = volumeCallback;
+        }
+
+        public void Start()
+        {
+            try
+            {
+                if (_switcher is IBMDSwitcherFairlightAudioMixer fairlight)
+                {
+                    _fairlightMixer = fairlight;
+                    _fairlightMixer.AddCallback(this);
+                    _fairlightMixer.SetAllLevelNotificationsEnabled(1);
+                    
+                    Guid iterGuid = typeof(IBMDSwitcherFairlightAudioInputIterator).GUID;
+                    _fairlightMixer.CreateIterator(ref iterGuid, out IntPtr iterPtr);
+                    if (iterPtr != IntPtr.Zero)
+                    {
+                        var iter = (IBMDSwitcherFairlightAudioInputIterator)Marshal.GetObjectForIUnknown(iterPtr);
+                        while (true)
+                        {
+                            iter.Next(out IBMDSwitcherFairlightAudioInput input);
+                            if (input == null) break;
+                            
+                            input.GetId(out long inputId);
+                            
+                            Guid srcIterGuid = typeof(IBMDSwitcherFairlightAudioSourceIterator).GUID;
+                            input.CreateIterator(ref srcIterGuid, out IntPtr srcIterPtr);
+                            if (srcIterPtr != IntPtr.Zero)
+                            {
+                                var srcIter = (IBMDSwitcherFairlightAudioSourceIterator)Marshal.GetObjectForIUnknown(srcIterPtr);
+                                while (true)
+                                {
+                                    srcIter.Next(out IBMDSwitcherFairlightAudioSource source);
+                                    if (source == null) break;
+                                    
+                                                                        var cb = new FairlightSourceCb(inputId, _levelCallback, _stateCallback, _volumeCallback, source);
+                                    source.AddCallback(cb);
+                                    _callbacks.Add(new AttachedCallback(source, cb));
+                                                                          if (!_fairlightSources.ContainsKey(inputId))
+                                          _fairlightSources[inputId] = new List<IBMDSwitcherFairlightAudioSource>();
+                                      _fairlightSources[inputId].Add(source);
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (_switcher is IBMDSwitcherAudioMixer oldMixer)
+                {
+                    _oldMixer = oldMixer;
+                    _oldMixer.AddCallback(this);
+                    _oldMixer.SetAllLevelNotificationsEnable(1);
+                    
+                    Guid iterGuid = typeof(IBMDSwitcherAudioInputIterator).GUID;
+                    _oldMixer.CreateIterator(ref iterGuid, out IntPtr iterPtr);
+                    if (iterPtr != IntPtr.Zero)
+                    {
+                        var iter = (IBMDSwitcherAudioInputIterator)Marshal.GetObjectForIUnknown(iterPtr);
+                        while (true)
+                        {
+                            iter.Next(out IBMDSwitcherAudioInput input);
+                            if (input == null) break;
+                            
+                            input.GetAudioInputId(out long inputId);
+                                                        var cb = new OldSourceCb(inputId, _levelCallback);
+                            input.AddCallback(cb);
+                            _callbacks.Add(new AttachedCallback(input, cb));
+                            _oldAudioInputs[inputId] = input;
+                        }
+                    }
+                }
+            }
+                        catch (Exception ex)
+            {
+                Console.WriteLine("Audio monitor start error: " + ex);
+            }
+        }
+
+        public void Stop()
+        {
+            try
+            {
+                if (_fairlightMixer != null) _fairlightMixer.RemoveCallback(this);
+                if (_oldMixer != null) _oldMixer.RemoveCallback(this);
+
+                foreach (AttachedCallback ac in _callbacks)
+                {
+                    ac.Detach();
+                }
+                _callbacks.Clear();
+            }
+            catch { }
+        }
+
+        // --- Fairlight Mixer Callback (Master Out) ---
+        public void Notify(_BMDSwitcherFairlightAudioMixerEventType eventType) { }
+
+        public void MasterOutLevelNotification(uint numLevels, ref double levels, uint numPeakLevels, ref double peakLevels)
+        {
+            double left = levels;
+            double right = numLevels > 1 ? Unsafe.Add(ref levels, 1) : left;
+            _levelCallback(100, left, right); // 100 is Master
+        }
+
+        // --- Old Mixer Callback (Master Out) ---
+        public void Notify(_BMDSwitcherAudioMixerEventType eventType) { }
+
+        public void ProgramOutLevelNotification(double left, double right, double peakLeft, double peakRight)
+        {
+            _levelCallback(100, left, right); // 100 is Master
+        }
+        
+        // --- Inner callback classes ---
+        
+        private class AttachedCallback
+        {
+            private readonly object _source;
+            private readonly object _callback;
+            
+            public AttachedCallback(object source, object callback)
+            {
+                _source = source;
+                _callback = callback;
+            }
+            
+            public void Detach()
+            {
+                try
+                {
+                    if (_source is IBMDSwitcherFairlightAudioSource fs) fs.RemoveCallback((IBMDSwitcherFairlightAudioSourceCallback)_callback);
+                    else if (_source is IBMDSwitcherAudioInput oi) oi.RemoveCallback((IBMDSwitcherAudioInputCallback)_callback);
+                }
+                catch { }
+            }
+        }
+
+                private class FairlightSourceCb : IBMDSwitcherFairlightAudioSourceCallback
+        {
+            private readonly long _inputId;
+            private readonly Action<long, double, double> _levelCallback;
+            private readonly Action<long, bool, bool>? _stateCallback;
+            private readonly Action<long, double>? _volumeCallback;
+            private readonly IBMDSwitcherFairlightAudioSource _source;
+
+            public FairlightSourceCb(long inputId, Action<long, double, double> levelCallback, Action<long, bool, bool>? stateCallback, Action<long, double>? volumeCallback, IBMDSwitcherFairlightAudioSource source)
+            {
+                _inputId = inputId;
+                _levelCallback = levelCallback;
+                _stateCallback = stateCallback;
+                _volumeCallback = volumeCallback;
+                _source = source;
+            }
+
+            public void Notify(_BMDSwitcherFairlightAudioSourceEventType eventType)
+            {
+                if (eventType == _BMDSwitcherFairlightAudioSourceEventType.bmdSwitcherFairlightAudioSourceEventTypeFaderGainChanged)
+                {
+                    try {
+                        _source.GetFaderGain(out double vol);
+                        _volumeCallback?.Invoke(_inputId, vol);
+                    } catch { }
+                }
+                else if (eventType == _BMDSwitcherFairlightAudioSourceEventType.bmdSwitcherFairlightAudioSourceEventTypeMixOptionChanged)
+                {
+                    try
+                    {
+                        _source.GetMixOption(out var mixOpt);
+                        bool isOn = mixOpt == _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionOn;
+                        bool isAfv = mixOpt == _BMDSwitcherFairlightAudioMixOption.bmdSwitcherFairlightAudioMixOptionAudioFollowVideo;
+                        _stateCallback?.Invoke(_inputId, isOn, isAfv);
+                    } catch { }
+                }
+            }
+
+                                    public void OutputLevelNotification(uint numLevels, ref double levels, uint numPeakLevels, ref double peakLevels)
+            {
+                double left = levels;
+                double right = numLevels > 1 ? Unsafe.Add(ref levels, 1) : left;
+                _levelCallback(_inputId, left, right);
+            }
+        }
+
+        private class OldSourceCb : IBMDSwitcherAudioInputCallback
+        {
+            private readonly long _inputId;
+            private readonly Action<long, double, double> _levelCallback;
+
+            public OldSourceCb(long inputId, Action<long, double, double> levelCallback)
+            {
+                _inputId = inputId;
+                _levelCallback = levelCallback;
+            }
+
+            public void Notify(_BMDSwitcherAudioInputEventType eventType) { }
+
+            public void LevelNotification(double left, double right, double peakLeft, double peakRight)
+            {
+                _levelCallback(_inputId, left, right);
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,5 +1,5 @@
 @page "/Admin"
-@model AtemDirector.Server.Pages.Admin.IndexModel
+@model CuePilot.Server.Pages.Admin.IndexModel
 @{
     Layout = null;
 }
@@ -8,7 +8,7 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dashboard - Viicsoft Admin</title>
+    <title>Dashboard - Vidikom Admin</title>
     <!-- Basic Dashboard Styling -->
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #1b1b1b; color: #ddd; margin: 0; padding: 20px; }
@@ -43,7 +43,7 @@
     <div class="container">
         <header>
             <div style="display:flex; align-items:center; gap:10px;">
-                <h1>Viicsoft Admin Dashboard</h1>
+                <h1>Vidikom Admin Dashboard</h1>
                 @if (TempData["Message"] != null)
                 {
                     <div style="padding:5px 10px; background:#4caf50; color:white; border-radius:4px; font-weight:bold;">
@@ -270,3 +270,4 @@
         } catch { return url; }
     }
 }
+

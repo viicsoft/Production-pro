@@ -11,7 +11,7 @@ using Moq;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical stress test suite authored by Challenger 2 for Milestone 4 (Outputs Subsystem).

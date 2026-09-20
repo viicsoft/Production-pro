@@ -13,7 +13,7 @@ using OpenCvSharp;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical challenge tests authored by Challenger 2 for Milestone 5: File & Help Backend and UI.

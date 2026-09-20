@@ -125,7 +125,7 @@ public static class ProjectSerializer
         {
             var parts = config.SchemaVersion.Split('.');
             if (parts.Length > 0 && int.TryParse(parts[0], out int major) && major > 1)
-                throw new InvalidOperationException($"Unsupported major schema version '{config.SchemaVersion}'. Please update Vidikom Atem Software Control.");
+                throw new InvalidOperationException($"Unsupported major schema version '{config.SchemaVersion}'. Please update CuePilot Atem Software Control.");
         }
 
         // 2. Null Subsystem Protections

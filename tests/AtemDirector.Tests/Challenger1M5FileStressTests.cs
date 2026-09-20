@@ -12,7 +12,7 @@ using Moq;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical stress tests authored by Challenger 1 for Milestone 5: File & Help Subsystems.

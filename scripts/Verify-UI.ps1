@@ -1,4 +1,4 @@
-# Automated UI Verification Script for Vidikom Atem Software Control
+# Automated UI Verification Script for CuePilot Atem Software Control
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)]
@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Vidikom ATEM Software Control -- Automated UI Verification" -ForegroundColor Cyan
+Write-Host "  CuePilot ATEM Software Control -- Automated UI Verification" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 
 # 1. Load Windows UI Automation Assemblies
@@ -63,7 +63,7 @@ function Dismiss-ModalDialogs([int]$targetPid) {
         foreach ($dlg in $modalDialogs) {
             $dlgName = ""
             try { $dlgName = $dlg.Current.Name } catch { }
-            if ($dlgName -ne "Vidikom Atem Software Control" -and $dlgName -ne "BackgroundIntercom") {
+            if ($dlgName -ne "CuePilot Atem Software Control" -and $dlgName -ne "BackgroundIntercom") {
                 Write-Host "Dismissing blocking dialog '$dlgName'..." -ForegroundColor Yellow
                 $okBtn = $dlg.FindFirst(
                     [System.Windows.Automation.TreeScope]::Descendants,
@@ -283,7 +283,7 @@ if ($PSBoundParameters.ContainsKey('ExePath')) {
 Write-Host "[1/7] Target executable: $resolvedExe" -ForegroundColor Green
 
 # 3. Pre-seed AppData Configuration to bypass First-Launch Wizard
-$appDataDir = [System.IO.Path]::Combine($env:APPDATA, "AtemDirector")
+$appDataDir = [System.IO.Path]::Combine($env:APPDATA, "CuePilot")
 $configFile = [System.IO.Path]::Combine($appDataDir, "config.json")
 if (-not (Test-Path $appDataDir)) {
     [System.IO.Directory]::CreateDirectory($appDataDir) | Out-Null
@@ -325,10 +325,10 @@ foreach ($pName in $procsToClean) {
     }
 }
 
-# Clean up any lingering AtemDirector webview2 processes before releasing port 8080
+# Clean up any lingering CuePilot webview2 processes before releasing port 8080
 try {
     $wvProcs = @(Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue | Where-Object {
-        $_.CommandLine -like "*AtemDirector*"
+        $_.CommandLine -like "*CuePilot*"
     })
     foreach ($wvp in $wvProcs) {
         Stop-Process -Id $wvp.ProcessId -Force -ErrorAction SilentlyContinue
@@ -382,7 +382,7 @@ try {
                 (New-Object System.Windows.Automation.PropertyCondition(
                     [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)),
                 (New-Object System.Windows.Automation.PropertyCondition(
-                    [System.Windows.Automation.AutomationElement]::NameProperty, "Vidikom Atem Software Control"))
+                    [System.Windows.Automation.AutomationElement]::NameProperty, "CuePilot Atem Software Control"))
             ))
         )
         if ($mainWnd) { break }
@@ -392,7 +392,7 @@ try {
             $candidateWnd = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
                 [System.Windows.Automation.TreeScope]::Children,
                 (New-Object System.Windows.Automation.PropertyCondition(
-                    [System.Windows.Automation.AutomationElement]::NameProperty, "Vidikom Atem Software Control"))
+                    [System.Windows.Automation.AutomationElement]::NameProperty, "CuePilot Atem Software Control"))
             )
             if ($candidateWnd) {
                 $mainWnd = $candidateWnd
@@ -404,7 +404,7 @@ try {
     }
 
     if (-not $mainWnd) {
-        throw "Main window 'Vidikom Atem Software Control' failed to appear within $TimeoutSeconds seconds."
+        throw "Main window 'CuePilot Atem Software Control' failed to appear within $TimeoutSeconds seconds."
     }
     Write-Host "Main window discovered: '$($mainWnd.Current.Name)'" -ForegroundColor Green
 
@@ -424,7 +424,7 @@ try {
                     (New-Object System.Windows.Automation.PropertyCondition(
                         [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)),
                     (New-Object System.Windows.Automation.PropertyCondition(
-                        [System.Windows.Automation.AutomationElement]::NameProperty, "Vidikom Atem Software Control"))
+                        [System.Windows.Automation.AutomationElement]::NameProperty, "CuePilot Atem Software Control"))
                 ))
             )
             if ($refreshed) { $mainWnd = $refreshed }
@@ -599,7 +599,7 @@ try {
                     (New-Object System.Windows.Automation.PropertyCondition(
                         [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)),
                     (New-Object System.Windows.Automation.PropertyCondition(
-                        [System.Windows.Automation.AutomationElement]::NameProperty, "Vidikom Atem Software Control"))
+                        [System.Windows.Automation.AutomationElement]::NameProperty, "CuePilot Atem Software Control"))
                 ))
             )
             if ($ref) { $mainWnd = $ref }
@@ -645,7 +645,7 @@ try {
                         (New-Object System.Windows.Automation.PropertyCondition(
                             [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $procId)),
                         (New-Object System.Windows.Automation.PropertyCondition(
-                            [System.Windows.Automation.AutomationElement]::NameProperty, "Vidikom Atem Software Control"))
+                            [System.Windows.Automation.AutomationElement]::NameProperty, "CuePilot Atem Software Control"))
                     ))
                 )
                 if ($ref) {
@@ -829,10 +829,10 @@ try {
         }
     }
 
-    # Stage 5: Terminate all lingering AtemDirector and child webview2 processes FIRST
+    # Stage 5: Terminate all lingering CuePilot and child webview2 processes FIRST
     try {
         $wvProcs = @(Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue | Where-Object {
-            $_.CommandLine -like "*AtemDirector*" -or ($procId -and $_.ParentProcessId -eq $procId)
+            $_.CommandLine -like "*CuePilot*" -or ($procId -and $_.ParentProcessId -eq $procId)
         })
         foreach ($wvp in $wvProcs) {
             Stop-Process -Id $wvp.ProcessId -Force -ErrorAction SilentlyContinue

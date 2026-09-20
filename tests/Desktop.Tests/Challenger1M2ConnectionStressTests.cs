@@ -13,7 +13,7 @@ using Moq;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical stress testing harness authored by Challenger 1 for Milestone 2: Connection & Hardware Management.

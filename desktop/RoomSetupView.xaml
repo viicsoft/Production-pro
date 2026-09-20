@@ -38,13 +38,14 @@
                         <ComboBox x:Name="CmbNetworkMode" Height="30" Background="#222226" Foreground="#E4E4E7" BorderBrush="#3D3D44" Margin="0,0,0,10" SelectedIndex="1" SelectionChanged="CmbNetworkMode_SelectionChanged">
                             <ComboBoxItem Content="LAN Mode (Local Network Only)"/>
                             <ComboBoxItem Content="Online Mode (Cloud Relay)"/>
+                            <ComboBoxItem Content="Hybrid Mode (Local LAN + Cloud Relay)"/>
                         </ComboBox>
 
                         <!-- Relay URL field, shown only in Online mode -->
                         <StackPanel x:Name="PnlRelayUrl" Visibility="Visible" Margin="0,0,0,10">
                             <TextBlock Text="RELAY SERVER URL" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>
-                            <TextBox x:Name="TxtRelayUrl" Height="30" Background="#222226" Foreground="#E4E4E7" BorderBrush="#3D3D44" Padding="8,4" Text="wss://vidikom.app/ws/room"/>
-                            <TextBlock Text="Crew will connect remotely via vidikom.app" Foreground="#888890" FontSize="9" Margin="0,3,0,0"/>
+                            <TextBox x:Name="TxtRelayUrl" Height="30" Background="#222226" Foreground="#E4E4E7" BorderBrush="#3D3D44" Padding="8,4" Text="wss://CuePilot.app/ws/room"/>
+                            <TextBlock Text="Crew will connect remotely via CuePilot.app" Foreground="#888890" FontSize="9" Margin="0,3,0,0"/>
                         </StackPanel>
 
                         <TextBlock Text="INTERCOM CHANNELS" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>

@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 public class HelpTests
 {
@@ -79,7 +79,7 @@ public class HelpTests
             string logFile = Path.Combine(tempDir, "diagnostic.log");
             File.WriteAllLines(logFile, new[]
             {
-                "[2026-09-13 18:00:00] INFO AtemDirector started",
+                "[2026-09-13 18:00:00] INFO CuePilot started",
                 "[2026-09-13 18:00:05] INFO Connected to 127.0.0.1"
             });
 
@@ -88,7 +88,7 @@ public class HelpTests
 
             Assert.NotEmpty(logs);
             Assert.Equal(2, logs.Count);
-            Assert.Contains("AtemDirector started", logs[0]);
+            Assert.Contains("CuePilot started", logs[0]);
         }
         finally
         {

@@ -6,7 +6,7 @@ using Renci.SshNet;
 const string host = "161.97.121.251";
 const string user = "root";
 const string pass = "viicsoft";
-const string remoteAppDir = "/var/www/atemdirector-server";
+const string remoteAppDir = "/var/www/CuePilot-server";
 const string localTarFile = @"C:\Production-pro-main\Production-pro-main\server\publish_linux.tar.gz";
 
 Console.WriteLine("========================================");
@@ -28,7 +28,7 @@ if (args.Length > 0 && args[0] == "quick")
     Console.WriteLine("Quick uploading director-intercom.html...");
     using (var fs = File.OpenRead(@"C:\Production-pro-main\Production-pro-main\server\wwwroot\director-intercom.html"))
     {
-        sftp.UploadFile(fs, "/var/www/atemdirector-server/wwwroot/director-intercom.html", true);
+        sftp.UploadFile(fs, "/var/www/CuePilot-server/wwwroot/director-intercom.html", true);
     }
     Console.WriteLine("Uploaded director-intercom.html successfully!");
     sftp.Disconnect();
@@ -70,8 +70,8 @@ string Run(string label, string cmd)
 }
 
 // ==== STEP 1: Stop existing service ====
-Console.WriteLine("\n=== Step 1: Stopping existing atemdirector service ===");
-Run("stop service", "systemctl stop atemdirector || true");
+Console.WriteLine("\n=== Step 1: Stopping existing CuePilot service ===");
+Run("stop service", "systemctl stop CuePilot || true");
 
 // ==== STEP 2: Prepare remote directory & upload archive ====
 Console.WriteLine("\n=== Step 2: Preparing directory and uploading release tarball ===");
@@ -93,16 +93,16 @@ Run("set permissions", $"chmod +x {remoteAppDir}/server && chmod -R 755 {remoteA
 // ==== STEP 4: Configure systemd service ====
 Console.WriteLine("\n=== Step 4: Configuring systemd service ===");
 var serviceContent = @"[Unit]
-Description=AtemDirector Server and Cloud Relay
+Description=CuePilot Server and Cloud Relay
 After=network.target
 
 [Service]
-WorkingDirectory=/var/www/atemdirector-server
-ExecStart=/var/www/atemdirector-server/server
+WorkingDirectory=/var/www/CuePilot-server
+ExecStart=/var/www/CuePilot-server/server
 Restart=always
 RestartSec=5
 KillSignal=SIGINT
-SyslogIdentifier=atemdirector
+SyslogIdentifier=CuePilot
 User=root
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_URLS=http://0.0.0.0:5160
@@ -111,18 +111,18 @@ Environment=ASPNETCORE_URLS=http://0.0.0.0:5160
 WantedBy=multi-user.target
 ";
 
-var remoteServicePath = "/etc/systemd/system/atemdirector.service";
+var remoteServicePath = "/etc/systemd/system/CuePilot.service";
 using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(serviceContent)))
 {
     sftp.UploadFile(ms, remoteServicePath, true);
 }
-Console.WriteLine("  Uploaded atemdirector.service");
+Console.WriteLine("  Uploaded CuePilot.service");
 
 Run("daemon-reload", "systemctl daemon-reload");
-Run("enable service", "systemctl enable atemdirector");
-Run("start service", "systemctl restart atemdirector");
+Run("enable service", "systemctl enable CuePilot");
+Run("start service", "systemctl restart CuePilot");
 System.Threading.Thread.Sleep(2500);
-Run("check service status", "systemctl is-active atemdirector");
+Run("check service status", "systemctl is-active CuePilot");
 Run("check port 5160", "ss -tlnp | grep 5160 || true");
 
 // ==== STEP 5: Configure Nginx ====
@@ -130,7 +130,7 @@ Console.WriteLine("\n=== Step 5: Configuring Nginx reverse proxy ===");
 var nginxConfig = @"server {
     listen 80;
     listen [::]:80;
-    server_name vidikom.app www.vidikom.app;
+    server_name CuePilot.app www.CuePilot.app;
     client_max_body_size 250M;
 
     location / {
@@ -150,35 +150,35 @@ var nginxConfig = @"server {
 }
 ";
 
-var remoteNginxAvailable = "/etc/nginx/sites-available/vidikom.app";
+var remoteNginxAvailable = "/etc/nginx/sites-available/CuePilot.app";
 using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(nginxConfig)))
 {
     sftp.UploadFile(ms, remoteNginxAvailable, true);
 }
-Console.WriteLine("  Uploaded /etc/nginx/sites-available/vidikom.app");
+Console.WriteLine("  Uploaded /etc/nginx/sites-available/CuePilot.app");
 
-Run("symlink nginx site", "ln -sf /etc/nginx/sites-available/vidikom.app /etc/nginx/sites-enabled/vidikom.app");
+Run("symlink nginx site", "ln -sf /etc/nginx/sites-available/CuePilot.app /etc/nginx/sites-enabled/CuePilot.app");
 Run("test nginx config", "nginx -t");
 Run("reload nginx", "systemctl reload nginx");
 
 // ==== STEP 6: SSL with Certbot ====
 Console.WriteLine("\n=== Step 6: Obtaining / Renewing SSL with Certbot ===");
-Run("certbot SSL", "certbot --nginx -d vidikom.app -d www.vidikom.app --non-interactive --agree-tos -m admin@vidikom.app --redirect || true");
+Run("certbot SSL", "certbot --nginx -d CuePilot.app -d www.CuePilot.app --non-interactive --agree-tos -m admin@CuePilot.app --redirect || true");
 
 // Ensure WebSocket proxy headers remain in place after Certbot modifications
-Run("ensure ws upgrade header in nginx", @"sed -i 's/proxy_set_header Connection keep-alive;/proxy_set_header Connection ""upgrade"";/' /etc/nginx/sites-available/vidikom.app || true");
+Run("ensure ws upgrade header in nginx", @"sed -i 's/proxy_set_header Connection keep-alive;/proxy_set_header Connection ""upgrade"";/' /etc/nginx/sites-available/CuePilot.app || true");
 Run("reload nginx post-ssl", "nginx -t && systemctl reload nginx");
 
 // ==== STEP 7: Verify endpoints ====
 Console.WriteLine("\n=== Step 7: Verifying deployment endpoints ===");
 Run("local port check", "curl -s -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:5160/crew");
 Run("local token check", "curl -s 'http://127.0.0.1:5160/api/intercom/token?identity=director&name=Director'");
-Run("external https check", "curl -s -k -o /dev/null -w 'HTTPS %{http_code}\n' https://vidikom.app/crew");
-Run("external token check", "curl -s -k 'https://vidikom.app/api/intercom/token?identity=director&name=Director'");
+Run("external https check", "curl -s -k -o /dev/null -w 'HTTPS %{http_code}\n' https://CuePilot.app/crew");
+Run("external token check", "curl -s -k 'https://CuePilot.app/api/intercom/token?identity=director&name=Director'");
 
 sftp.Disconnect();
 ssh.Disconnect();
 
 Console.WriteLine("\n========================================");
-Console.WriteLine("✅ AtemDirector deployed to vidikom.app successfully!");
+Console.WriteLine("✅ CuePilot deployed to CuePilot.app successfully!");
 Console.WriteLine("========================================");

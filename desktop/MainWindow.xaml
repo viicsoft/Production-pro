@@ -1,4 +1,4 @@
-<Window x:Class="Desktop.MainWindow"
+﻿<Window x:Class="Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
@@ -12,6 +12,88 @@
 
     <Window.Resources>
         <!-- ================= COLORS ================= -->
+        <!-- SLEEK BUTTON STYLE -->
+        <Style x:Key="SleekButton" TargetType="Button">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <!-- SLEEK TOGGLE BUTTON STYLE -->
+        <Style x:Key="SleekToggleButton" TargetType="ToggleButton">
+            <Setter Property="Background" Value="#333"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#444"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- POPUP MENU BUTTON STYLE -->
+        <Style x:Key="PopupMenuButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#0078D4"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <SolidColorBrush x:Key="WindowBg" Color="#1B1B1B"/>
         <SolidColorBrush x:Key="PanelBg" Color="#282828"/>
         <SolidColorBrush x:Key="PanelBorder" Color="#3E3E3E"/>
@@ -223,7 +305,7 @@
             </Setter>
         </Style>
 
-        <!-- ================= TRANSITION STYLE BUTTON — SELECTED (AMBER) ================= -->
+        <!-- ================= TRANSITION STYLE BUTTON â€” SELECTED (AMBER) ================= -->
         <Style x:Key="TransitionStyleButtonSelected" TargetType="Button">
             <Setter Property="Margin" Value="3"/>
             <Setter Property="Padding" Value="14,8"/>
@@ -252,7 +334,7 @@
             </Setter>
         </Style>
 
-        <!-- ================= TRANSITION STYLE BUTTON — SELECTED (RED) ================= -->
+        <!-- ================= TRANSITION STYLE BUTTON â€” SELECTED (RED) ================= -->
         <Style x:Key="TransitionStyleButtonRed" TargetType="Button">
             <Setter Property="Margin" Value="3"/>
             <Setter Property="Padding" Value="14,8"/>
@@ -306,7 +388,7 @@
             </Setter>
         </Style>
 
-        <!-- ================= VIEW TAB BUTTON — SELECTED ================= -->
+        <!-- ================= VIEW TAB BUTTON â€” SELECTED ================= -->
         <Style x:Key="ViewTabButtonSelected" TargetType="Button" BasedOn="{StaticResource ViewTabButton}">
             <Setter Property="Foreground" Value="#FFA500"/>
             <Setter Property="Background" Value="#222"/>
@@ -368,42 +450,42 @@
                 <MenuItem Header="File">
                     <MenuItem Header="Save Startup State" x:Name="MenuSaveStartupState" Click="MenuSaveStartupState_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="💾" FontSize="14"/>
+                            <TextBlock Text="ðŸ’¾" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="Clear Startup State" x:Name="MenuClearStartupState" Click="MenuClearStartupState_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="🔄" FontSize="14"/>
+                            <TextBlock Text="ðŸ”„" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
                     <MenuItem Header="Save Project..." x:Name="MenuSaveProject" Click="MenuSaveProject_Click" InputGestureText="Ctrl+S">
                         <MenuItem.Icon>
-                            <TextBlock Text="📁" FontSize="14"/>
+                            <TextBlock Text="ðŸ“" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="Open Project..." x:Name="MenuOpenProject" Click="MenuOpenProject_Click" InputGestureText="Ctrl+O">
                         <MenuItem.Icon>
-                            <TextBlock Text="📂" FontSize="14"/>
+                            <TextBlock Text="ðŸ“‚" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
                     <MenuItem Header="Media Pool Stills..." x:Name="MenuMediaPoolStills" Click="MenuMediaPoolStills_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="🖼️" FontSize="14"/>
+                            <TextBlock Text="ðŸ–¼ï¸" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
                     <MenuItem Header="Exit" x:Name="MenuExit" Click="MenuExit_Click" InputGestureText="Alt+F4">
                         <MenuItem.Icon>
-                            <TextBlock Text="🚪" FontSize="14"/>
+                            <TextBlock Text="ðŸšª" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>
                 <MenuItem Header="Macros">
                     <MenuItem Header="Show Macros View" x:Name="MenuShowMacrosView" Click="MenuShowMacrosView_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="⚡" FontSize="14"/>
+                            <TextBlock Text="âš¡" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
@@ -418,7 +500,7 @@
                 <MenuItem Header="Outputs">
                     <MenuItem Header="Show Outputs View" x:Name="MenuShowOutputsView" Click="MenuShowOutputsView_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="🎛" FontSize="14"/>
+                            <TextBlock Text="ðŸŽ›" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
@@ -430,7 +512,7 @@
                 <MenuItem Header="Stream">
                     <MenuItem Header="Show Stream View" x:Name="MenuShowStreamView" Click="MenuShowStreamView_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="📡" FontSize="14"/>
+                            <TextBlock Text="ðŸ“¡" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
@@ -442,7 +524,7 @@
                 <MenuItem Header="Record">
                     <MenuItem Header="Show Record View" x:Name="MenuShowRecordView" Click="MenuShowRecordView_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="⏺" FontSize="14"/>
+                            <TextBlock Text="âº" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
@@ -467,7 +549,7 @@
                 <MenuItem Header="Connection">
                     <MenuItem Header="Show Connection View" x:Name="MenuShowConnectionView" Click="MenuShowConnectionView_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="🖧" FontSize="14"/>
+                            <TextBlock Text="ðŸ–§" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
@@ -489,23 +571,23 @@
                 <MenuItem Header="Help">
                     <MenuItem Header="About Atem Software Control..." x:Name="MenuAbout" Click="MenuAbout_Click" FontWeight="Bold">
                         <MenuItem.Icon>
-                            <TextBlock Text="ℹ️" FontSize="14"/>
+                            <TextBlock Text="â„¹ï¸" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <Separator/>
                     <MenuItem Header="Device Information..." x:Name="MenuDeviceInfo" Click="MenuDeviceInfo_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="📟" FontSize="14"/>
+                            <TextBlock Text="ðŸ“Ÿ" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="Keyboard Shortcuts..." x:Name="MenuKeyboardShortcuts" Click="MenuKeyboardShortcuts_Click" InputGestureText="F1">
                         <MenuItem.Icon>
-                            <TextBlock Text="⌨️" FontSize="14"/>
+                            <TextBlock Text="âŒ¨ï¸" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="Diagnostics..." x:Name="MenuDiagnostics" Click="MenuDiagnostics_Click">
                         <MenuItem.Icon>
-                            <TextBlock Text="🩺" FontSize="14"/>
+                            <TextBlock Text="ðŸ©º" FontSize="14"/>
                         </MenuItem.Icon>
                     </MenuItem>
                 </MenuItem>
@@ -533,9 +615,6 @@
                     <TextBlock Text="PIN:" Foreground="#888" FontSize="14" VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,5,0"/>
                     <TextBlock x:Name="TxtHeaderPin" Text="9999" Foreground="#FFA500" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,20,0"/>
 
-                    <Button x:Name="BtnShowQr" Content="QR Code" Background="#2A2A2A" Foreground="White" Padding="10,5" Margin="0,0,10,0" BorderThickness="1" BorderBrush="#555" Cursor="Hand" Click="BtnShowQr_Click"/>
-                    <Button x:Name="BtnCopyLink" Content="Copy Link" Background="#2A2A2A" Foreground="White" Padding="10,5" Margin="0,0,20,0" BorderThickness="1" BorderBrush="#555" Cursor="Hand" Click="BtnCopyLink_Click"/>
-                    
                     <TextBlock x:Name="TxtCrewCount" Text="Crew: 0" Foreground="#AAA" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0"/>
                     <TextBlock x:Name="TxtNetworkMode" Text="" Foreground="#4CAF50" FontSize="12" VerticalAlignment="Center" Margin="0,0,20,0" FontWeight="Bold"/>
 
@@ -550,11 +629,27 @@
             </Grid>
             
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20,0">
-                <Button x:Name="BtnRegenPin" Content="Regen PIN" Visibility="Collapsed" Background="#0078D4" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,10,0" FontWeight="Bold" Click="BtnRegenPin_Click" Cursor="Hand"/>
-                <Button x:Name="BtnEndRoom" Content="End Room" Visibility="Collapsed" Background="#D32F2F" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,20,0" FontWeight="Bold" Click="BtnEndRoom_Click" Cursor="Hand"/>
-                <Button x:Name="BtnToggleMicMute" Content="🎙️ MIC: LIVE" Visibility="Collapsed" Background="#2E7D32" Foreground="White" BorderThickness="0" Padding="10,5" Margin="0,0,10,0" FontWeight="Bold" Click="BtnToggleMicMute_Click" Cursor="Hand" ToolTip="Mute or Unmute Director Microphone"/>
-                <Button x:Name="BtnToggleIntercom" Content="🎙️ INTERCOM: OFF" Background="#333" Foreground="#AAA" BorderThickness="0" Padding="10,5" Margin="0,0,20,0" FontWeight="Bold" Click="BtnToggleIntercom_Click" Cursor="Hand" ToolTip="Toggle Director Voice Intercom"/>
-                <TextBlock Text="Viicsoft design" Foreground="White" FontSize="14" FontFamily="Segoe UI Semilight" VerticalAlignment="Center"/>
+                <Grid Margin="0,0,15,0">
+                    <ToggleButton x:Name="BtnRoomOptionsMenu" Content="Room Options" Style="{StaticResource SleekToggleButton}" Visibility="Collapsed" />
+                    <Popup IsOpen="{Binding IsChecked, ElementName=BtnRoomOptionsMenu}" StaysOpen="False" PlacementTarget="{Binding ElementName=BtnRoomOptionsMenu}" Placement="Bottom" VerticalOffset="5" AllowsTransparency="True">
+                        <Border Background="#2B2B2B" BorderBrush="#444" BorderThickness="1" CornerRadius="4" Padding="0,5" MinWidth="150">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="10" Opacity="0.5" ShadowDepth="3" Direction="270" Color="Black"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <Button x:Name="BtnShowQr" Content="Show QR Code" Click="BtnShowQr_Click" Style="{StaticResource PopupMenuButton}"/>
+                                <Button x:Name="BtnCopyLink" Content="Copy Link" Click="BtnCopyLink_Click" Style="{StaticResource PopupMenuButton}"/>
+                                <Border Height="1" Background="#444" Margin="0,5"/>
+                                <Button x:Name="BtnToggleMicMute" Content="ðŸŽ™ï¸  MIC: LIVE" Background="#2E7D32" Foreground="White" Click="BtnToggleMicMute_Click" ToolTip="Mute or Unmute Director Microphone" Style="{StaticResource PopupMenuButton}"/>
+                                <Button x:Name="BtnToggleIntercom" Content="ðŸŽ™ï¸  INTERCOM: OFF" Background="#333" Foreground="#AAA" Click="BtnToggleIntercom_Click" ToolTip="Toggle Director Voice Intercom" Style="{StaticResource PopupMenuButton}"/>
+                                <Border Height="1" Background="#444" Margin="0,5"/>
+                                <Button x:Name="BtnRegenPin" Content="Regen PIN" Click="BtnRegenPin_Click" Foreground="#4DA8DA" Style="{StaticResource PopupMenuButton}"/>
+                                <Button x:Name="BtnEndRoom" Content="End Room" Click="BtnEndRoom_Click" Foreground="#FF5555" Style="{StaticResource PopupMenuButton}"/>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+                </Grid>
+                <TextBlock Text="Vidikom" Foreground="White" FontSize="14" FontFamily="Segoe UI Semilight" VerticalAlignment="Center"/>
                 <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                     <Border Width="5" Height="5" Background="#FFA500" CornerRadius="3" Margin="0,1"/>
                     <Border Width="5" Height="5" Background="#FFA500" CornerRadius="3" Margin="0,1"/>
@@ -772,7 +867,7 @@
                     <!-- Voice Control Section -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <ToggleButton x:Name="BtnVoiceControl" 
-                                      Content="🎤 VOICE CONTROL" 
+                                      Content="ðŸŽ¤ VOICE CONTROL" 
                                       Style="{StaticResource VoiceTabToggleButton}" 
                                       Click="VoiceControlToggle_Click" 
                                       Margin="2,0"/>
@@ -842,7 +937,7 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Header bar with Title, Subtitle, and Top-Right Close '✕' Button -->
+                    <!-- Header bar with Title, Subtitle, and Top-Right Close 'âœ•' Button -->
                     <Grid Grid.Row="0" Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -863,7 +958,7 @@
 
                         <!-- Top-Right Close Button -->
                         <Button Grid.Column="1" 
-                                Content="✕" 
+                                Content="âœ•" 
                                 Click="EditDone_Click"
                                 Width="30" Height="30"
                                 FontSize="14"
@@ -914,7 +1009,7 @@
 
                     <!-- Done & Cancel Button Bar -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
-                        <Button Content="✓ Save &amp; Done" 
+                        <Button Content="âœ“ Save &amp; Done" 
                                 Click="EditDone_Click"
                                 Padding="28,8"
                                 FontSize="13"
@@ -1043,5 +1138,6 @@
 
     </Grid>
 </Window>
+
 
 

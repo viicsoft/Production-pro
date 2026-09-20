@@ -13,8 +13,20 @@ namespace desktop;
 /// </summary>
 public partial class App : Application
 {
+    private static System.Threading.Mutex? _singleInstanceMutex;
+
     protected override void OnExit(ExitEventArgs e)
     {
+        try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
+        try { _singleInstanceMutex?.Dispose(); } catch { }
+
+        try
+        {
+            var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+            System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [App] OnExit called! ExitCode={e.ApplicationExitCode}\nStackTrace: {Environment.StackTrace}\n");
+        }
+        catch { }
+
         try
         {
             BackgroundServiceManager.StopServices();
@@ -34,6 +46,20 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        bool isNewInstance;
+        _singleInstanceMutex = new System.Threading.Mutex(true, "Global\\CuePilot-SingleInstance-Mutex", out isNewInstance);
+        if (!isNewInstance)
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [App] Second instance launch attempted while CuePilot is already running. Exiting cleanly.\n");
+            }
+            catch { }
+            Shutdown(0);
+            return;
+        }
+
         try
         {
             System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
@@ -49,20 +75,40 @@ public partial class App : Application
         {
             var ex = args.ExceptionObject as Exception;
             System.Diagnostics.Debug.WriteLine($"Unhandled Error: {ex?.Message}\n{ex?.StackTrace}");
-            try { System.IO.File.AppendAllText("crash.log", $"[AppDomain] {ex?.ToString()}\n"); } catch { }
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"crash-{DateTime.Now:yyyy-MM-dd}.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [AppDomain] {ex?.ToString()}\n");
+            }
+            catch { }
         };
 
         DispatcherUnhandledException += (s, args) =>
         {
             System.Diagnostics.Debug.WriteLine($"Unhandled UI Error: {args.Exception?.Message}\n{args.Exception?.StackTrace}");
-            try { System.IO.File.AppendAllText("crash.log", $"[Dispatcher] {args.Exception?.ToString()}\n"); } catch { }
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"crash-{DateTime.Now:yyyy-MM-dd}.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Dispatcher] {args.Exception?.ToString()}\n");
+            }
+            catch { }
             args.Handled = true;
         };
 
-        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        TaskScheduler.UnobservedTaskException += (s, args) =>
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"crash-{DateTime.Now:yyyy-MM-dd}.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [TaskScheduler] {args.Exception?.ToString()}\n");
+            }
+            catch { }
+        };
 
-        // Start background update check
-        Task.Run(CheckForUpdatesAsync);
+        ShutdownMode = ShutdownMode.OnLastWindowClose;
+
+        // Background update check disabled in local/active sessions to prevent unexpected process exit
+        // Task.Run(CheckForUpdatesAsync);
 
         try
         {
@@ -91,7 +137,7 @@ public partial class App : Application
     {
         try
         {
-            var mgr = new UpdateManager(new GithubSource("https://github.com/USER/vidikom", null, false));
+            var mgr = new UpdateManager(new GithubSource("https://github.com/USER/CuePilot", null, false));
             var newVersion = await mgr.CheckForUpdatesAsync();
             if (newVersion != null)
             {

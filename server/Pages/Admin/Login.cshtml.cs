@@ -1,13 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using AtemDirector.Server.Data;
+using CuePilot.Server.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 
-namespace AtemDirector.Server.Pages.Admin
+namespace CuePilot.Server.Pages.Admin
 {
     [IgnoreAntiforgeryToken]
     public class LoginModel : PageModel

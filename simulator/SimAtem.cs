@@ -1190,5 +1190,40 @@ public sealed class SimAtem : IAtemSwitch
         }
     }
 
+    
+    public event Action<long, double, double>? AudioLevelUpdated;
+    public event Action<long, double>? AudioVolumeChanged;
+    public event Action<long, bool, bool>? AudioStateChanged;
+    public event Action<long, bool?, Core.EqBandUpdate?>? EqStateChanged;
+    public event Action<long, Core.DynamicsUpdate>? DynamicsStateChanged;
+
+    public Task<Core.EqState?> GetEqStateAsync(long inputId) => Task.FromResult<Core.EqState?>(null);
+    public Task SetEqEnabledAsync(long inputId, bool enabled) { EqStateChanged?.Invoke(inputId, enabled, null); return Task.CompletedTask; }
+    public Task SetEqBandEnabledAsync(long inputId, int bandIndex, bool enabled) { EqStateChanged?.Invoke(inputId, null, new Core.EqBandUpdate(bandIndex, Enabled: enabled)); return Task.CompletedTask; }
+    public Task SetEqBandShapeAsync(long inputId, int bandIndex, int shape) { EqStateChanged?.Invoke(inputId, null, new Core.EqBandUpdate(bandIndex, Shape: shape)); return Task.CompletedTask; }
+    public Task SetEqBandFrequencyAsync(long inputId, int bandIndex, double frequency) { EqStateChanged?.Invoke(inputId, null, new Core.EqBandUpdate(bandIndex, Frequency: frequency)); return Task.CompletedTask; }
+    public Task SetEqBandGainAsync(long inputId, int bandIndex, double gain) { EqStateChanged?.Invoke(inputId, null, new Core.EqBandUpdate(bandIndex, Gain: gain)); return Task.CompletedTask; }
+    public Task SetEqBandQFactorAsync(long inputId, int bandIndex, double qFactor) { EqStateChanged?.Invoke(inputId, null, new Core.EqBandUpdate(bandIndex, QFactor: qFactor)); return Task.CompletedTask; }
+
+    public Task SetMakeupGainAsync(long inputId, double makeupGain) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(MakeupGain: makeupGain)); return Task.CompletedTask; }
+    public Task SetCompressorEnabledAsync(long inputId, bool enabled) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Compressor: new Core.CompressorUpdate(Enabled: enabled))); return Task.CompletedTask; }
+    public Task SetCompressorThresholdAsync(long inputId, double threshold) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Compressor: new Core.CompressorUpdate(Threshold: threshold))); return Task.CompletedTask; }
+    public Task SetCompressorRatioAsync(long inputId, double ratio) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Compressor: new Core.CompressorUpdate(Ratio: ratio))); return Task.CompletedTask; }
+    public Task SetCompressorAttackAsync(long inputId, double attack) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Compressor: new Core.CompressorUpdate(Attack: attack))); return Task.CompletedTask; }
+    public Task SetCompressorHoldAsync(long inputId, double hold) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Compressor: new Core.CompressorUpdate(Hold: hold))); return Task.CompletedTask; }
+    public Task SetCompressorReleaseAsync(long inputId, double release) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Compressor: new Core.CompressorUpdate(Release: release))); return Task.CompletedTask; }
+    public Task SetExpanderEnabledAsync(long inputId, bool enabled) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(Enabled: enabled))); return Task.CompletedTask; }
+    public Task SetExpanderGateModeAsync(long inputId, int gateMode) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(GateMode: gateMode))); return Task.CompletedTask; }
+    public Task SetExpanderThresholdAsync(long inputId, double threshold) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(Threshold: threshold))); return Task.CompletedTask; }
+    public Task SetExpanderRangeAsync(long inputId, double range) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(Range: range))); return Task.CompletedTask; }
+    public Task SetExpanderRatioAsync(long inputId, double ratio) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(Ratio: ratio))); return Task.CompletedTask; }
+    public Task SetExpanderAttackAsync(long inputId, double attack) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(Attack: attack))); return Task.CompletedTask; }
+    public Task SetExpanderHoldAsync(long inputId, double hold) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(Hold: hold))); return Task.CompletedTask; }
+    public Task SetExpanderReleaseAsync(long inputId, double release) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Expander: new Core.ExpanderUpdate(Release: release))); return Task.CompletedTask; }
+    public Task SetLimiterEnabledAsync(long inputId, bool enabled) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Enabled: enabled))); return Task.CompletedTask; }
+    public Task SetLimiterThresholdAsync(long inputId, double threshold) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Threshold: threshold))); return Task.CompletedTask; }
+    public Task SetLimiterAttackAsync(long inputId, double attack) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Attack: attack))); return Task.CompletedTask; }
+    public Task SetLimiterHoldAsync(long inputId, double hold) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Hold: hold))); return Task.CompletedTask; }
+    public Task SetLimiterReleaseAsync(long inputId, double release) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Release: release))); return Task.CompletedTask; }
     #endregion
 }

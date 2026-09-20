@@ -2,7 +2,7 @@
 # Production-pro
 atem control
 =======
-# AtemDirector - Professional ATEM Switcher Control
+# CuePilot - Professional ATEM Switcher Control
 
 A comprehensive desktop and web application for controlling Blackmagic ATEM video switchers with integrated tally system and voice communication.
 
@@ -25,7 +25,7 @@ A comprehensive desktop and web application for controlling Blackmagic ATEM vide
 
 ## Installation
 
-1. Download `AtemDirector-Setup-1.0.0.exe`
+1. Download `CuePilot-Setup-1.0.0.exe`
 2. Run the installer
 3. Follow the installation wizard
 4. Launch from Start Menu or Desktop shortcut
@@ -36,7 +36,7 @@ A comprehensive desktop and web application for controlling Blackmagic ATEM vide
 
 ### For Directors
 
-1. Launch **AtemDirector** from Start Menu
+1. Launch **CuePilot** from Start Menu
 2. Select your network IP address from the dropdown
 3. The desktop application will open automatically
 4. Select your ATEM mixer model (Mini Pro ISO, Mini Extreme, or Constellation HD)
@@ -67,7 +67,7 @@ See [INSTALLER-GUIDE.md](INSTALLER-GUIDE.md) for detailed build instructions.
 ## Project Structure
 
 ```
-AtemDirector/
+CuePilot/
 ├── desktop/          - WPF desktop application (director control)
 ├── server/           - ASP.NET Core web server (camera interface)
 ├── core/             - Shared business logic
@@ -103,11 +103,11 @@ The desktop app connects to ATEM hardware at `192.168.10.240` by default. This c
 
 ## License
 
-Proprietary - Vidikom
+Proprietary - CuePilot
 
 ## Support
 
-For support, contact: admin@vidikom.com
+For support, contact: admin@CuePilot.com
 
 ## Version History
 
@@ -117,4 +117,4 @@ For support, contact: admin@vidikom.com
 - Tally system with renamed camera support
 - WebRTC voice communication
 - Self-contained installer (no .NET installation required)
->>>>>>> fa1d267 (Initial commit of AtemDirector)
+>>>>>>> fa1d267 (Initial commit of CuePilot)

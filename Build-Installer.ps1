@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  AtemDirector Installer Builder" -ForegroundColor Cyan
+Write-Host "  CuePilot Installer Builder" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -43,7 +43,7 @@ if (-not (Test-Path ".\installer-output")) {
 Write-Host "Building installer..." -ForegroundColor Yellow
 Write-Host ""
 
-& $innoSetupPath ".\installer\AtemDirector.iss"
+& $innoSetupPath ".\installer\CuePilot.iss"
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
@@ -52,7 +52,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
     
-    $installerFile = Get-ChildItem ".\installer-output\AtemDirector-Setup-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $installerFile = Get-ChildItem ".\installer-output\CuePilot-Setup-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($installerFile) {
         $fileSize = [math]::Round($installerFile.Length / 1MB, 2)
         Write-Host "Installer: $($installerFile.Name)" -ForegroundColor Cyan

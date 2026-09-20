@@ -11,7 +11,8 @@ namespace Desktop
     public enum NetworkMode
     {
         LAN,
-        Online
+        Online,
+        Hybrid
     }
 
     public class RoomState
@@ -34,7 +35,7 @@ namespace Desktop
 
         private static string StateFilePath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AtemDirector",
+            "CuePilot",
             "active_room.json");
 
         public static void LoadState()
@@ -46,6 +47,12 @@ namespace Desktop
                     var json = File.ReadAllText(StateFilePath);
                     _activeRoom = JsonSerializer.Deserialize<RoomState>(json);
                     
+                    if (_activeRoom != null && string.IsNullOrEmpty(_activeRoom.ControlCode))
+                    {
+                        _activeRoom.ControlCode = new Random().Next(1000, 9999).ToString();
+                        SaveState();
+                    }
+
                     // Optional: Check if room is too old (e.g. > 24 hours) and expire it automatically
                     if (_activeRoom != null && (DateTime.UtcNow - _activeRoom.CreatedAt).TotalHours > 24)
                     {
@@ -69,7 +76,7 @@ namespace Desktop
             }
         }
 
-        public static void CreateRoom(string productionName, string directorName, NetworkMode networkMode = NetworkMode.Online, string relayUrl = "wss://vidikom.app/ws/room", string? forcedRoomId = null, string? forcedPin = null)
+        public static void CreateRoom(string productionName, string directorName, NetworkMode networkMode = NetworkMode.Online, string relayUrl = "wss://CuePilot.app/ws/room", string? forcedRoomId = null, string? forcedPin = null)
         {
             var rnd = new Random();
             var roomId = forcedRoomId ?? rnd.Next(100000, 999999).ToString();

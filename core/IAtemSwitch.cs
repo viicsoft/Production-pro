@@ -54,9 +54,44 @@ public interface IAtemSwitch
     Task SetSuperSourceArtAsync(long fillInput, long keyInput, bool artOption);
 
     // Audio
+    event Action<long, double, double>? AudioLevelUpdated;
+    event Action<long, double>? AudioVolumeChanged;
+    event Action<long, bool, bool>? AudioStateChanged;
+    event Action<long, bool?, Core.EqBandUpdate?>? EqStateChanged;
+    event Action<long, Core.DynamicsUpdate>? DynamicsStateChanged;
+
     Task SetAudioVolumeAsync(long inputId, double volume);
     Task SetAudioAfvAsync(long inputId, bool afv);
     Task SetAudioOnAsync(long inputId, bool on);
+
+    Task<EqState?> GetEqStateAsync(long inputId);
+    Task SetEqEnabledAsync(long inputId, bool enabled);
+    Task SetEqBandEnabledAsync(long inputId, int bandIndex, bool enabled);
+    Task SetEqBandShapeAsync(long inputId, int bandIndex, int shape);
+    Task SetEqBandFrequencyAsync(long inputId, int bandIndex, double frequency);
+    Task SetEqBandGainAsync(long inputId, int bandIndex, double gain);
+    Task SetEqBandQFactorAsync(long inputId, int bandIndex, double qFactor);
+
+    Task SetMakeupGainAsync(long inputId, double makeupGain);
+    Task SetCompressorEnabledAsync(long inputId, bool enabled);
+    Task SetCompressorThresholdAsync(long inputId, double threshold);
+    Task SetCompressorRatioAsync(long inputId, double ratio);
+    Task SetCompressorAttackAsync(long inputId, double attack);
+    Task SetCompressorHoldAsync(long inputId, double hold);
+    Task SetCompressorReleaseAsync(long inputId, double release);
+    Task SetExpanderEnabledAsync(long inputId, bool enabled);
+    Task SetExpanderGateModeAsync(long inputId, int gateMode);
+    Task SetExpanderThresholdAsync(long inputId, double threshold);
+    Task SetExpanderRangeAsync(long inputId, double range);
+    Task SetExpanderRatioAsync(long inputId, double ratio);
+    Task SetExpanderAttackAsync(long inputId, double attack);
+    Task SetExpanderHoldAsync(long inputId, double hold);
+    Task SetExpanderReleaseAsync(long inputId, double release);
+    Task SetLimiterEnabledAsync(long inputId, bool enabled);
+    Task SetLimiterThresholdAsync(long inputId, double threshold);
+    Task SetLimiterAttackAsync(long inputId, double attack);
+    Task SetLimiterHoldAsync(long inputId, double hold);
+    Task SetLimiterReleaseAsync(long inputId, double release);
 
     // Camera Control
     Task SetCameraIrisAsync(long cameraId, double iris);
@@ -242,3 +277,4 @@ public interface IAtemSwitch
 
     #endregion
 }
+

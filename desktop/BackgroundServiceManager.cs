@@ -13,7 +13,7 @@ public static class BackgroundServiceManager
     {
         try
         {
-            var baseDir = AppContext.BaseDirectory; // e.g. C:\Program Files\AtemDirector\desktop\
+            var baseDir = AppContext.BaseDirectory; // e.g. C:\Program Files\CuePilot\desktop\
             
             // Look for server and caddy in either parent directory (installed layout) or subdirectory
             var serverDir = Path.GetFullPath(Path.Combine(baseDir, "..", "server"));

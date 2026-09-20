@@ -32,23 +32,23 @@ try {
     }
     Write-Host "  [OK] Exclusive lock confirmed: desktop.dll is locked with FileShare.None."
 
-    Write-Host "`n[Step 2] Building AtemDirector.Tests from scratch while desktop binaries are locked..."
-    # Clean AtemDirector.Tests output to force full rebuild
-    Remove-Item -Path "tests\AtemDirector.Tests\bin\$Configuration" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "tests\AtemDirector.Tests\obj\$Configuration" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "`n[Step 2] Building CuePilot.Tests from scratch while desktop binaries are locked..."
+    # Clean CuePilot.Tests output to force full rebuild
+    Remove-Item -Path "tests\CuePilot.Tests\bin\$Configuration" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "tests\CuePilot.Tests\obj\$Configuration" -Recurse -Force -ErrorAction SilentlyContinue
 
-    dotnet build tests\AtemDirector.Tests\AtemDirector.Tests.csproj -c $Configuration --no-incremental
+    dotnet build tests\CuePilot.Tests\CuePilot.Tests.csproj -c $Configuration --no-incremental
     if ($LASTEXITCODE -ne 0) {
-        throw "AtemDirector.Tests build failed with exit code $LASTEXITCODE while desktop binaries were locked!"
+        throw "CuePilot.Tests build failed with exit code $LASTEXITCODE while desktop binaries were locked!"
     }
-    Write-Host "  [PASS] AtemDirector.Tests compiled cleanly (ExitCode=0) despite desktop binaries being locked."
+    Write-Host "  [PASS] CuePilot.Tests compiled cleanly (ExitCode=0) despite desktop binaries being locked."
 
-    Write-Host "`n[Step 3] Running AtemDirector.Tests while desktop binaries are locked..."
-    dotnet test tests\AtemDirector.Tests\AtemDirector.Tests.csproj -c $Configuration --no-build
+    Write-Host "`n[Step 3] Running CuePilot.Tests while desktop binaries are locked..."
+    dotnet test tests\CuePilot.Tests\CuePilot.Tests.csproj -c $Configuration --no-build
     if ($LASTEXITCODE -ne 0) {
-        throw "AtemDirector.Tests test run failed with exit code $LASTEXITCODE while desktop binaries were locked!"
+        throw "CuePilot.Tests test run failed with exit code $LASTEXITCODE while desktop binaries were locked!"
     }
-    Write-Host "  [PASS] AtemDirector.Tests passed 100% of tests (ExitCode=0) while desktop binaries were locked."
+    Write-Host "  [PASS] CuePilot.Tests passed 100% of tests (ExitCode=0) while desktop binaries were locked."
 
     Write-Host "`n[Step 4] Negative Control: Verify Desktop.Tests fails when desktop.dll is locked..."
     # Clean Desktop.Tests output to force copy of desktop.dll
@@ -73,8 +73,8 @@ finally {
 }
 
 # Restore Desktop.Tests after negative control
-Write-Host "`n[POST-VERIFICATION] Rebuilding full solution AtemDirector.sln to ensure all outputs are valid..."
-dotnet build AtemDirector.sln -c $Configuration
+Write-Host "`n[POST-VERIFICATION] Rebuilding full solution CuePilot.sln to ensure all outputs are valid..."
+dotnet build CuePilot.sln -c $Configuration
 if ($LASTEXITCODE -ne 0) {
     throw "Solution rebuild failed with exit code $LASTEXITCODE!"
 }

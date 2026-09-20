@@ -35,7 +35,7 @@ if (-not $tlbPath) {
 }
 Write-Host "Found Type Library at: $($tlbPath.FullName)" -ForegroundColor Green
 
-$outputDir = "C:\worker\AtemDirector\desktop\lib"
+$outputDir = "C:\worker\CuePilot\desktop\lib"
 $outputFile = Join-Path $outputDir "Interop.BMDSwitcherAPI.MiniExtreme.dll"
 
 Write-Host "Generating DLL..." -ForegroundColor Cyan

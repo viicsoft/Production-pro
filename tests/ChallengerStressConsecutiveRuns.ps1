@@ -18,7 +18,7 @@ for ($i = 1; $i -le 5; $i++) {
     
     # Audit post-run state
     $desktopCount = @(Get-Process -Name "desktop" -ErrorAction SilentlyContinue).Count
-    $wvCount = @(Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*AtemDirector*' }).Count
+    $wvCount = @(Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*CuePilot*' }).Count
     
     # Probe Port 8080 immediate bindability
     $port8080Free = $false

@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using Core;
 using Microsoft.Extensions.Hosting;
 
-namespace AtemDirector.Server
+namespace CuePilot.Server
 {
     public class AiDirectorService : BackgroundService
     {

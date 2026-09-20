@@ -1,0 +1,1 @@
+using System; using System.Reflection; class Program { static void Main() { var asm = Assembly.LoadFrom(@"C:\Production-pro-main\Production-pro-main\desktop\Interop.BMDSwitcherAPI.dll"); foreach(var t in asm.GetTypes()) { if (t.Name.Contains("FairlightAudio")) Console.WriteLine(t.Name); } } }

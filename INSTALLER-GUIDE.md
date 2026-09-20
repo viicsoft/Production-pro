@@ -1,4 +1,4 @@
-# AtemDirector Installer Creation Guide
+# CuePilot Installer Creation Guide
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@
 
 ### Step 1: Build Self-Contained Applications
 
-Run this command in PowerShell from the `AtemDirector` folder:
+Run this command in PowerShell from the `CuePilot` folder:
 
 ```powershell
 .\Build-Release.ps1
@@ -62,21 +62,21 @@ Run this command:
 **What it does:**
 - Checks if Inno Setup is installed
 - Verifies `.\publish\` folder exists
-- Compiles `installer\AtemDirector.iss`
-- Creates `AtemDirector-Setup-1.0.0.exe` in `.\installer-output\`
+- Compiles `installer\CuePilot.iss`
+- Creates `CuePilot-Setup-1.0.0.exe` in `.\installer-output\`
 
 **Expected output:**
 ```
-Installer: AtemDirector-Setup-1.0.0.exe
+Installer: CuePilot-Setup-1.0.0.exe
 Size: ~280 MB
-Location: C:\worker\AtemDirector\installer-output\AtemDirector-Setup-1.0.0.exe
+Location: C:\worker\CuePilot\installer-output\CuePilot-Setup-1.0.0.exe
 ```
 
 ---
 
 ## Installation Process (User Experience)
 
-1. **User downloads:** `AtemDirector-Setup-1.0.0.exe`
+1. **User downloads:** `CuePilot-Setup-1.0.0.exe`
 
 2. **User runs installer:**
    - Windows SmartScreen warning (click "More Info" → "Run Anyway")
@@ -84,12 +84,12 @@ Location: C:\worker\AtemDirector\installer-output\AtemDirector-Setup-1.0.0.exe
    - User clicks "Next" → "Install"
 
 3. **Installer actions:**
-   - Extracts to: `C:\Program Files\AtemDirector\`
+   - Extracts to: `C:\Program Files\CuePilot\`
    - Creates Start Menu shortcut
    - Optionally creates Desktop shortcut
    - No .NET installation needed!
 
-4. **User launches AtemDirector:**
+4. **User launches CuePilot:**
    - Double-click shortcut
    - Launcher detects IP addresses
    - If multiple IPs, shows selection menu
@@ -103,26 +103,26 @@ Location: C:\worker\AtemDirector\installer-output\AtemDirector-Setup-1.0.0.exe
 ### In Project Folder
 
 ```
-AtemDirector/
+CuePilot/
 ├── Build-Release.ps1          ← Build script
 ├── Build-Installer.ps1        ← Installer build script
 ├── installer/
-│   ├── AtemDirector.iss       ← Inno Setup script
-│   ├── AtemDirector.bat       ← Launcher batch file
+│   ├── CuePilot.iss       ← Inno Setup script
+│   ├── CuePilot.bat       ← Launcher batch file
 │   └── icon.ico               ← App icon (you need to add this)
 ├── publish/                   ← Created by Build-Release.ps1
 │   ├── caddy/
 │   ├── server/
 │   └── desktop/
 └── installer-output/          ← Created by Build-Installer.ps1
-    └── AtemDirector-Setup-1.0.0.exe
+    └── CuePilot-Setup-1.0.0.exe
 ```
 
 ### On User's Machine (After Installation)
 
 ```
-C:\Program Files\AtemDirector\
-├── AtemDirector.bat           ← Launcher
+C:\Program Files\CuePilot\
+├── CuePilot.bat           ← Launcher
 ├── config.json                ← Stores last used IP
 ├── caddy\
 │   ├── caddy.exe
@@ -130,7 +130,7 @@ C:\Program Files\AtemDirector\
 │   └── Caddyfile              ← Created on first run
 ├── server\
 │   ├── server.exe
-│   ├── atemdirector.db        ← Created on first run
+│   ├── CuePilot.db        ← Created on first run
 │   └── [all dependencies]
 └── desktop\
     ├── desktop.exe
@@ -144,14 +144,14 @@ C:\Program Files\AtemDirector\
 
 ### Change App Version
 
-Edit `installer\AtemDirector.iss`:
+Edit `installer\CuePilot.iss`:
 ```ini
 #define MyAppVersion "1.0.0"  ← Change this
 ```
 
 ### Change Install Location
 
-Edit `installer\AtemDirector.iss`:
+Edit `installer\CuePilot.iss`:
 ```ini
 DefaultDirName={autopf}\{#MyAppName}  ← Change to custom path
 ```
@@ -188,7 +188,7 @@ DefaultDirName={autopf}\{#MyAppName}  ← Change to custom path
 
 ## Distribution
 
-Once built, distribute `AtemDirector-Setup-1.0.0.exe`:
+Once built, distribute `CuePilot-Setup-1.0.0.exe`:
 
 **Via:**
 - USB drive

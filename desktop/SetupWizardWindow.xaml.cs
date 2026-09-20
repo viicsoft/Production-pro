@@ -48,7 +48,7 @@ namespace Desktop
                 }
                 else
                 {
-                    TxtStepDescription.Text = "Blackmagic drivers (ATEM Switchers) are missing or not registered.\n\nVidikom requires these drivers to communicate with your ATEM switcher.";
+                    TxtStepDescription.Text = "Blackmagic drivers (ATEM Switchers) are missing or not registered.\n\nCuePilot requires these drivers to communicate with your ATEM switcher.";
                     TxtDetails.Text = "You must download and install 'ATEM Switchers Update' from the Blackmagic Design website, then restart this application.";
                     TxtStepTitle.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x98, 0x00)); // Orange
                     BtnAction.Content = "Download Drivers";

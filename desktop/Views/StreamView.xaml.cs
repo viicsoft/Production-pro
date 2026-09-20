@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -100,7 +100,7 @@ namespace Desktop.Views
 
                     TxtTelemetryService.Text = string.IsNullOrWhiteSpace(settings.ServiceName) ? "Custom" : settings.ServiceName;
                     TxtTelemetryUrl.Text = settings.Url;
-                    TxtTelemetryBitrateRange.Text = $"{settings.LowBitrate / 1000:N0} – {settings.HighBitrate / 1000:N0} kbps";
+                    TxtTelemetryBitrateRange.Text = $"{settings.LowBitrate / 1000:N0} â€“ {settings.HighBitrate / 1000:N0} kbps";
 
                     SelectPresetMatchingUrl(settings.Url);
                 }
@@ -169,7 +169,7 @@ namespace Desktop.Views
                     TxtHealthStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
 
                     // Status Banner
-                    TxtStatusBannerIcon.Text = "🔴";
+                    TxtStatusBannerIcon.Text = "ðŸ”´";
                     TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
                     TxtStatusHeadline.Text = "Live Broadcast Active";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
@@ -196,7 +196,7 @@ namespace Desktop.Views
                     TxtStatState.Text = "CONNECTING";
                     TxtStatState.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
 
-                    TxtStatusBannerIcon.Text = "⏳";
+                    TxtStatusBannerIcon.Text = "â³";
                     TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                     TxtStatusHeadline.Text = "Connecting to RTMP Endpoint...";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
@@ -241,7 +241,7 @@ namespace Desktop.Views
                     TxtHealthStatus.Text = "STANDBY";
                     TxtHealthStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
 
-                    TxtStatusBannerIcon.Text = "○";
+                    TxtStatusBannerIcon.Text = "â—‹";
                     TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
                     TxtStatusHeadline.Text = "Stream Engine Ready";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xA1, 0xA1, 0xAA));
@@ -257,7 +257,7 @@ namespace Desktop.Views
             {
                 TxtStatusHeadline.Text = $"Stream Error: {status.Error}";
                 TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
-                TxtStatusBannerIcon.Text = "⚠️";
+                TxtStatusBannerIcon.Text = "âš ï¸";
                 TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
             }
         }
@@ -280,9 +280,11 @@ namespace Desktop.Views
 
         #region Event Handlers
 
-        private void CmbServicePreset_SelectionChanged(object sender, SelectionChangedEventArgs e)
+                                private void CmbServicePreset_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (CmbServicePreset.SelectedItem is not ComboBoxItem item) return;
+            if (CmbServicePreset == null || CmbServicePreset.SelectedItem is not ComboBoxItem item) return;
+            if (TxtServerUrl == null || TxtLowBitrate == null || TxtHighBitrate == null || TxtTelemetryService == null || TxtTelemetryUrl == null || TxtTelemetryBitrateRange == null) return;
+            
             string preset = item.Content?.ToString() ?? "";
 
             var (url, low, high) = GetPresetDefaults(preset);
@@ -293,7 +295,7 @@ namespace Desktop.Views
                 TxtHighBitrate.Text = high.ToString();
                 TxtTelemetryService.Text = preset;
                 TxtTelemetryUrl.Text = url;
-                TxtTelemetryBitrateRange.Text = $"{low / 1000:N0} – {high / 1000:N0} kbps";
+                TxtTelemetryBitrateRange.Text = string.Format("{0:N0} â€“ {1:N0} kbps", low / 1000, high / 1000);
             }
             else
             {
@@ -309,14 +311,14 @@ namespace Desktop.Views
                 TxtStreamKey.Text = PwdStreamKey.Password;
                 PwdStreamKey.Visibility = Visibility.Collapsed;
                 TxtStreamKey.Visibility = Visibility.Visible;
-                BtnToggleKeyReveal.Content = "🔒";
+                BtnToggleKeyReveal.Content = "ðŸ”’";
             }
             else
             {
                 PwdStreamKey.Password = TxtStreamKey.Text;
                 TxtStreamKey.Visibility = Visibility.Collapsed;
                 PwdStreamKey.Visibility = Visibility.Visible;
-                BtnToggleKeyReveal.Content = "👁";
+                BtnToggleKeyReveal.Content = "ðŸ‘";
             }
         }
 
@@ -371,7 +373,7 @@ namespace Desktop.Views
 
                 TxtTelemetryService.Text = serviceName;
                 TxtTelemetryUrl.Text = url;
-                TxtTelemetryBitrateRange.Text = $"{lowBitrate / 1000:N0} – {highBitrate / 1000:N0} kbps";
+                TxtTelemetryBitrateRange.Text = $"{lowBitrate / 1000:N0} â€“ {highBitrate / 1000:N0} kbps";
 
                 MainWindow.Instance?.ShowNotification("Stream settings saved successfully.", isError: false);
             }
@@ -466,3 +468,6 @@ namespace Desktop.Views
         #endregion
     }
 }
+
+
+

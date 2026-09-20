@@ -68,7 +68,7 @@ public sealed class AtemProjectMetadata
     public DateTimeOffset ModifiedAt { get; set; } = DateTimeOffset.UtcNow;
 
     [JsonPropertyName("application")]
-    public string Application { get; set; } = "Vidikom Atem Software Control";
+    public string Application { get; set; } = "CuePilot Atem Software Control";
 
     [JsonPropertyName("appVersion")]
     public string AppVersion { get; set; } = "1.0.0";

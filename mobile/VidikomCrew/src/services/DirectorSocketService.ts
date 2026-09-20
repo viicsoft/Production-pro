@@ -61,6 +61,28 @@ export interface MasterColorProfileBroadcast {
   timestamp: number;
 }
 
+export interface AudioChannel {
+  id: number;
+  name?: string;
+  alias?: string;
+  volume: number;
+  on: boolean;
+  afv: boolean;
+  meterLevel?: number;
+  groupId?: string | null;
+}
+
+export interface AudioGroup {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  channels: number[];
+  assignedCameraId: number | null;
+  level: number;
+  active: boolean;
+}
+
 export type DirectorIncomingMessage =
   | { type: 'tally'; mes: MEState[] }
   | { type: 'inputs'; inputs: SwitcherInput[] }
@@ -75,7 +97,8 @@ export type DirectorIncomingMessage =
   | { type: 'color-profile-broadcast'; profile: MasterColorProfileBroadcast }
   | { type: 'webrtc-signal'; payload: any }
   | { type: 'control-auth-success' }
-  | { type: 'control-auth-failed' };
+  | { type: 'control-auth-failed' }
+  | { type: 'audio-state'; payload: { channels: AudioChannel[]; groups: AudioGroup[] } };
 
 export interface DirectorSocketConfig {
   serverIp: string;
@@ -118,6 +141,7 @@ export class DirectorSocketService {
     error: new Set(),
     roomEnded: new Set(),
     controlAuth: new Set(),
+    audioState: new Set(),
   };
 
   public static getInstance(): DirectorSocketService {
@@ -364,6 +388,10 @@ export class DirectorSocketService {
       case 'control-auth-failed':
         this.emit('controlAuth', { success: false });
         break;
+
+      case 'audio-state':
+        this.emit('audioState', msg.payload);
+        break;
     }
   }
 
@@ -444,6 +472,22 @@ export class DirectorSocketService {
 
   public sendSwitchCommand(code: string, mode: string, input: number): boolean {
     return this.send({ type: 'switch', code, mode, input });
+  }
+
+  public sendAudioControl(code: string, input: number, volume?: number, on?: boolean, afv?: boolean): boolean {
+    return this.send({ type: 'audio-control', code, input, volume, on, afv });
+  }
+
+  public sendAudioGroupTrigger(code: string, groupId: string, active: boolean): boolean {
+    return this.send({ type: 'audio-group-trigger', code, groupId, active });
+  }
+
+  public sendAudioGroupConfig(code: string, groups: AudioGroup[]): boolean {
+    return this.send({ type: 'audio-group-config', code, groups });
+  }
+
+  public requestAudioState(): boolean {
+    return this.send({ type: 'audio-request-state' });
   }
 
   public on<T = any>(event: string, callback: EventCallback<T>): () => void {

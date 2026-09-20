@@ -13,7 +13,7 @@ using OpenCvSharp;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Comprehensive unit and integration test suite for Milestone 5: File & Help Subsystems.
@@ -773,13 +773,13 @@ public class FileHelpTests
             string logFile = Path.Combine(tempDir, "app.log");
             File.WriteAllLines(logFile, new[]
             {
-                "[2026-09-14 08:00:00] [INFO] AtemDirector started",
+                "[2026-09-14 08:00:00] [INFO] CuePilot started",
                 "[2026-09-14 08:00:02] [INFO] Connected to 127.0.0.1"
             });
 
             var logs = ReadLogsHelper(tempDir, 10);
             Assert.Equal(2, logs.Count);
-            Assert.Contains("AtemDirector started", logs[0]);
+            Assert.Contains("CuePilot started", logs[0]);
         }
         finally
         {

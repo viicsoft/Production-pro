@@ -1,5 +1,5 @@
 @page "/Admin/Login"
-@model AtemDirector.Server.Pages.Admin.LoginModel
+@model CuePilot.Server.Pages.Admin.LoginModel
 @{
     Layout = null;
 }
@@ -8,7 +8,7 @@
 <html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Login - Viicsoft</title>
+    <title>Admin Login - Vidikom</title>
     <!-- Simple styling for the login page -->
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1b1b1b; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
@@ -23,7 +23,7 @@
 </head>
 <body>
     <div class="login-box">
-        <h2>Viicsoft Admin</h2>
+        <h2>Vidikom Admin</h2>
         @if (!string.IsNullOrEmpty(Model.ErrorMessage))
         {
             <div class="error">@Model.ErrorMessage</div>
@@ -36,3 +36,4 @@
     </div>
 </body>
 </html>
+

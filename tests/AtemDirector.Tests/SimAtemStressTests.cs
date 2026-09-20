@@ -1,4 +1,4 @@
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 public class SimAtemStressTests
 {

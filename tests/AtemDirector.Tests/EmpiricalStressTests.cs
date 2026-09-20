@@ -2,7 +2,7 @@ using Core;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Empirical stress and boundary test harness for SimAtem and Core.Models.

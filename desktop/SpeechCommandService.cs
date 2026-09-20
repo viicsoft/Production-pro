@@ -56,7 +56,7 @@ namespace Desktop
             {
                 string credentialsPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "AtemDirector",
+                    "CuePilot",
                     "google_credentials.json"
                 );
 

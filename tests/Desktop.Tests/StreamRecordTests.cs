@@ -11,7 +11,7 @@ using Moq;
 using Simulator;
 using Xunit;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 /// <summary>
 /// Comprehensive test suite for Milestone 3: Stream & Record Backend and UI.

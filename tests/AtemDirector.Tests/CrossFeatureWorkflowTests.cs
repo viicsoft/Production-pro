@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 public class CrossFeatureWorkflowTests
 {
@@ -498,6 +498,42 @@ public class CrossFeatureWorkflowTests
         await sim.DisconnectAsync();
 
         Assert.False(sim.IsConnected);
+    }
+
+    [Fact]
+    public async Task Workflow_AudioFollowsVideo_TransitionsAutomaticallySyncAudioState()
+    {
+        var sim = new SimAtem();
+        await sim.ConnectAsync("127.0.0.1");
+
+        // Set AFV on Cam 1 and Cam 2
+        await sim.SetAudioAfvAsync(1, true);
+        await sim.SetAudioAfvAsync(2, true);
+
+        // Initial state: PGM is Cam 1, PVW is Cam 2
+        var state1 = await sim.GetStateAsync();
+        var cam1Audio = state1.AudioInputs!.First(a => a.InputId == 1);
+        var cam2Audio = state1.AudioInputs!.First(a => a.InputId == 2);
+        Assert.True(cam1Audio.On);
+        Assert.False(cam2Audio.On);
+
+        // Perform CUT (swaps to Cam 2 on PGM)
+        await sim.PerformCutAsync(0);
+        var state2 = await sim.GetStateAsync();
+        cam1Audio = state2.AudioInputs!.First(a => a.InputId == 1);
+        cam2Audio = state2.AudioInputs!.First(a => a.InputId == 2);
+        Assert.False(cam1Audio.On);
+        Assert.True(cam2Audio.On);
+
+        // Direct SetProgramInput to Cam 1
+        await sim.SetProgramInputAsync(0, 1);
+        var state3 = await sim.GetStateAsync();
+        cam1Audio = state3.AudioInputs!.First(a => a.InputId == 1);
+        cam2Audio = state3.AudioInputs!.First(a => a.InputId == 2);
+        Assert.True(cam1Audio.On);
+        Assert.False(cam2Audio.On);
+
+        await sim.DisconnectAsync();
     }
 
     [Fact]

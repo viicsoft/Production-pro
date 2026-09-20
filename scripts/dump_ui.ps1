@@ -11,7 +11,7 @@ for ($sec = 1; $sec -le 35; $sec++) {
             (New-Object System.Windows.Automation.PropertyCondition(
                 [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $proc.Id)),
             (New-Object System.Windows.Automation.PropertyCondition(
-                [System.Windows.Automation.AutomationElement]::NameProperty, "Vidikom Atem Software Control"))
+                [System.Windows.Automation.AutomationElement]::NameProperty, "CuePilot Atem Software Control"))
         ))
     )
     if ($w) {

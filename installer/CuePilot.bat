@@ -1,5 +1,5 @@
 @echo off
-REM AtemDirector Launcher
+REM CuePilot Launcher
 setlocal
 set "INSTALL_DIR=%~dp0"
 cd /d "%INSTALL_DIR%"

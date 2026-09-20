@@ -18,6 +18,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
+using Desktop.HardwareAbstraction;
 using Core;
 using Microsoft.Web.WebView2.Core;
 using Simulator;
@@ -59,6 +60,7 @@ namespace Desktop
         private FloatingDockWindow? _palettesDock;
         private readonly SimAtem _simAtem = new SimAtem();
         private IAtemSwitch _switcher;
+        private AudioControlService _audioService;
         private readonly ObservableCollection<TallyUpdate> _tallies = new();
         private ClientWebSocket? _ws;
         private CancellationTokenSource? _cts;
@@ -144,18 +146,18 @@ namespace Desktop
                 {
                     if (_switcher is AtemHardwareAdapter adapter && adapter.IsHardware)
                     {
-                        StatusText.Text = $"🟢 Physical Switcher ({_switcher.DeviceName})";
+                        StatusText.Text = $"ðŸŸ¢ Physical Switcher ({_switcher.DeviceName})";
                         StatusText.Foreground = Brushes.LimeGreen;
                     }
                     else
                     {
-                        StatusText.Text = "🟢 Virtual Switcher (Standalone Ready)";
+                        StatusText.Text = "ðŸŸ¢ Virtual Switcher (Standalone Ready)";
                         StatusText.Foreground = Brushes.LimeGreen;
                     }
                 }
                 else
                 {
-                    StatusText.Text = "⚪ Standby";
+                    StatusText.Text = "âšª Standby";
                     StatusText.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#888888")!;
                 }
             }
@@ -170,6 +172,19 @@ namespace Desktop
             Instance = this;
             InitializeComponent();
             _switcher = switcher ?? new AtemHardwareAdapter(_simAtem, autoFallbackToSimulator: true);
+            
+            var registry = new AudioHardwareRegistry();
+            registry.RegisterDriver(new AtemAudioDriver("atem-main", "ATEM Switcher", _switcher));
+            
+            var map = new AudioRoutingMap();
+            // Small bridge: map logical input IDs 1-100 directly to ATEM physical input IDs 1-100
+            for (long i = 1; i <= 100; i++) map.SetMapping(i, "atem-main", i);
+            // Also map some common higher IDs (e.g., 1001, 2001) that ATEM uses for camera inputs or auxes
+            for (long i = 1001; i <= 1020; i++) map.SetMapping(i, "atem-main", i);
+            for (long i = 2001; i <= 2020; i++) map.SetMapping(i, "atem-main", i);
+            
+            _audioService = new AudioControlService(registry, map);
+
             _switcher.ConnectionChanged += isConnected => Dispatcher.InvokeAsync(async () =>
             {
                 UpdateConnectionUiState(isConnected);
@@ -203,9 +218,9 @@ namespace Desktop
             _config = InputConfig.Load();
 
             _speechService = new SpeechCommandService(_switcher, _config);
-            _speechService.OnTranscriptRecognized += (t) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"🎤 Heard: {t}");
-            _speechService.OnCommandExecuted += (c) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"⚡ {c}");
-            _speechService.OnError += (err) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"⚠️ Voice Error: {err}");
+            _speechService.OnTranscriptRecognized += (t) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"ðŸŽ¤ Heard: {t}");
+            _speechService.OnCommandExecuted += (c) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"âš¡ {c}");
+            _speechService.OnError += (err) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"âš ï¸ Voice Error: {err}");
 
             ShotSuggestionsViewInstance = new ShotSuggestionsView(_switcher);
             PanelShotSuggestions.Content = ShotSuggestionsViewInstance;
@@ -301,6 +316,14 @@ namespace Desktop
                 };
                 
                 PwaServer.Instance.GetActiveInputs = () => _config.ActiveInputs.OrderBy(id => id).Select(id => new { id = id, label = _config.GetLabel(id) });
+                PwaServer.Instance.OnAudioControl = (inputId, vol, on, afv) => 
+                {
+                    if (vol.HasValue) _ = _audioService.SetVolumeAsync(inputId, vol.Value);
+                    if (on.HasValue) _ = _audioService.SetOnAsync(inputId, on.Value);
+                    if (afv.HasValue) _ = _audioService.SetAfvAsync(inputId, afv.Value);
+                };
+                PwaServer.Instance.GetAudioStateAsync = () => Task.FromResult<object>(_audioService.GetAllStates());
+                _audioService.StateChanged += (state) => PwaServer.Instance.BroadcastAudioState();
                 PwaServer.Instance.OnControlSwitch = (mode, inputId) => Dispatcher.InvokeAsync(async () =>
                 {
                     if (mode == "pgm")
@@ -308,7 +331,7 @@ namespace Desktop
                     else if (mode == "pvw")
                         await _switcher.SetPreviewInputAsync(0, inputId);
                     else if (mode == "auto")
-                        await _switcher.PerformAutoTransitionAsync(0);
+                        await _switcher.AutoTransitionAsync(0);
                     else if (mode == "cut")
                         await _switcher.PerformCutAsync(0);
                 });
@@ -515,12 +538,12 @@ namespace Desktop
                             _isIntercomActive = true;
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x43, 0xA0, 0x47)); // Green
                             BtnToggleIntercom.Foreground = Brushes.White;
-                            BtnToggleIntercom.Content = "🎙️ INTERCOM: ON";
+                            BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: ON";
 
                             BtnToggleMicMute.Visibility = Visibility.Visible;
                             BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
                             BtnToggleMicMute.Foreground = Brushes.White;
-                            BtnToggleMicMute.Content = "🎙️ MIC: LIVE";
+                            BtnToggleMicMute.Content = "ðŸŽ™ï¸ MIC: LIVE";
                             _isMicMuted = false;
                             
                             _ = IntercomWebView.CoreWebView2.ExecuteScriptAsync("setMicMute(false);");
@@ -533,7 +556,7 @@ namespace Desktop
                             _isIntercomActive = false;
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                             BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
-                            BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                            BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
 
                             BtnToggleMicMute.Visibility = Visibility.Collapsed;
                             _isMicMuted = false;
@@ -546,7 +569,7 @@ namespace Desktop
                             _isMicMuted = true;
                             BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F)); // Red
                             BtnToggleMicMute.Foreground = Brushes.White;
-                            BtnToggleMicMute.Content = "🔇 MIC: MUTED";
+                            BtnToggleMicMute.Content = "ðŸ”‡ MIC: MUTED";
                         });
                     }
                     else if (msg == "mic_live")
@@ -556,7 +579,7 @@ namespace Desktop
                             _isMicMuted = false;
                             BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
                             BtnToggleMicMute.Foreground = Brushes.White;
-                            BtnToggleMicMute.Content = "🎙️ MIC: LIVE";
+                            BtnToggleMicMute.Content = "ðŸŽ™ï¸ MIC: LIVE";
                         });
                     }
                 };
@@ -655,13 +678,13 @@ namespace Desktop
             if (enable)
             {
                 int micIndex = ComboMicrophone.SelectedIndex >= 0 ? ComboMicrophone.SelectedIndex : 0;
-                SpeechStatusText.Text = "🎤 Voice Control starting...";
+                SpeechStatusText.Text = "ðŸŽ¤ Voice Control starting...";
                 await _speechService.StartListeningAsync(micIndex, TxtWakeWord.Text);
             }
             else
             {
                 await _speechService.StopListeningAsync();
-                SpeechStatusText.Text = "🎤 Voice Control disabled";
+                SpeechStatusText.Text = "ðŸŽ¤ Voice Control disabled";
             }
         }
 
@@ -1174,7 +1197,7 @@ namespace Desktop
                         if (PanelAudio != null)
                         {
                             if (PanelAudio.Content == null)
-                                PanelAudio.Content = new AudioMixerView(_switcher);
+                                PanelAudio.Content = new AudioMixerView(_switcher, _audioService);
                             PanelAudio.Visibility = Visibility.Visible;
                         }
                         break;
@@ -1666,6 +1689,7 @@ namespace Desktop
 
         private async void BtnToggleMicMute_Click(object sender, RoutedEventArgs e)
         {
+            BtnRoomOptionsMenu.IsChecked = false;
             if (IntercomWebView?.CoreWebView2 == null || !_isIntercomActive) return;
             try
             {
@@ -1674,13 +1698,13 @@ namespace Desktop
                 {
                     BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F)); // Red
                     BtnToggleMicMute.Foreground = Brushes.White;
-                    BtnToggleMicMute.Content = "🔇 MIC: MUTED";
+                    BtnToggleMicMute.Content = "ðŸ”‡ MIC: MUTED";
                 }
                 else
                 {
                     BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
                     BtnToggleMicMute.Foreground = Brushes.White;
-                    BtnToggleMicMute.Content = "🎙️ MIC: LIVE";
+                    BtnToggleMicMute.Content = "ðŸŽ™ï¸ MIC: LIVE";
                 }
                 await IntercomWebView.CoreWebView2.ExecuteScriptAsync($"setMicMute({(_isMicMuted ? "true" : "false")});");
             }
@@ -1692,6 +1716,7 @@ namespace Desktop
 
         private async void BtnToggleIntercom_Click(object sender, RoutedEventArgs e)
         {
+            BtnRoomOptionsMenu.IsChecked = false;
             if (IntercomWebView?.CoreWebView2 == null)
             {
                 System.Windows.MessageBox.Show("Intercom is still initializing. Please wait a moment and try again.", "Intercom");
@@ -1704,7 +1729,7 @@ namespace Desktop
                 
                 if (_isIntercomActive)
                 {
-                    BtnToggleIntercom.Content = "🎙️ CONNECTING...";
+                    BtnToggleIntercom.Content = "ðŸŽ™ï¸ CONNECTING...";
                     var scriptRes = await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
                     LogIntercom($"connectIntercom() invoked: {scriptRes}");
 
@@ -1714,12 +1739,12 @@ namespace Desktop
                         await Task.Delay(6000);
                         await Dispatcher.InvokeAsync(() =>
                         {
-                            if (BtnToggleIntercom.Content?.ToString() == "🎙️ CONNECTING...")
+                            if (BtnToggleIntercom.Content?.ToString() == "ðŸŽ™ï¸ CONNECTING...")
                             {
                                 LogIntercom("Intercom toggle timeout, resetting button to OFF");
                                 BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                                 BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
-                                BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                                BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
                                 BtnToggleMicMute.Visibility = Visibility.Collapsed;
                                 _isIntercomActive = false;
                                 _isMicMuted = false;
@@ -1731,7 +1756,7 @@ namespace Desktop
                 {
                     BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                     BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
-                    BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                    BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
                     BtnToggleMicMute.Visibility = Visibility.Collapsed;
                     _isMicMuted = false;
                     await IntercomWebView.CoreWebView2.ExecuteScriptAsync("disconnectIntercom();");
@@ -1742,7 +1767,7 @@ namespace Desktop
                 LogIntercom("Intercom toggle failed", ex);
                 System.Windows.MessageBox.Show("The Intercom backend process encountered an error and cannot be reached. Please restart the application.", "Intercom Error");
                 _isIntercomActive = false;
-                BtnToggleIntercom.Content = "🎙️ INTERCOM: OFF";
+                BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
                 BtnToggleMicMute.Visibility = Visibility.Collapsed;
                 _isMicMuted = false;
             }
@@ -2345,6 +2370,7 @@ namespace Desktop
                 EmptyRoomHeader.Visibility = Visibility.Collapsed;
                 ActiveRoomHeader.Visibility = Visibility.Visible;
                 BtnEndRoom.Visibility = Visibility.Visible;
+                BtnRoomOptionsMenu.Visibility = Visibility.Visible;
                 BtnRegenPin.Visibility = Visibility.Visible;
                 
                 var rId = RoomManager.ActiveRoom.RoomId ?? "";
@@ -2360,7 +2386,7 @@ namespace Desktop
                 if (RoomManager.ActiveRoom.NetworkMode == NetworkMode.Online)
                 {
                     var relayConnected = PwaServer.Instance.Relay?.IsConnected == true;
-                    TxtNetworkMode.Text = relayConnected ? "🌐 Online" : "🌐 Connecting...";
+                    TxtNetworkMode.Text = relayConnected ? "ðŸŒ Online" : "ðŸŒ Connecting...";
                     TxtNetworkMode.Foreground = new System.Windows.Media.SolidColorBrush(
                         relayConnected 
                             ? System.Windows.Media.Color.FromRgb(0x4C, 0xAF, 0x50)  // Green
@@ -2368,7 +2394,7 @@ namespace Desktop
                 }
                 else
                 {
-                    TxtNetworkMode.Text = "📡 LAN";
+                    TxtNetworkMode.Text = "ðŸ“¡ LAN";
                     TxtNetworkMode.Foreground = new System.Windows.Media.SolidColorBrush(
                         System.Windows.Media.Color.FromRgb(0xAA, 0xAA, 0xAA));
                 }
@@ -2378,6 +2404,7 @@ namespace Desktop
                 EmptyRoomHeader.Visibility = Visibility.Visible;
                 ActiveRoomHeader.Visibility = Visibility.Collapsed;
                 BtnEndRoom.Visibility = Visibility.Collapsed;
+                BtnRoomOptionsMenu.Visibility = Visibility.Collapsed;
                 BtnRegenPin.Visibility = Visibility.Collapsed;
                 TxtNetworkMode.Text = "";
             }
@@ -2438,6 +2465,7 @@ namespace Desktop
 
         private void BtnShowQr_Click(object sender, RoutedEventArgs e)
         {
+            BtnRoomOptionsMenu.IsChecked = false;
             if (RoomManager.ActiveRoom == null) return;
             
             // Generate QR Code for join link
@@ -2488,6 +2516,7 @@ namespace Desktop
 
         private void BtnCopyLink_Click(object sender, RoutedEventArgs e)
         {
+            BtnRoomOptionsMenu.IsChecked = false;
             if (RoomManager.ActiveRoom != null)
             {
                 string joinUrl;
@@ -2507,6 +2536,7 @@ namespace Desktop
 
         private async void BtnEndRoom_Click(object sender, RoutedEventArgs e)
         {
+            BtnRoomOptionsMenu.IsChecked = false;
             if (MessageBox.Show("Are you sure you want to end this room session? All paired crew members will be disconnected.", "End Room", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
             {
                 // Disconnect relay if online
@@ -2526,6 +2556,7 @@ namespace Desktop
 
         private void BtnRegenPin_Click(object sender, RoutedEventArgs e)
         {
+            BtnRoomOptionsMenu.IsChecked = false;
             if (MessageBox.Show("Generate a new PIN? Current crew won't be disconnected, but new crew will need the new PIN.", "Regen PIN", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 RoomManager.RegeneratePin();
@@ -2536,4 +2567,6 @@ namespace Desktop
         #endregion
     }
 }
+
+
 

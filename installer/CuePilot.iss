@@ -1,11 +1,11 @@
-; AtemDirector Installer Script for Inno Setup
+; CuePilot Installer Script for Inno Setup
 ; Creates a Windows installer with all dependencies bundled
 
-#define MyAppName "AtemDirector"
-#define MyAppVersion "1.0.7"
-#define MyAppPublisher "VIICSOFT"
-#define MyAppURL "https://viicsoft.com"
-#define MyAppExeName "desktop\desktop.exe"
+#define MyAppName "Vidikom"
+#define MyAppVersion "1.0.35"
+#define MyAppPublisher "Vidikom"
+#define MyAppURL "https://Vidikom.com"
+#define MyAppExeName "desktop\Vidikom.exe"
 
 [Setup]
 ; Basic Information
@@ -24,7 +24,7 @@ DisableProgramGroupPage=yes
 
 ; Output
 OutputDir=..\installer-output
-OutputBaseFilename=AtemDirector-Setup-{#MyAppVersion}
+OutputBaseFilename=CuePilot-Setup-{#MyAppVersion}
 Compression=lzma2/fast
 SolidCompression=yes
 
@@ -33,7 +33,7 @@ PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 
 ; Process management during install
-CloseApplications=no
+CloseApplications=yes
 RestartApplications=no
 
 ; UI
@@ -73,38 +73,38 @@ Name: "{app}\server"; Permissions: users-modify
 Name: "{app}\desktop"; Permissions: users-modify
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\desktop\desktop.exe"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\desktop\Vidikom.exe"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\desktop\desktop.exe"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\desktop\Vidikom.exe"; Tasks: desktopicon
 
 [Run]
 ; Register ATEM SDK COM DLL
 Filename: "{app}\RegisterATEM.bat"; Parameters: """{app}\"""; Flags: runhidden waituntilterminated
 ; Firewall rules
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AtemDirector Caddy"" dir=in action=allow program=""{app}\caddy\caddy.exe"" enable=yes"; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AtemDirector Server"" dir=in action=allow program=""{app}\server\server.exe"" enable=yes"; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AtemDirector (HTTP)"" dir=in action=allow protocol=TCP localport=80 profile=any"; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AtemDirector (HTTPS)"" dir=in action=allow protocol=TCP localport=8443 profile=any"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot Caddy"" dir=in action=allow program=""{app}\caddy\caddy.exe"" enable=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot Server"" dir=in action=allow program=""{app}\server\server.exe"" enable=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot (HTTP)"" dir=in action=allow protocol=TCP localport=80 profile=any"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot (HTTPS)"" dir=in action=allow protocol=TCP localport=8443 profile=any"; Flags: runhidden
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Unregister ATEM SDK COM DLL
 Filename: "{app}\UnregisterATEM.bat"; Parameters: """{app}\"""; Flags: runhidden waituntilterminated
 ; Remove firewall rules
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AtemDirector Caddy"""; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AtemDirector Server"""; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AtemDirector (HTTP)"""; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AtemDirector (HTTPS)"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot Caddy"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot Server"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot (HTTP)"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot (HTTPS)"""; Flags: runhidden
 
 [Code]
 function InitializeSetup(): Boolean;
 var
   ErrorCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /IM desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM AtemDirector.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM Vidikom.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM CuePilot.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM AtemDirector.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM CuePilot.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM caddy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Result := True;
 end;
@@ -113,10 +113,10 @@ function InitializeUninstall(): Boolean;
 var
   ErrorCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /IM desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM AtemDirector.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM Vidikom.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM CuePilot.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM AtemDirector.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM CuePilot.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM caddy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Result := True;
 end;
@@ -131,3 +131,23 @@ begin
                      False);
   end;
 end;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,10 +1,10 @@
 $ErrorActionPreference = "Continue"
 
-Write-Host "Targeting AtemDirector.Tests.ChallengerConcurrencyStressTests.SimAtem_ExtremeConcurrency_MultiThreadedStress_NoExceptionsOrDeadlock..."
+Write-Host "Targeting CuePilot.Tests.ChallengerConcurrencyStressTests.SimAtem_ExtremeConcurrency_MultiThreadedStress_NoExceptionsOrDeadlock..."
 
 for ($i = 1; $i -le 10; $i++) {
     Write-Host "Starting Attempt $i..."
-    $out = dotnet test tests\AtemDirector.Tests\AtemDirector.Tests.csproj --filter "FullyQualifiedName=AtemDirector.Tests.ChallengerConcurrencyStressTests.SimAtem_ExtremeConcurrency_MultiThreadedStress_NoExceptionsOrDeadlock" --logger "console;verbosity=detailed"
+    $out = dotnet test tests\CuePilot.Tests\CuePilot.Tests.csproj --filter "FullyQualifiedName=CuePilot.Tests.ChallengerConcurrencyStressTests.SimAtem_ExtremeConcurrency_MultiThreadedStress_NoExceptionsOrDeadlock" --logger "console;verbosity=detailed"
     $code = $LASTEXITCODE
     if ($code -ne 0) {
         Write-Host "`n*** REPRODUCED FAILURE ON ATTEMPT $i ***"

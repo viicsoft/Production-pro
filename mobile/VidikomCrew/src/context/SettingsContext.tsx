@@ -128,6 +128,14 @@ export const sanitizeSettings = (raw: any): SettingsState => {
     ? raw.serverIp.trim()
     : DEFAULT_SETTINGS.serverIp;
   const isCloud = sIp.includes('vidikom.app') || (typeof raw.isCloudRelay === 'boolean' ? raw.isCloudRelay : DEFAULT_SETTINGS.isCloudRelay);
+
+  // Auto-migrate legacy LAN voicePort 5160 to unified 8080
+  if (!isCloud && (vPort === 5160 || vPort === 443)) {
+    vPort = 8080;
+  }
+  if (!isCloud && (dirPort === 5160 || dirPort === 443)) {
+    dirPort = 8080;
+  }
   if (isCloud && (dirPort === 8080 || dirPort === 5160)) {
     dirPort = 443;
   }

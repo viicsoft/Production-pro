@@ -25,7 +25,7 @@ namespace Desktop
             
             // AppData path for persistence
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var dir = Path.Combine(appData, "AtemDirector");
+            var dir = Path.Combine(appData, "CuePilot");
             Directory.CreateDirectory(dir);
             _savePath = Path.Combine(dir, "shotsuggestions.json");
 
@@ -486,7 +486,7 @@ namespace Desktop
                     lines.Add($"\"{Esc(s.Title)}\",\"{Esc(s.Description)}\",\"{Esc(s.Category)}\"");
                 }
                 File.WriteAllLines(dlg.FileName, lines);
-                MessageBox.Show($"Exported {_allSuggestions.Count} suggestions to CSV.", "AtemDirector");
+                MessageBox.Show($"Exported {_allSuggestions.Count} suggestions to CSV.", "CuePilot");
             }
         }
 
@@ -560,7 +560,7 @@ namespace Desktop
                     BuildCategoryTree();
                     UpdateTiles(selectedCat);
                 }
-                MessageBox.Show($"Imported {imported} item(s).", "AtemDirector");
+                MessageBox.Show($"Imported {imported} item(s).", "CuePilot");
             }
             catch (Exception ex)
             {
@@ -598,7 +598,7 @@ namespace Desktop
 
             if (selectedCams.Count == 0)
             {
-                MessageBox.Show("Please select at least one camera for the reminder.", "AtemDirector");
+                MessageBox.Show("Please select at least one camera for the reminder.", "CuePilot");
                 return;
             }
 
@@ -610,7 +610,7 @@ namespace Desktop
         {
             if (_selectedSuggestion == null)
             {
-                MessageBox.Show("Please select a suggestion first.", "AtemDirector");
+                MessageBox.Show("Please select a suggestion first.", "CuePilot");
                 return;
             }
 
@@ -623,7 +623,7 @@ namespace Desktop
 
             if (selectedCams.Count == 0)
             {
-                MessageBox.Show("Please select at least one camera.", "AtemDirector");
+                MessageBox.Show("Please select at least one camera.", "CuePilot");
                 return;
             }
 

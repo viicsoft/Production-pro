@@ -1,4 +1,4 @@
-namespace AtemDirector.Server.Data;
+namespace CuePilot.Server.Data;
 
 public class Category
 {

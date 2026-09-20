@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace AtemDirector.Tests;
+namespace CuePilot.Tests;
 
 public class FileTests
 {
