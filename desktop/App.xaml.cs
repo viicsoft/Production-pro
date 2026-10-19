@@ -68,6 +68,17 @@ public partial class App : Application
     {
         try
         {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(appData, "CuePilot", "logs"));
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(appData, "Vidikom", "logs"));
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(appData, "AtemDirector"));
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(localAppData, "CuePilot"));
+        }
+        catch { }
+
+        try
+        {
             SetCurrentProcessExplicitAppUserModelID("Vidikom.AtemSoftwareControl.Desktop");
             SHChangeNotify(0x08000000, 0x0000, IntPtr.Zero, IntPtr.Zero);
         }
