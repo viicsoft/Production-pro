@@ -40,7 +40,7 @@ namespace Desktop
     {
         public string Name { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
-        public string Tag { get; set; } = "🖼️";
+        public string Tag { get; set; } = "IMG";
         public MediaKind Kind { get; set; } = MediaKind.Image;
     }
 
@@ -218,17 +218,17 @@ namespace Desktop
             var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
             var picturesPath = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
 
-            var favourites = new TreeViewItem { Header = "⭐ Favourites", IsExpanded = true, Foreground = System.Windows.Media.Brushes.Gray };
-            var thisPC = new TreeViewItem { Header = "💻 This PC", IsExpanded = true, Foreground = System.Windows.Media.Brushes.Gray };
+            var favourites = new TreeViewItem { Header = "Favourites", IsExpanded = true, Foreground = System.Windows.Media.Brushes.Gray };
+            var thisPC = new TreeViewItem { Header = "This PC", IsExpanded = true, Foreground = System.Windows.Media.Brushes.Gray };
 
-            AddFolderNode(thisPC, "📁 Desktop", desktopPath);
-            AddFolderNode(thisPC, "📁 Documents", documentsPath);
-            AddFolderNode(thisPC, "📁 Pictures", picturesPath);
+            AddFolderNode(thisPC, "Desktop", desktopPath);
+            AddFolderNode(thisPC, "Documents", documentsPath);
+            AddFolderNode(thisPC, "Pictures", picturesPath);
 
             try
             {
                 foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
-                    AddFolderNode(thisPC, $"💽 {drive.Name}", drive.RootDirectory.FullName);
+                    AddFolderNode(thisPC, $"{drive.Name}", drive.RootDirectory.FullName);
             }
             catch { }
 
@@ -257,7 +257,7 @@ namespace Desktop
                     {
                         var name = Path.GetFileName(dir);
                         if (name.StartsWith('.') || name.StartsWith('$')) continue;
-                        AddFolderNode(item, $"📁 {name}", dir);
+                        AddFolderNode(item, $"{name}", dir);
                     }
                 }
                 catch { }
@@ -276,7 +276,7 @@ namespace Desktop
                         .Select(f =>
                         {
                             var kind = DetectMediaKind(f);
-                            string tag = kind == MediaKind.Video ? "🎬" : kind == MediaKind.Audio ? "🎵" : "🖼️";
+                            string tag = kind == MediaKind.Video ? "VID" : kind == MediaKind.Audio ? "AUD" : "IMG";
                             return new FileListItem
                             {
                                 Name = Path.GetFileName(f),
@@ -327,7 +327,7 @@ namespace Desktop
                     PreviewVideo.Visibility = Visibility.Collapsed;
                     PreviewImage.Visibility = Visibility.Collapsed;
                     PreviewPlaceholder.Visibility = Visibility.Visible;
-                    PreviewPlaceholder.Text = $"🎵 {item.Name}";
+                    PreviewPlaceholder.Text = $"AUD {item.Name}";
                 }
             }
             catch
@@ -765,9 +765,9 @@ namespace Desktop
             _stillLabels[slot].Foreground = System.Windows.Media.Brushes.White;
 
             if (item.Kind == MediaKind.Video)
-                _stillBadges[slot].Text = "🎬 VID";
+                _stillBadges[slot].Text = "VID";
             else if (item.Kind == MediaKind.Audio)
-                _stillBadges[slot].Text = "🎵 AUD";
+                _stillBadges[slot].Text = "AUD";
             else
                 _stillBadges[slot].Text = "";
 
@@ -912,7 +912,7 @@ namespace Desktop
             var vid = clipIdx == 0 ? Clip1Video : Clip2Video;
 
             title.Text = item.Title;
-            subtext.Text = item.Kind == MediaKind.Video ? "🎬 Video Clip Loaded" : item.Kind == MediaKind.Audio ? "🎵 Audio Track Loaded" : "🖼️ Image Clip Loaded";
+            subtext.Text = item.Kind == MediaKind.Video ? "Video Clip Loaded" : item.Kind == MediaKind.Audio ? "Audio Track Loaded" : "Image Clip Loaded";
             placeholder.Visibility = Visibility.Collapsed;
 
             if (item.Kind == MediaKind.Video)
@@ -1001,6 +1001,57 @@ namespace Desktop
         {
             _players[playerIdx] = item;
 
+            // Route hardware Media Player 1 / 2 to the corresponding Still or Clip slot
+            if (_switcher != null)
+            {
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Check if this item matches an existing Clip slot
+                        for (int c = 0; c < _clips.Length; c++)
+                        {
+                            if (_clips[c] != null && (_clips[c] == item || (!string.IsNullOrEmpty(item.FilePath) && _clips[c]!.FilePath == item.FilePath)))
+                            {
+                                await _switcher.SetMediaPlayerSourceAsync(playerIdx, isClip: true, (uint)c);
+                                await _switcher.SetMediaPlayerTransportAsync(playerIdx, playing: true, loop: true, atBeginning: true);
+                                return;
+                            }
+                        }
+
+                        // Check if this item matches an existing Still slot
+                        int matchedStill = -1;
+                        for (int s = 0; s < StillSlotCount; s++)
+                        {
+                            if (_stills[s] != null && (_stills[s] == item || (!string.IsNullOrEmpty(item.FilePath) && _stills[s]!.FilePath == item.FilePath)))
+                            {
+                                matchedStill = s;
+                                break;
+                            }
+                        }
+
+                        if (matchedStill < 0 && item.Kind == MediaKind.Image)
+                        {
+                            // Auto-upload direct-dropped image to dedicated player still slot (17 or 18)
+                            matchedStill = 17 + playerIdx;
+                            byte[] bytes = !string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath)
+                                ? TranscodeImageToBgra32(item.FilePath, 1920, 1080)
+                                : (item.Thumbnail is BitmapSource bs ? TranscodeBitmapSourceToBgra32(bs, 1920, 1080) : new byte[1920 * 1080 * 4]);
+                            await _switcher.UploadStillAsync((uint)matchedStill, item.Title, bytes, 1920, 1080);
+                        }
+
+                        if (matchedStill >= 0)
+                        {
+                            await _switcher.SetMediaPlayerSourceAsync(playerIdx, isClip: false, (uint)matchedStill);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        MainWindow.Log($"[MediaPool] Hardware player {playerIdx + 1} source sync error: {ex.Message}");
+                    }
+                });
+            }
+
             var label = playerIdx == 0 ? Player1Label : Player2Label;
             var placeholder = playerIdx == 0 ? Player1Placeholder : Player2Placeholder;
             var imageControl = playerIdx == 0 ? Player1Image : Player2Image;
@@ -1030,13 +1081,13 @@ namespace Desktop
                     if (playerIdx == 0)
                     {
                         _player1IsPlaying = true;
-                        Player1PlayPauseBtn.Content = "⏸";
+                        Player1PlayPauseBtn.Content = "Play/Pause";
                         Player1PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
                     }
                     else
                     {
                         _player2IsPlaying = true;
-                        Player2PlayPauseBtn.Content = "⏸";
+                        Player2PlayPauseBtn.Content = "Play/Pause";
                         Player2PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
                     }
                 }
@@ -1074,7 +1125,7 @@ namespace Desktop
             if (playerIdx == 0)
             {
                 _player1IsPlaying = false;
-                Player1PlayPauseBtn.Content = "▶";
+                Player1PlayPauseBtn.Content = "Play/Pause";
                 Player1PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                 Player1Time.Text = "00:00 / 00:00";
                 Player1Slider.Value = 0;
@@ -1082,7 +1133,7 @@ namespace Desktop
             else
             {
                 _player2IsPlaying = false;
-                Player2PlayPauseBtn.Content = "▶";
+                Player2PlayPauseBtn.Content = "Play/Pause";
                 Player2PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                 Player2Time.Text = "00:00 / 00:00";
                 Player2Slider.Value = 0;
@@ -1095,7 +1146,7 @@ namespace Desktop
 
         // --- PLAYER 1 TRANSPORT ---
 
-        private void Player1_PlayPause_Click(object sender, RoutedEventArgs e)
+        private async void Player1_PlayPause_Click(object sender, RoutedEventArgs e)
         {
             if (_players[0] == null) return;
             if (_players[0]!.Kind == MediaKind.Video || _players[0]!.Kind == MediaKind.Audio)
@@ -1104,7 +1155,7 @@ namespace Desktop
                 {
                     Player1Video.Pause();
                     _player1IsPlaying = false;
-                    Player1PlayPauseBtn.Content = "▶";
+                    Player1PlayPauseBtn.Content = "Play/Pause";
                     Player1PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                 }
                 else
@@ -1115,17 +1166,25 @@ namespace Desktop
                     }
                     Player1Video.Play();
                     _player1IsPlaying = true;
-                    Player1PlayPauseBtn.Content = "⏸";
+                    Player1PlayPauseBtn.Content = "Play/Pause";
                     Player1PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
+                }
+                if (_switcher != null)
+                {
+                    try { await _switcher.SetMediaPlayerTransportAsync(0, _player1IsPlaying, loop: true, atBeginning: false); } catch { }
                 }
             }
         }
 
-        private void Player1_Rewind_Click(object sender, RoutedEventArgs e)
+        private async void Player1_Rewind_Click(object sender, RoutedEventArgs e)
         {
             if (_players[0] == null) return;
             var target = Player1Video.Position - TimeSpan.FromSeconds(5);
             Player1Video.Position = target < TimeSpan.Zero ? TimeSpan.Zero : target;
+            if (_switcher != null && target <= TimeSpan.Zero)
+            {
+                try { await _switcher.SetMediaPlayerTransportAsync(0, _player1IsPlaying, loop: true, atBeginning: true); } catch { }
+            }
         }
 
         private void Player1_FastForward_Click(object sender, RoutedEventArgs e)
@@ -1137,28 +1196,32 @@ namespace Desktop
             Player1Video.Position = target;
         }
 
-        private void Player1_Stop_Click(object sender, RoutedEventArgs e)
+        private async void Player1_Stop_Click(object sender, RoutedEventArgs e)
         {
             if (_players[0] == null) return;
             Player1Video.Stop();
             Player1Video.Position = TimeSpan.Zero;
             _player1IsPlaying = false;
-            Player1PlayPauseBtn.Content = "▶";
+            Player1PlayPauseBtn.Content = "Play/Pause";
             Player1PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
             Player1Slider.Value = 0;
+            if (_switcher != null)
+            {
+                try { await _switcher.SetMediaPlayerTransportAsync(0, false, loop: false, atBeginning: true); } catch { }
+            }
         }
 
         private void Player1_Mute_Click(object sender, RoutedEventArgs e)
         {
             Player1Video.IsMuted = !Player1Video.IsMuted;
-            Player1MuteBtn.Content = Player1Video.IsMuted ? "🔇" : "🔊";
+            Player1MuteBtn.Content = Player1Video.IsMuted ? "Unmute" : "Mute";
         }
 
         private void Player1Video_MediaOpened(object sender, RoutedEventArgs e)
         {
             _player1IsPlaying = true;
             Player1Image.Visibility = Visibility.Collapsed; // Hide static poster image on video load
-            Player1PlayPauseBtn.Content = "⏸";
+            Player1PlayPauseBtn.Content = "Play/Pause";
             Player1PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
         }
 
@@ -1196,7 +1259,7 @@ namespace Desktop
 
         // --- PLAYER 2 TRANSPORT ---
 
-        private void Player2_PlayPause_Click(object sender, RoutedEventArgs e)
+        private async void Player2_PlayPause_Click(object sender, RoutedEventArgs e)
         {
             if (_players[1] == null) return;
             if (_players[1]!.Kind == MediaKind.Video || _players[1]!.Kind == MediaKind.Audio)
@@ -1205,7 +1268,7 @@ namespace Desktop
                 {
                     Player2Video.Pause();
                     _player2IsPlaying = false;
-                    Player2PlayPauseBtn.Content = "▶";
+                    Player2PlayPauseBtn.Content = "Play/Pause";
                     Player2PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                 }
                 else
@@ -1216,17 +1279,25 @@ namespace Desktop
                     }
                     Player2Video.Play();
                     _player2IsPlaying = true;
-                    Player2PlayPauseBtn.Content = "⏸";
+                    Player2PlayPauseBtn.Content = "Play/Pause";
                     Player2PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
+                }
+                if (_switcher != null)
+                {
+                    try { await _switcher.SetMediaPlayerTransportAsync(1, _player2IsPlaying, loop: true, atBeginning: false); } catch { }
                 }
             }
         }
 
-        private void Player2_Rewind_Click(object sender, RoutedEventArgs e)
+        private async void Player2_Rewind_Click(object sender, RoutedEventArgs e)
         {
             if (_players[1] == null) return;
             var target = Player2Video.Position - TimeSpan.FromSeconds(5);
             Player2Video.Position = target < TimeSpan.Zero ? TimeSpan.Zero : target;
+            if (_switcher != null && target <= TimeSpan.Zero)
+            {
+                try { await _switcher.SetMediaPlayerTransportAsync(1, _player2IsPlaying, loop: true, atBeginning: true); } catch { }
+            }
         }
 
         private void Player2_FastForward_Click(object sender, RoutedEventArgs e)
@@ -1238,28 +1309,32 @@ namespace Desktop
             Player2Video.Position = target;
         }
 
-        private void Player2_Stop_Click(object sender, RoutedEventArgs e)
+        private async void Player2_Stop_Click(object sender, RoutedEventArgs e)
         {
             if (_players[1] == null) return;
             Player2Video.Stop();
             Player2Video.Position = TimeSpan.Zero;
             _player2IsPlaying = false;
-            Player2PlayPauseBtn.Content = "▶";
+            Player2PlayPauseBtn.Content = "Play/Pause";
             Player2PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
             Player2Slider.Value = 0;
+            if (_switcher != null)
+            {
+                try { await _switcher.SetMediaPlayerTransportAsync(1, false, loop: false, atBeginning: true); } catch { }
+            }
         }
 
         private void Player2_Mute_Click(object sender, RoutedEventArgs e)
         {
             Player2Video.IsMuted = !Player2Video.IsMuted;
-            Player2MuteBtn.Content = Player2Video.IsMuted ? "🔇" : "🔊";
+            Player2MuteBtn.Content = Player2Video.IsMuted ? "Unmute" : "Mute";
         }
 
         private void Player2Video_MediaOpened(object sender, RoutedEventArgs e)
         {
             _player2IsPlaying = true;
             Player2Image.Visibility = Visibility.Collapsed; // Hide static poster image on video load
-            Player2PlayPauseBtn.Content = "⏸";
+            Player2PlayPauseBtn.Content = "Play/Pause";
             Player2PlayPauseBtn.Background = new SolidColorBrush(Color.FromRgb(0x00, 0xC8, 0x53));
         }
 
@@ -1304,18 +1379,18 @@ namespace Desktop
             var ctx = new ContextMenu();
 
             // Scaling Submenu ("Right click to fit media to screen")
-            var scaleMenu = new MenuItem { Header = "📐 Media Scaling Mode" };
+            var scaleMenu = new MenuItem { Header = "Media Scaling Mode" };
 
-            var scaleFit = new MenuItem { Header = "✓ Fit to Screen (Proportional / Aspect Fit)", Tag = Stretch.Uniform };
+            var scaleFit = new MenuItem { Header = "* Fit to Screen (Proportional / Aspect Fit)", Tag = Stretch.Uniform };
             scaleFit.Click += (s, e) => SetSlotScalingMode(slotType, index, Stretch.Uniform);
 
-            var scaleFill = new MenuItem { Header = "📺 Fill Screen (Crop / Aspect Fill)", Tag = Stretch.UniformToFill };
+            var scaleFill = new MenuItem { Header = "Fill Screen (Crop / Aspect Fill)", Tag = Stretch.UniformToFill };
             scaleFill.Click += (s, e) => SetSlotScalingMode(slotType, index, Stretch.UniformToFill);
 
-            var scaleStretch = new MenuItem { Header = "↔️ Stretch to Fill", Tag = Stretch.Fill };
+            var scaleStretch = new MenuItem { Header = "Stretch to Fill", Tag = Stretch.Fill };
             scaleStretch.Click += (s, e) => SetSlotScalingMode(slotType, index, Stretch.Fill);
 
-            var scaleCenter = new MenuItem { Header = "🔍 Center Original Size", Tag = Stretch.None };
+            var scaleCenter = new MenuItem { Header = "Center Original Size", Tag = Stretch.None };
             scaleCenter.Click += (s, e) => SetSlotScalingMode(slotType, index, Stretch.None);
 
             scaleMenu.Items.Add(scaleFit);
@@ -1328,14 +1403,14 @@ namespace Desktop
 
             if (slotType == "Still" || slotType == "Clip")
             {
-                var assignP1 = new MenuItem { Header = "▶ Assign to Media Player 1" };
+                var assignP1 = new MenuItem { Header = "Assign to Media Player 1" };
                 assignP1.Click += (s, e) =>
                 {
                     var item = slotType == "Still" ? _stills[index] : _clips[index];
                     if (item != null) AssignItemToPlayer(0, item);
                 };
 
-                var assignP2 = new MenuItem { Header = "▶ Assign to Media Player 2" };
+                var assignP2 = new MenuItem { Header = "Assign to Media Player 2" };
                 assignP2.Click += (s, e) =>
                 {
                     var item = slotType == "Still" ? _stills[index] : _clips[index];
@@ -1347,7 +1422,7 @@ namespace Desktop
                 ctx.Items.Add(new Separator());
             }
 
-            var clearItem = new MenuItem { Header = "🗑️ Clear Slot" };
+            var clearItem = new MenuItem { Header = "Clear Slot" };
             clearItem.Click += (s, e) =>
             {
                 if (slotType == "Still") ClearStill(index);
@@ -1358,7 +1433,7 @@ namespace Desktop
 
             if (slotType == "Still")
             {
-                var clearPoolItem = new MenuItem { Header = "⚠️ Clear All Media Pool Stills" };
+                var clearPoolItem = new MenuItem { Header = "Clear All Media Pool Stills" };
                 clearPoolItem.Click += async (s, e) => { await ClearAllStillsAsync(); };
                 ctx.Items.Add(clearPoolItem);
             }
@@ -1441,3 +1516,5 @@ namespace Desktop
         #endregion
     }
 }
+
+

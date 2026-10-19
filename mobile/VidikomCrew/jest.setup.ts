@@ -377,3 +377,14 @@ jest.mock('react-native/Libraries/Vibration/Vibration', () => ({
   vibrate: jest.fn(),
   cancel: jest.fn(),
 }));
+
+// -----------------------------------------------------------------------------
+// 9. KeepAwake Mock
+// -----------------------------------------------------------------------------
+jest.mock('@sayem314/react-native-keep-awake', () => ({
+  useKeepAwake: jest.fn(),
+  activateKeepAwake: jest.fn(),
+  deactivateKeepAwake: jest.fn(),
+  KeepAwake: () => null,
+}));
+

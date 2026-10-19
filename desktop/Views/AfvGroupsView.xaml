@@ -1,0 +1,226 @@
+﻿<UserControl x:Class="Desktop.Views.AfvGroupsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#141416" Foreground="White">
+    <UserControl.Resources>
+        <Style x:Key="BroadcastButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#33333C"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#55555C"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="AUDIO FOLLOWS VIDEO (AFV) GROUPS" FontSize="18" FontWeight="Light" Foreground="#CCC" Margin="0,0,0,20"/>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel: List -->
+            <Border Grid.Column="0" Background="#1D1D22" CornerRadius="4" Padding="15" Margin="0,0,10,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <TextBlock Grid.Row="0" Text="GROUPS" Foreground="#888" FontSize="11" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ListBox x:Name="GroupsList" Background="Transparent" BorderThickness="0" Foreground="White" SelectionChanged="GroupsList_SelectionChanged">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="8,10"/>
+                                    <Setter Property="Margin" Value="0,0,0,2"/>
+                                    <Setter Property="Background" Value="#25252C"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border Background="{TemplateBinding Background}" CornerRadius="3">
+                                                    <ContentPresenter Margin="{TemplateBinding Padding}"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#0078D4"/></Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#33333C"/></Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="14"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </ScrollViewer>
+                    <Button Grid.Row="2" Content="+ NEW GROUP" Style="{StaticResource BroadcastButtonStyle}" Margin="0,10,0,0" Click="BtnNewGroup_Click"/>
+                </Grid>
+            </Border>
+
+            <!-- Right Panel: Editor -->
+            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <Border Background="#141416" Padding="20" x:Name="EditorPanel" Visibility="Hidden" MinWidth="550">
+                    <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="GROUP EDITOR" Foreground="#888" FontSize="10" FontWeight="Bold"/>
+                        <TextBlock x:Name="TxtUnsaved" Text="* UNSAVED CHANGES" Foreground="#FFC107" FontSize="10" FontWeight="Bold" Margin="10,0,0,0" Visibility="Hidden"/>
+                    </StackPanel>
+                    
+                    <Grid Grid.Row="1" Margin="0,0,0,20">
+                        <StackPanel HorizontalAlignment="Center">
+                            <!-- Trigger Node -->
+                            <Border Background="#222" BorderBrush="#FF9800" BorderThickness="2" CornerRadius="8" Padding="20,10" MinWidth="250">
+                                <StackPanel>
+                                    <TextBlock Text="TRIGGER EVENT" Foreground="#FF9800" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="TxtGroupName" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="18" FontWeight="SemiBold" TextAlignment="Center" TextChanged="TxtGroupName_TextChanged"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Connector Down -->
+                            <Border Width="2" Height="30" Background="#444" HorizontalAlignment="Center"/>
+
+                            <!-- Configuration Node -->
+                            <Border Background="#1C1C20" BorderBrush="#333" BorderThickness="1" CornerRadius="8" Padding="15,10" MinWidth="200" HorizontalAlignment="Center">
+                                <StackPanel>
+                                    <TextBlock Text="ROUTING BEHAVIOR" Foreground="#888" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                    <TextBlock Text="ACTION: CUT / FADE" Foreground="#00C853" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Connector Down -->
+                            <Border Width="2" Height="30" Background="#444" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Audio Sources -->
+                        <Border Grid.Column="0" Background="#1B1B20" BorderBrush="#2C2C34" BorderThickness="1" Margin="0,0,10,0" Padding="10">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="AUDIO CHANNELS (LIVE SETUP)" Foreground="#00C853" FontSize="11" FontWeight="Bold" Margin="0,0,0,10"/>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="ListAudioSources">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="90"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="70"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center" Margin="0,0,10,0" Click="CheckBox_Click"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="White" VerticalAlignment="Center" FontSize="13"/>
+                                                    
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                        <Border Height="6" Background="#222" CornerRadius="3" Margin="0,0,0,4">
+                                                            <Border HorizontalAlignment="Left" Background="#555" Width="{Binding MeterWidth}"/>
+                                                        </Border>
+                                                        <Slider Value="{Binding SliderValue, Mode=TwoWay}" Minimum="-60" Maximum="10" 
+                                                                TickFrequency="1" IsSnapToTickEnabled="False"
+                                                                ValueChanged="Slider_ValueChanged" Tag="{Binding Id}"/>
+                                                    </StackPanel>
+                                                    
+                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                        <TextBox Text="{Binding NumericValueText, Mode=TwoWay, UpdateSourceTrigger=Explicit}" 
+                                                                 Width="40" Background="#111" Foreground="White" BorderThickness="1" BorderBrush="#444" 
+                                                                 TextAlignment="Center" Tag="{Binding Id}" KeyDown="NumericTextBox_KeyDown" LostFocus="NumericTextBox_LostFocus"/>
+                                                        <TextBlock Text=" dB" Foreground="#AAA" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+
+                        <!-- Trigger Cameras -->
+                        <Border Grid.Column="1" Background="#1B1B20" BorderBrush="#2C2C34" BorderThickness="1" Margin="10,0,0,0" Padding="10">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="TRIGGER CAMERAS" Foreground="#FF5252" FontSize="11" FontWeight="Bold" Margin="0,0,0,10"/>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="ListTriggerCameras">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Foreground="White" Margin="0,4" FontSize="13" Click="CheckBox_Click"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="3" Margin="0,20,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock x:Name="TxtStatus" Grid.Column="0" Text="" Foreground="#00C853" FontSize="13" VerticalAlignment="Center" FontWeight="SemiBold"/>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="DELETE GROUP" Style="{StaticResource BroadcastButtonStyle}" Foreground="#FF5252" BorderBrush="#442222" Margin="0,0,20,0" Click="BtnDeleteGroup_Click"/>
+                            <Button Content="CANCEL" Style="{StaticResource BroadcastButtonStyle}" Margin="0,0,10,0" Click="BtnCancel_Click"/>
+                            <Button x:Name="BtnSaveGroup" Content="SAVE CHANGES" Style="{StaticResource BroadcastButtonStyle}" Background="#0078D4" BorderThickness="0" Padding="20,8" Click="BtnSaveGroup_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+                </Border>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>
+
+

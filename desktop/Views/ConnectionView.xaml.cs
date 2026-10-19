@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -127,8 +127,7 @@ namespace Desktop.Views
             ProgressConnecting.Visibility = Visibility.Visible;
 
             // Banner
-            TxtStatusBannerIcon.Text = "⏳";
-            TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
+
             TxtStatusHeadline.Text = $"Connecting to {host}...";
             TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
             TxtStatusDetails.Text = "Handshaking with switcher UDP control bus. Please wait...";
@@ -172,8 +171,7 @@ namespace Desktop.Views
 
             // Banner
             string activeHost = _switcher.ConnectedHost ?? TxtIpAddress.Text.Trim();
-            TxtStatusBannerIcon.Text = "✓";
-            TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
+
             TxtStatusHeadline.Text = $"Connected to {activeHost}";
             TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
             TxtStatusDetails.Text = "Protocol link active. Receiving tallies and device state.";
@@ -221,8 +219,7 @@ namespace Desktop.Views
             TxtHealthStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
 
             // Banner
-            TxtStatusBannerIcon.Text = "○";
-            TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
+
             TxtStatusHeadline.Text = "Disconnected from Switcher";
             TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xA1, 0xA1, 0xAA));
             TxtStatusDetails.Text = reason ?? "Select interface and click Connect to initialize hardware communication.";
@@ -262,8 +259,7 @@ namespace Desktop.Views
             TxtHealthStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
 
             // Banner
-            TxtStatusBannerIcon.Text = "✕";
-            TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
+
             TxtStatusHeadline.Text = "Connection Attempt Failed";
             TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
             TxtStatusDetails.Text = errorMessage;
@@ -465,7 +461,7 @@ namespace Desktop.Views
                 TxtDeviceName.Text = string.IsNullOrWhiteSpace(info.DeviceName) ? info.ModelName : info.DeviceName;
                 TxtDeviceEndpoint.Text = string.IsNullOrWhiteSpace(info.IpAddress) ? "USB Direct" : info.IpAddress;
                 TxtDeviceUniqueId.Text = info.UniqueId;
-                TxtPowerStatus.Text = $"● {info.PowerStatus}";
+                TxtPowerStatus.Text = $"{info.PowerStatus}";
                 TxtEngineMode.Text = info.IsSimulator ? "In-Memory Simulator" : "Hardware COM Interop";
                 TxtVideoMode.Text = videoMode;
             }
@@ -564,3 +560,8 @@ namespace Desktop.Views
         #endregion
     }
 }
+
+
+
+
+

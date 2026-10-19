@@ -20,7 +20,7 @@ namespace Desktop
             _config = config ?? new InputConfig();
             _switcher = switcher;
 
-            TitleText.Text = type == DockType.SuperSource ? "SUPERSOURCE" : "PALETTES";
+            TitleText.Text = type == DockType.SuperSource ? "SUPERSOURCE STUDIO" : "PALETTES";
 
             if (type == DockType.SuperSource)
             {
@@ -28,19 +28,39 @@ namespace Desktop
             }
             else if (type == DockType.Palettes)
             {
+                this.MinWidth = 420;
+                this.Width = 460;
                 DockContent.Content = new PalettesView(_switcher);
             }
 
-            // Load saved position safely
+            // Load saved position safely and ensure SuperSource has enough room on screen
             var rect = GetDockRect();
-            if (rect.X >= 0 && rect.Y >= 0)
+            double defaultW = type == DockType.SuperSource ? 980 : 460;
+            double defaultH = type == DockType.SuperSource ? 760 : 620;
+            double minW = type == DockType.SuperSource ? 860 : 400;
+            double minH = type == DockType.SuperSource ? 620 : 450;
+
+            this.Width = rect.Width >= minW ? rect.Width : defaultW;
+            this.Height = rect.Height >= minH ? rect.Height : defaultH;
+
+            double screenW = SystemParameters.WorkArea.Width;
+            double screenH = SystemParameters.WorkArea.Height;
+
+            if (this.Width > screenW - 20) this.Width = Math.Max(minW, screenW - 20);
+            if (this.Height > screenH - 20) this.Height = Math.Max(minH, screenH - 20);
+
+            if (rect.X >= 0 && rect.Y >= 0 && rect.X + 100 < screenW && rect.Y + 60 < screenH)
             {
-                this.Left = rect.X;
-                this.Top = rect.Y;
-                this.Width = rect.Width > 200 ? rect.Width : (type == DockType.SuperSource ? 680 : 400);
-                this.Height = rect.Height > 200 ? rect.Height : (type == DockType.SuperSource ? 740 : 600);
-                if (rect.IsMinimized) ToggleMinimize();
+                this.Left = Math.Max(0, Math.Min(rect.X, screenW - this.Width));
+                this.Top = Math.Max(0, Math.Min(rect.Y, screenH - this.Height));
             }
+            else
+            {
+                this.Left = Math.Max(10, (screenW - this.Width) / 2.0);
+                this.Top = Math.Max(10, (screenH - this.Height) / 2.0);
+            }
+
+            if (rect.IsMinimized) ToggleMinimize();
         }
 
         private WindowRect GetDockRect()
@@ -79,8 +99,12 @@ namespace Desktop
             }
             else
             {
-                this.DragMove();
-                SavePosition();
+                try
+                {
+                    this.DragMove();
+                    SavePosition();
+                }
+                catch { }
             }
         }
 
@@ -116,15 +140,15 @@ namespace Desktop
             if (rect.IsMinimized)
             {
                 DockContent.Visibility = Visibility.Collapsed;
-                this.MinHeight = 30;
-                this.Height = 30;
+                this.MinHeight = 48;
+                this.Height = 48;
                 this.ResizeMode = ResizeMode.NoResize;
             }
             else
             {
                 DockContent.Visibility = Visibility.Visible;
-                this.MinHeight = 400;
-                this.Height = rect.Height > 200 ? rect.Height : (_type == DockType.SuperSource ? 740 : 600);
+                this.MinHeight = _type == DockType.SuperSource ? 620 : 400;
+                this.Height = rect.Height >= this.MinHeight ? rect.Height : (_type == DockType.SuperSource ? 760 : 620);
                 this.ResizeMode = ResizeMode.CanResizeWithGrip;
             }
             _config.Save();

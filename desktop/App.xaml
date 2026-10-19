@@ -320,5 +320,382 @@
             </Setter>
         </Style>
 
-    </Application.Resources>
+            <!-- Broadcast Console Horizontal ScrollBar Style -->
+        <Style x:Key="BroadcastHorizontalScrollBarStyle" TargetType="{x:Type ScrollBar}">
+            <Setter Property="Orientation" Value="Horizontal"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Background" Value="#101014"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Background="#121216" Height="16">
+                            <Track x:Name="PART_Track" IsDirectionReversed="False">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageLeftCommand" Opacity="0" Focusable="False"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Cursor="Hand">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="{x:Type Thumb}">
+                                                <Border Background="#3E3E4C" BorderBrush="#5A5A6E" BorderThickness="1" CornerRadius="3" Margin="0,2,0,2">
+                                                    <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Border Width="1.5" Height="8" Background="#888898" Margin="1,0"/>
+                                                            <Border Width="1.5" Height="8" Background="#888898" Margin="1,0"/>
+                                                            <Border Width="1.5" Height="8" Background="#888898" Margin="1,0"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageRightCommand" Opacity="0" Focusable="False"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ================= BROADCAST DARK MENU & CONTEXT MENU STYLES ================= -->
+        <Style TargetType="{x:Type Menu}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#D4D4DC"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <Style TargetType="{x:Type ContextMenu}">
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Grid.IsSharedSizeScope" Value="True"/>
+            <Setter Property="HasDropShadow" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ContextMenu}">
+                        <Border x:Name="Border"
+                                Background="#1B1B20"
+                                BorderBrush="#363642"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="4"
+                                Margin="0,0,10,10">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.7"/>
+                            </Border.Effect>
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="{x:Type Separator}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Height" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Separator}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type Separator}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Height" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Separator}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Non-interactive container item for embedded inputs inside menus -->
+        <Style x:Key="MenuCardItemStyle" TargetType="{x:Type MenuItem}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="StaysOpenOnClick" Value="True"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <ContentPresenter ContentSource="Header" Margin="2"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ControlTemplates for MenuItem Roles -->
+        <ControlTemplate x:Key="DarkMenuItemTopLevelHeaderTemplate" TargetType="{x:Type MenuItem}">
+            <Grid SnapsToDevicePixels="True">
+                <Border x:Name="TopBorder"
+                        Background="Transparent"
+                        BorderBrush="Transparent"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="10,4"
+                        Margin="1,1">
+                    <ContentPresenter ContentSource="Header"
+                                      RecognizesAccessKey="True"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Center"/>
+                </Border>
+                <Popup x:Name="PART_Popup"
+                       AllowsTransparency="True"
+                       Focusable="False"
+                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                       Placement="Bottom"
+                       PopupAnimation="Fade"
+                       VerticalOffset="2">
+                    <Border x:Name="SubmenuBorder"
+                            Background="#1B1B20"
+                            BorderBrush="#363642"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="4"
+                            Margin="0,2,14,14"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.72"/>
+                        </Border.Effect>
+                        <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"
+                                            KeyboardNavigation.TabNavigation="Cycle"
+                                            Grid.IsSharedSizeScope="True"/>
+                        </ScrollViewer>
+                    </Border>
+                </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter TargetName="TopBorder" Property="Background" Value="#262630"/>
+                    <Setter TargetName="TopBorder" Property="BorderBrush" Value="#3A3A48"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Trigger>
+                <Trigger Property="IsSubmenuOpen" Value="True">
+                    <Setter TargetName="TopBorder" Property="Background" Value="#2A2A35"/>
+                    <Setter TargetName="TopBorder" Property="BorderBrush" Value="#FF9800"/>
+                    <Setter Property="Foreground" Value="#FF9800"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="#585866"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <ControlTemplate x:Key="DarkMenuItemTopLevelItemTemplate" TargetType="{x:Type MenuItem}">
+            <Border x:Name="TopBorder"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,4"
+                    Margin="1,1"
+                    SnapsToDevicePixels="True">
+                <ContentPresenter ContentSource="Header"
+                                  RecognizesAccessKey="True"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter TargetName="TopBorder" Property="Background" Value="#262630"/>
+                    <Setter TargetName="TopBorder" Property="BorderBrush" Value="#3A3A48"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="#585866"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <ControlTemplate x:Key="DarkMenuItemSubmenuItemTemplate" TargetType="{x:Type MenuItem}">
+            <Border x:Name="ItemBorder"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="10,6"
+                    Margin="1"
+                    MinWidth="195"
+                    SnapsToDevicePixels="True">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="MenuItemIconColumnGroup"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="MenuItemIGTColumnGroup"/>
+                    </Grid.ColumnDefinitions>
+                    <ContentPresenter x:Name="IconHost"
+                                      Grid.Column="0"
+                                      ContentSource="Icon"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Center"
+                                      Margin="0,0,8,0"/>
+                    <ContentPresenter x:Name="HeaderHost"
+                                      Grid.Column="1"
+                                      ContentSource="Header"
+                                      RecognizesAccessKey="True"
+                                      VerticalAlignment="Center"/>
+                    <Border x:Name="IgtBadge"
+                            Grid.Column="2"
+                            Background="#25252E"
+                            BorderBrush="#363644"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Padding="5,1"
+                            Margin="20,0,0,0"
+                            VerticalAlignment="Center">
+                        <TextBlock x:Name="IgtText"
+                                   Text="{TemplateBinding InputGestureText}"
+                                   FontSize="10.5"
+                                   Foreground="#8E8E9E"
+                                   FontFamily="Consolas, Segoe UI"/>
+                    </Border>
+                </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="Icon" Value="{x:Null}">
+                    <Setter TargetName="IconHost" Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+                <Trigger Property="InputGestureText" Value="">
+                    <Setter TargetName="IgtBadge" Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter TargetName="ItemBorder" Property="Background" Value="#2B2B36"/>
+                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#3E3E4E"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter TargetName="IgtText" Property="Foreground" Value="#FF9800"/>
+                    <Setter TargetName="IgtBadge" Property="BorderBrush" Value="#FF9800"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="#555562"/>
+                    <Setter TargetName="ItemBorder" Property="Opacity" Value="0.65"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <ControlTemplate x:Key="DarkMenuItemSubmenuHeaderTemplate" TargetType="{x:Type MenuItem}">
+            <Grid SnapsToDevicePixels="True">
+                <Border x:Name="ItemBorder"
+                        Background="Transparent"
+                        BorderBrush="Transparent"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="10,6"
+                        Margin="1"
+                        MinWidth="195">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="MenuItemIconColumnGroup"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ContentPresenter x:Name="IconHost"
+                                          Grid.Column="0"
+                                          ContentSource="Icon"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Center"
+                                          Margin="0,0,8,0"/>
+                        <ContentPresenter x:Name="HeaderHost"
+                                          Grid.Column="1"
+                                          ContentSource="Header"
+                                          RecognizesAccessKey="True"
+                                          VerticalAlignment="Center"/>
+                        <Path x:Name="ArrowPath"
+                              Grid.Column="2"
+                              Data="M 0,0 L 4.5,4.5 L 0,9"
+                              Stroke="#8E8E9E"
+                              StrokeThickness="1.6"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              StrokeLineJoin="Round"
+                              VerticalAlignment="Center"
+                              Margin="16,0,2,0"/>
+                    </Grid>
+                </Border>
+                <Popup x:Name="PART_Popup"
+                       AllowsTransparency="True"
+                       Focusable="False"
+                       IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                       Placement="Right"
+                       HorizontalOffset="2"
+                       VerticalOffset="-4"
+                       PopupAnimation="Fade">
+                    <Border x:Name="SubmenuBorder"
+                            Background="#1B1B20"
+                            BorderBrush="#363642"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="4"
+                            Margin="2,2,14,14"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.72"/>
+                        </Border.Effect>
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="Icon" Value="{x:Null}">
+                    <Setter TargetName="IconHost" Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter TargetName="ItemBorder" Property="Background" Value="#2B2B36"/>
+                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#3E3E4E"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter TargetName="ArrowPath" Property="Stroke" Value="#FF9800"/>
+                </Trigger>
+                <Trigger Property="IsSubmenuOpen" Value="True">
+                    <Setter TargetName="ItemBorder" Property="Background" Value="#2B2B36"/>
+                    <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#FF9800"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter TargetName="ArrowPath" Property="Stroke" Value="#FF9800"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="#555562"/>
+                    <Setter TargetName="ItemBorder" Property="Opacity" Value="0.65"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <Style TargetType="{x:Type MenuItem}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Foreground" Value="#E4E4EC"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template" Value="{StaticResource DarkMenuItemSubmenuItemTemplate}"/>
+            <Style.Triggers>
+                <Trigger Property="Role" Value="TopLevelHeader">
+                    <Setter Property="FontSize" Value="12"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Foreground" Value="#C8C8D4"/>
+                    <Setter Property="Template" Value="{StaticResource DarkMenuItemTopLevelHeaderTemplate}"/>
+                </Trigger>
+                <Trigger Property="Role" Value="TopLevelItem">
+                    <Setter Property="FontSize" Value="12"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Foreground" Value="#C8C8D4"/>
+                    <Setter Property="Template" Value="{StaticResource DarkMenuItemTopLevelItemTemplate}"/>
+                </Trigger>
+                <Trigger Property="Role" Value="SubmenuHeader">
+                    <Setter Property="Template" Value="{StaticResource DarkMenuItemSubmenuHeaderTemplate}"/>
+                </Trigger>
+                <Trigger Property="Role" Value="SubmenuItem">
+                    <Setter Property="Template" Value="{StaticResource DarkMenuItemSubmenuItemTemplate}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+</Application.Resources>
 </Application>

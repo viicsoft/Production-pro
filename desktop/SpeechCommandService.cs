@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Speech.AudioFormat;
+using System.Speech.Recognition;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -20,6 +24,8 @@ namespace Desktop
         private readonly InputConfig _config;
 
         private WaveInEvent? _waveIn;
+        private SpeechRecognitionEngine? _offlineEngine;
+        private LiveAudioStream? _offlineAudioStream;
         private CancellationTokenSource? _cts;
         private bool _isListening;
         private Channel<byte[]>? _audioChannel;
@@ -39,13 +45,29 @@ namespace Desktop
         public static List<string> GetMicrophoneDevices()
         {
             var list = new List<string>();
-            for (int i = 0; i < WaveInEvent.DeviceCount; i++)
+            try
             {
-                var caps = WaveInEvent.GetCapabilities(i);
-                list.Add(string.IsNullOrWhiteSpace(caps.ProductName) ? $"Microphone {i + 1}" : caps.ProductName);
+                for (int i = 0; i < WaveInEvent.DeviceCount; i++)
+                {
+                    var caps = WaveInEvent.GetCapabilities(i);
+                    list.Add(string.IsNullOrWhiteSpace(caps.ProductName) ? $"Microphone {i + 1}" : caps.ProductName);
+                }
             }
+            catch { }
             if (list.Count == 0) list.Add("Default Microphone");
             return list;
+        }
+
+        private static string? ResolveCredentialsPath()
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string vidikomPath = Path.Combine(appData, "Vidikom", "google_credentials.json");
+            if (File.Exists(vidikomPath)) return vidikomPath;
+
+            string cuePilotPath = Path.Combine(appData, "CuePilot", "google_credentials.json");
+            if (File.Exists(cuePilotPath)) return cuePilotPath;
+
+            return null;
         }
 
         public async Task StartListeningAsync(int deviceIndex = 0, string wakeWord = "")
@@ -54,15 +76,18 @@ namespace Desktop
 
             try
             {
-                string credentialsPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "CuePilot",
-                    "google_credentials.json"
-                );
-
-                if (!File.Exists(credentialsPath))
+                if (WaveInEvent.DeviceCount <= 0)
                 {
-                    OnError?.Invoke("Google Credentials JSON not found in AppData.");
+                    _isListening = false;
+                    OnError?.Invoke("No microphone detected.");
+                    return;
+                }
+
+                string? credentialsPath = ResolveCredentialsPath();
+                if (string.IsNullOrEmpty(credentialsPath))
+                {
+                    // Commercial zero-config mode: use built-in Windows Offline Speech Recognition
+                    StartOfflineSpeechRecognition(deviceIndex, wakeWord);
                     return;
                 }
 
@@ -127,6 +152,7 @@ namespace Desktop
                 };
 
                 _waveIn.StartRecording();
+                OnCommandExecuted?.Invoke("Voice Control Ready (Cloud)");
             }
             catch (Exception ex)
             {
@@ -135,11 +161,133 @@ namespace Desktop
             }
         }
 
+        private void StartOfflineSpeechRecognition(int deviceIndex, string wakeWord)
+        {
+            var recognizers = SpeechRecognitionEngine.InstalledRecognizers();
+            if (recognizers == null || recognizers.Count == 0)
+            {
+                _isListening = false;
+                OnError?.Invoke("Windows Speech Recognition language pack is not installed.");
+                return;
+            }
+
+            var preferred = recognizers.FirstOrDefault(r => r.Culture.TwoLetterISOLanguageName.Equals("en", StringComparison.OrdinalIgnoreCase))
+                            ?? recognizers[0];
+
+            _offlineEngine = new SpeechRecognitionEngine(preferred.Id);
+
+            // Build structured broadcast command grammar for fast, high-accuracy switching
+            var actions = new Choices("take", "cut", "switch to", "ready", "preview", "prepare", "mix", "fade", "transition");
+            var targetPhrases = new List<string>();
+            for (int i = 1; i <= 16; i++)
+            {
+                targetPhrases.Add($"camera {i}");
+                targetPhrases.Add($"cam {i}");
+                targetPhrases.Add($"{i}");
+            }
+            targetPhrases.AddRange(new[]
+            {
+                "one", "two", "three", "four", "five", "six", "seven", "eight",
+                "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen"
+            });
+
+            foreach (var label in _config.CustomLabels.Values)
+            {
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    targetPhrases.Add(label.Trim());
+                }
+            }
+
+            var targets = new Choices(targetPhrases.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+
+            // Action + Target grammar (e.g., "Cut Camera 1", "Ready Wide")
+            var actionTargetBuilder = new GrammarBuilder { Culture = preferred.Culture };
+            if (!string.IsNullOrWhiteSpace(wakeWord))
+            {
+                actionTargetBuilder.Append(wakeWord.Trim());
+            }
+            actionTargetBuilder.Append(actions);
+            actionTargetBuilder.Append(targets);
+            _offlineEngine.LoadGrammar(new Grammar(actionTargetBuilder) { Name = "BroadcastActionTarget" });
+
+            // Direct Target grammar (e.g., "Camera 2", "Cam 1")
+            var directTargetBuilder = new GrammarBuilder { Culture = preferred.Culture };
+            if (!string.IsNullOrWhiteSpace(wakeWord))
+            {
+                directTargetBuilder.Append(wakeWord.Trim());
+            }
+            directTargetBuilder.Append(targets);
+            _offlineEngine.LoadGrammar(new Grammar(directTargetBuilder) { Name = "BroadcastDirectTarget" });
+
+            // Feed selected NAudio microphone into offline recognizer
+            int validDeviceIndex = Math.Min(deviceIndex, Math.Max(0, WaveInEvent.DeviceCount - 1));
+            _offlineAudioStream = new LiveAudioStream();
+            _waveIn = new WaveInEvent
+            {
+                DeviceNumber = validDeviceIndex,
+                WaveFormat = new WaveFormat(16000, 16, 1),
+                BufferMilliseconds = 80
+            };
+
+            _waveIn.DataAvailable += (s, args) =>
+            {
+                if (_isListening && args.BytesRecorded > 0)
+                {
+                    _offlineAudioStream?.Write(args.Buffer, 0, args.BytesRecorded);
+                }
+            };
+
+            _offlineEngine.SpeechHypothesized += (s, e) =>
+            {
+                if (_isListening && e.Result != null && !string.IsNullOrWhiteSpace(e.Result.Text))
+                {
+                    OnTranscriptRecognized?.Invoke(e.Result.Text.Trim());
+                }
+            };
+
+            _offlineEngine.SpeechRecognized += (s, e) =>
+            {
+                if (_isListening && e.Result != null && e.Result.Confidence >= 0.40f && !string.IsNullOrWhiteSpace(e.Result.Text))
+                {
+                    string transcript = e.Result.Text.Trim();
+                    OnTranscriptRecognized?.Invoke(transcript);
+                    ProcessTranscript(transcript, wakeWord);
+                }
+            };
+
+            _isListening = true;
+            _waveIn.StartRecording();
+            _offlineEngine.SetInputToAudioStream(
+                _offlineAudioStream,
+                new SpeechAudioFormatInfo(16000, AudioBitsPerSample.Sixteen, AudioChannel.Mono));
+            _offlineEngine.RecognizeAsync(RecognizeMode.Multiple);
+            OnCommandExecuted?.Invoke("Voice Control Active");
+        }
+
         public async Task StopListeningAsync()
         {
             _isListening = false;
             _cts?.Cancel();
             _audioChannel?.Writer.TryComplete();
+            _offlineAudioStream?.Complete();
+
+            if (_offlineEngine != null)
+            {
+                try
+                {
+                    _offlineEngine.RecognizeAsyncCancel();
+                    _offlineEngine.Dispose();
+                }
+                catch { }
+                _offlineEngine = null;
+            }
+
+            if (_offlineAudioStream != null)
+            {
+                try { _offlineAudioStream.Dispose(); } catch { }
+                _offlineAudioStream = null;
+            }
 
             if (_waveIn != null)
             {
@@ -153,6 +301,91 @@ namespace Desktop
             }
 
             await Task.Delay(100);
+        }
+
+        private sealed class LiveAudioStream : Stream
+        {
+            private readonly BlockingCollection<byte[]> _chunks = new();
+            private byte[]? _currentChunk;
+            private int _currentOffset;
+            private bool _completed;
+
+            public void Complete()
+            {
+                if (!_completed)
+                {
+                    _completed = true;
+                    try { _chunks.CompleteAdding(); } catch { }
+                }
+            }
+
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => true;
+            public override long Length => 0;
+            public override long Position { get => 0; set { } }
+            public override void Flush() { }
+
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                int totalRead = 0;
+                while (totalRead < count)
+                {
+                    if (_currentChunk == null || _currentOffset >= _currentChunk.Length)
+                    {
+                        if (_completed && _chunks.Count == 0)
+                            break;
+
+                        try
+                        {
+                            if (totalRead > 0)
+                            {
+                                if (!_chunks.TryTake(out _currentChunk, 0))
+                                    break;
+                            }
+                            else
+                            {
+                                _currentChunk = _chunks.Take();
+                            }
+                            _currentOffset = 0;
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (_currentChunk == null)
+                        break;
+
+                    int toCopy = Math.Min(count - totalRead, _currentChunk.Length - _currentOffset);
+                    Array.Copy(_currentChunk, _currentOffset, buffer, offset + totalRead, toCopy);
+                    _currentOffset += toCopy;
+                    totalRead += toCopy;
+                }
+                return totalRead;
+            }
+
+            public override void Write(byte[] buffer, int offset, int count)
+            {
+                if (_completed || count <= 0) return;
+                byte[] copy = new byte[count];
+                Array.Copy(buffer, offset, copy, 0, count);
+                try { _chunks.TryAdd(copy); } catch { }
+            }
+
+            public override long Seek(long offset, SeekOrigin origin) => 0;
+            public override void SetLength(long value) { }
+
+            protected override void Dispose(bool disposing)
+            {
+                Complete();
+                if (disposing)
+                {
+                    try { _chunks.Dispose(); } catch { }
+                }
+                base.Dispose(disposing);
+            }
         }
 
         private async Task ContinuousStreamLoopAsync(SpeechClient speechClient, string wakeWord, CancellationToken ct)

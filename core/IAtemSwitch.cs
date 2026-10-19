@@ -36,22 +36,32 @@ public interface IAtemSwitch
     Task SetDskOnAirAsync(int dskIndex, bool onAir);
     Task AutoDskAsync(int dskIndex);
     Task SetDskRateAsync(int dskIndex, double rate);
+    Task SetDskSourceAsync(int dskIndex, long fillInput, long cutInput, bool preMultiplied = true) => Task.CompletedTask;
 
     // USK / Next Transition
     Task SetNextTransitionSelectionAsync(int meIndex, TransitionSelection selection);
     Task SetKeyerOnAirAsync(int meIndex, int keyerIndex, bool onAir);
+    Task SetUpstreamKeySourceAsync(int meIndex, int keyerIndex, long fillInput, long cutInput) => Task.CompletedTask;
+    Task SetTransitionRateAsync(int meIndex, double rateSeconds) => Task.CompletedTask;
+    Task SetWipePatternAsync(int meIndex, int patternIndex) => Task.CompletedTask;
 
     // FTB
     Task SetFtbRateAsync(int meIndex, double rate);
     Task PerformFtbAsync(int meIndex);
 
-    // SuperSource
+    // SuperSource & Studio Branding
     Task SetSuperSourceBoxEnableAsync(int box, bool enable);
     Task SetSuperSourceBoxSourceAsync(int box, long source);
     Task SetSuperSourceBoxPositionAsync(int box, double x, double y);
     Task SetSuperSourceBoxSizeAsync(int box, double size);
     Task SetSuperSourceBoxCropAsync(int box, bool cropped, double top, double bottom, double left, double right);
     Task SetSuperSourceArtAsync(long fillInput, long keyInput, bool artOption);
+    Task SetSuperSourceBorderAsync(bool enabled, double widthOut, double widthIn, double hue, double saturation, double luma) => Task.CompletedTask;
+
+    // Color Generators & Media Players
+    Task SetColorGeneratorAsync(int colorIndex, double hue, double saturation, double luma) => Task.CompletedTask;
+    Task SetMediaPlayerSourceAsync(int playerIndex, bool isClip, uint slotIndex) => Task.CompletedTask;
+    Task SetMediaPlayerTransportAsync(int playerIndex, bool playing, bool loop = false, bool atBeginning = false) => Task.CompletedTask;
 
     // Audio
     event Action<long, double, double>? AudioLevelUpdated;
@@ -65,6 +75,7 @@ public interface IAtemSwitch
     Task SetAudioOnAsync(long inputId, bool on);
 
     Task<EqState?> GetEqStateAsync(long inputId);
+    Task<DynamicsState?> GetDynamicsStateAsync(long inputId);
     Task SetEqEnabledAsync(long inputId, bool enabled);
     Task SetEqBandEnabledAsync(long inputId, int bandIndex, bool enabled);
     Task SetEqBandShapeAsync(long inputId, int bandIndex, int shape);
@@ -92,12 +103,16 @@ public interface IAtemSwitch
     Task SetLimiterAttackAsync(long inputId, double attack);
     Task SetLimiterHoldAsync(long inputId, double hold);
     Task SetLimiterReleaseAsync(long inputId, double release);
+    IReadOnlyList<long> GetDiscoveredFairlightInputs() => System.Array.Empty<long>();
 
     // Camera Control
     Task SetCameraIrisAsync(long cameraId, double iris);
     Task SetCameraFocusAsync(long cameraId, double focus);
     Task SetCameraGainAsync(long cameraId, double gain);
     Task SetCameraWhiteBalanceAsync(long cameraId, double whiteBalance);
+    Task SetCameraShutterAsync(long cameraId, int shutterDenominator) => Task.CompletedTask;
+    Task SetCameraColorBalanceAsync(long cameraId, double red, double green, double blue) => Task.CompletedTask;
+    Task SetCameraPtzAsync(long cameraId, double panVelocity, double tiltVelocity, double zoomVelocity = 0) => Task.CompletedTask;
 
     #region Connection Contracts
 

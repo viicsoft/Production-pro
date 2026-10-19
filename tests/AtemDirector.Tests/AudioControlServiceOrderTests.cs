@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Xunit;
 using Desktop;
@@ -15,6 +15,7 @@ namespace AtemDirector.Tests
             public string HardwareType => "Mock";
             public bool IsConnected => true;
             public event Action<string, long, double?, bool?, bool?>? HardwareStateChanged;
+        public event EventHandler<Desktop.HardwareAbstraction.AudioMeterState>? MeterChanged;
         public event System.Action<string, long, bool?, Core.EqBandUpdate?>? HardwareEqStateChanged;
         public Task SetEqBandFrequencyAsync(long physicalChannel, int bandIndex, double frequency) => Task.CompletedTask;
         public Task SetEqBandGainAsync(long physicalChannel, int bandIndex, double gain) => Task.CompletedTask;
@@ -139,4 +140,5 @@ namespace AtemDirector.Tests
         }
     }
 }
+
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Xunit;
 using Desktop.HardwareAbstraction;
@@ -77,4 +77,5 @@ namespace AtemDirector.Tests
         }
     }
 }
+
 

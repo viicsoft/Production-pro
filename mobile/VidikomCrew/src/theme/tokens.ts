@@ -102,45 +102,45 @@ export interface ThemeTokens extends PaletteTokens {
 
 export const StandardDarkPalette: PaletteTokens = {
   background: '#18191A',        // Deep charcoal ground
-  surface: '#242526',           // Card and container surface
-  surfaceElevated: '#3A3B3C',   // Modal and floating header container
+  surface: '#16181D',           // Sleek elevated cards
+  surfaceElevated: '#21232B',   // Higher elevation modals and buttons
   surfaceBorder: 'rgba(255, 255, 255, 0.08)',
-  primary: '#FACC15',           // Vibrant Yellow
-  primaryVariant: '#EAB308',    // Darker Yellow
-  primaryContainer: 'rgba(250, 204, 21, 0.15)',
-  onPrimary: '#18191A',         // Dark text on primary button
+  primary: '#FBBF24',           // Golden Yellow Accent
+  primaryVariant: '#F59E0B',    // Deep Amber
+  primaryContainer: 'rgba(251, 191, 36, 0.16)',
+  onPrimary: '#0D0E12',         // Dark text on primary button
 
   textPrimary: '#FFFFFF',
-  textSecondary: '#B0B3B8',
-  textMuted: '#8E9196',
+  textSecondary: '#9CA3AF',
+  textMuted: '#6B7280',
   textDisabled: 'rgba(255, 255, 255, 0.38)',
 
-  tallyProgram: '#EF4444',      // LIVE / Program (Red)
-  tallyProgramGlow: 'rgba(239, 68, 68, 0.4)',
-  tallyProgramContainer: 'rgba(239, 68, 68, 0.15)',
+  tallyProgram: '#EF4444',      // LIVE / Program (Electric Broadcast Red)
+  tallyProgramGlow: 'rgba(239, 68, 68, 0.45)',
+  tallyProgramContainer: 'rgba(239, 68, 68, 0.18)',
   tallyPreview: '#10B981',      // PREVIEW / Next (Emerald Green)
-  tallyPreviewGlow: 'rgba(16, 185, 129, 0.4)',
-  tallyPreviewContainer: 'rgba(16, 185, 129, 0.15)',
-  tallyStandby: '#3A3B3C',      // Standby / Inactive (Dark Slate)
-  tallyWarning: '#FACC15',      // Disconnected / Alert (Amber/Yellow)
-  tallyWarningGlow: 'rgba(250, 204, 21, 0.4)',
+  tallyPreviewGlow: 'rgba(16, 185, 129, 0.45)',
+  tallyPreviewContainer: 'rgba(16, 185, 129, 0.18)',
+  tallyStandby: '#25272F',      // Standby / Safe Slate
+  tallyWarning: '#FACC15',      // Alert / Disconnected Amber
+  tallyWarningGlow: 'rgba(250, 204, 21, 0.45)',
 
   micActive: '#10B981',
-  micMuted: '#EF4444',
-  audioPeak: '#EF4444',
-  audioNormal: '#FACC15',       // Match primary
+  micMuted: '#DC2626',
+  audioPeak: '#DC2626',
+  audioNormal: '#FBBF24',
 };
 
 export const DarkPalette: PaletteTokens = StandardDarkPalette;
 
 export const OledDarkPalette: PaletteTokens = {
   background: '#000000',        // Pure Pitch Black (pixels unpowered on OLED)
-  surface: '#18191A',           // High-contrast dark container
-  surfaceElevated: '#242526',   // Elevated card in OLED mode
+  surface: '#121316',           // High-contrast dark container
+  surfaceElevated: '#1A1C22',   // Elevated card in OLED mode
   surfaceBorder: 'rgba(255, 255, 255, 0.12)', 
-  primary: '#FACC15',           // Vibrant Yellow
-  primaryVariant: '#EAB308',
-  primaryContainer: 'rgba(250, 204, 21, 0.25)',
+  primary: '#FBBF24',           // Vibrant Golden Amber
+  primaryVariant: '#F59E0B',
+  primaryContainer: 'rgba(251, 191, 36, 0.22)',
   onPrimary: '#000000',
 
   textPrimary: '#FFFFFF',
@@ -154,14 +154,14 @@ export const OledDarkPalette: PaletteTokens = {
   tallyPreview: '#05D685',      // Vivid saturated Preview Green
   tallyPreviewGlow: 'rgba(5, 214, 133, 0.6)',
   tallyPreviewContainer: 'rgba(5, 214, 133, 0.25)',
-  tallyStandby: '#242526',
+  tallyStandby: '#1E2026',
   tallyWarning: '#FACC15',      // Vivid Amber/Yellow
   tallyWarningGlow: 'rgba(250, 204, 21, 0.6)',
 
   micActive: '#05D685',
   micMuted: '#FF3333',
   audioPeak: '#FF3333',
-  audioNormal: '#FACC15',
+  audioNormal: '#FBBF24',
 };
 
 export const OledPalette: PaletteTokens = OledDarkPalette;

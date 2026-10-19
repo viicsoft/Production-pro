@@ -26,14 +26,19 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                            <StackPanel Grid.Column="0" Margin="0,0,4,0">
                                 <TextBlock Text="HUE" FontSize="10" Foreground="#888"/>
-                                <Slider Minimum="0" Maximum="360" Value="0" Margin="0,5,0,0"/>
+                                <Slider x:Name="Color1HueSlider" Minimum="0" Maximum="360" Value="0" Margin="0,5,0,0" ValueChanged="Color1_Changed"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                            <StackPanel Grid.Column="1" Margin="4,0,4,0">
                                 <TextBlock Text="SATURATION" FontSize="10" Foreground="#888"/>
-                                <Slider Minimum="0" Maximum="1" Value="1" Margin="0,5,0,0"/>
+                                <Slider x:Name="Color1SatSlider" Minimum="0" Maximum="1" Value="1" Margin="0,5,0,0" ValueChanged="Color1_Changed"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Margin="4,0,0,0">
+                                <TextBlock Text="LUMA" FontSize="10" Foreground="#888"/>
+                                <Slider x:Name="Color1LumaSlider" Minimum="0" Maximum="1" Value="0.5" Margin="0,5,0,0" ValueChanged="Color1_Changed"/>
                             </StackPanel>
                         </Grid>
                         
@@ -42,43 +47,119 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                            <StackPanel Grid.Column="0" Margin="0,0,4,0">
                                 <TextBlock Text="HUE" FontSize="10" Foreground="#888"/>
-                                <Slider Minimum="0" Maximum="360" Value="240" Margin="0,5,0,0"/>
+                                <Slider x:Name="Color2HueSlider" Minimum="0" Maximum="360" Value="240" Margin="0,5,0,0" ValueChanged="Color2_Changed"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                            <StackPanel Grid.Column="1" Margin="4,0,4,0">
                                 <TextBlock Text="SATURATION" FontSize="10" Foreground="#888"/>
-                                <Slider Minimum="0" Maximum="1" Value="1" Margin="0,5,0,0"/>
+                                <Slider x:Name="Color2SatSlider" Minimum="0" Maximum="1" Value="1" Margin="0,5,0,0" ValueChanged="Color2_Changed"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Margin="4,0,0,0">
+                                <TextBlock Text="LUMA" FontSize="10" Foreground="#888"/>
+                                <Slider x:Name="Color2LumaSlider" Minimum="0" Maximum="1" Value="0.5" Margin="0,5,0,0" ValueChanged="Color2_Changed"/>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
                 </Border>
             </Expander>
 
-            <Expander Header="UPSTREAM KEY 1" IsExpanded="False" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
+            <Expander Header="UPSTREAM KEY 1" IsExpanded="True" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
                 <Border Background="#222" BorderBrush="#333" BorderThickness="1,0,1,1" Padding="10">
-                    <TextBlock Text="LUMA / CHROMA / PATTERN / DVE CONTROLS" Foreground="#888" HorizontalAlignment="Center"/>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="KEY 1 STATUS" Foreground="#AAA" FontSize="10" VerticalAlignment="Center"/>
+                            <ToggleButton x:Name="Usk1OnAirBtn" Grid.Column="1" Content="ON AIR" Width="80" Height="24"
+                                          Background="#333" Foreground="White" FontWeight="Bold" FontSize="10"
+                                          Click="Usk1OnAir_Click"/>
+                        </Grid>
+                        <TextBlock Text="FILL SOURCE" FontSize="10" Foreground="#888" Margin="0,0,0,3"/>
+                        <ComboBox x:Name="Usk1FillCombo" SelectionChanged="Usk1Source_Changed" Margin="0,0,0,8" SelectedIndex="0">
+                            <ComboBoxItem Content="Media Player 1" Tag="3010"/>
+                            <ComboBoxItem Content="Media Player 2" Tag="3020"/>
+                            <ComboBoxItem Content="Cam 1" Tag="1"/>
+                            <ComboBoxItem Content="Cam 2" Tag="2"/>
+                            <ComboBoxItem Content="Cam 3" Tag="3"/>
+                            <ComboBoxItem Content="Cam 4" Tag="4"/>
+                            <ComboBoxItem Content="Color 1" Tag="2001"/>
+                            <ComboBoxItem Content="Color 2" Tag="2002"/>
+                        </ComboBox>
+                        <TextBlock Text="KEY / CUT SOURCE" FontSize="10" Foreground="#888" Margin="0,0,0,3"/>
+                        <ComboBox x:Name="Usk1CutCombo" SelectionChanged="Usk1Source_Changed" SelectedIndex="0">
+                            <ComboBoxItem Content="Media Player 1 Key" Tag="3011"/>
+                            <ComboBoxItem Content="Media Player 2 Key" Tag="3021"/>
+                            <ComboBoxItem Content="Cam 1" Tag="1"/>
+                            <ComboBoxItem Content="Cam 2" Tag="2"/>
+                        </ComboBox>
+                    </StackPanel>
                 </Border>
             </Expander>
 
             <Expander Header="UPSTREAM KEY 2" IsExpanded="False" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
                 <Border Background="#222" BorderBrush="#333" BorderThickness="1,0,1,1" Padding="10">
-                    <TextBlock Text="LUMA / CHROMA / PATTERN / DVE CONTROLS" Foreground="#888" HorizontalAlignment="Center"/>
+                    <StackPanel>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="KEY 2 STATUS" Foreground="#AAA" FontSize="10" VerticalAlignment="Center"/>
+                            <ToggleButton x:Name="Usk2OnAirBtn" Grid.Column="1" Content="ON AIR" Width="80" Height="24"
+                                          Background="#333" Foreground="White" FontWeight="Bold" FontSize="10"
+                                          Click="Usk2OnAir_Click"/>
+                        </Grid>
+                        <TextBlock Text="FILL SOURCE" FontSize="10" Foreground="#888" Margin="0,0,0,3"/>
+                        <ComboBox x:Name="Usk2FillCombo" SelectionChanged="Usk2Source_Changed" Margin="0,0,0,8" SelectedIndex="1">
+                            <ComboBoxItem Content="Media Player 1" Tag="3010"/>
+                            <ComboBoxItem Content="Media Player 2" Tag="3020"/>
+                            <ComboBoxItem Content="Cam 1" Tag="1"/>
+                            <ComboBoxItem Content="Cam 2" Tag="2"/>
+                            <ComboBoxItem Content="Cam 3" Tag="3"/>
+                            <ComboBoxItem Content="Cam 4" Tag="4"/>
+                            <ComboBoxItem Content="Color 1" Tag="2001"/>
+                            <ComboBoxItem Content="Color 2" Tag="2002"/>
+                        </ComboBox>
+                        <TextBlock Text="KEY / CUT SOURCE" FontSize="10" Foreground="#888" Margin="0,0,0,3"/>
+                        <ComboBox x:Name="Usk2CutCombo" SelectionChanged="Usk2Source_Changed" SelectedIndex="1">
+                            <ComboBoxItem Content="Media Player 1 Key" Tag="3011"/>
+                            <ComboBoxItem Content="Media Player 2 Key" Tag="3021"/>
+                            <ComboBoxItem Content="Cam 1" Tag="1"/>
+                            <ComboBoxItem Content="Cam 2" Tag="2"/>
+                        </ComboBox>
+                    </StackPanel>
                 </Border>
             </Expander>
 
-            <Expander Header="TRANSITIONS" IsExpanded="False" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
+            <Expander Header="TRANSITIONS" IsExpanded="True" Style="{StaticResource DarkExpanderStyle}" Margin="0,0,0,5">
                 <Border Background="#222" BorderBrush="#333" BorderThickness="1,0,1,1" Padding="10">
                     <StackPanel>
-                        <TextBlock Text="RATE" Foreground="#888" FontSize="10"/>
-                        <TextBox Text="1.0" Width="50" HorizontalAlignment="Left" Background="#111" Foreground="White" BorderThickness="0" Margin="0,5,0,15"/>
+                        <TextBlock Text="RATE (SECONDS)" Foreground="#888" FontSize="10"/>
+                        <Grid Margin="0,5,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Slider x:Name="TransitionRateSlider" Grid.Column="0" Minimum="0.1" Maximum="5.0" Value="1.0"
+                                    TickFrequency="0.1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                    Margin="0,0,10,0" ValueChanged="TransitionRateSlider_ValueChanged"/>
+                            <TextBox x:Name="TransitionRateBox" Grid.Column="1" Text="1.0" Width="54" TextAlignment="Center"
+                                     Background="#111" Foreground="#00D26A" FontWeight="Bold" BorderThickness="1" BorderBrush="#444"
+                                     Padding="4,2" TextChanged="TransitionRate_Changed"/>
+                        </Grid>
                         
                         <TextBlock Text="WIPE PATTERN" Foreground="#888" FontSize="10" Margin="0,0,0,5"/>
-                        <ComboBox Background="#333" Foreground="Black" Width="120" HorizontalAlignment="Left">
-                            <ComboBoxItem Content="Circle"/>
-                            <ComboBoxItem Content="Diamond"/>
-                            <ComboBoxItem Content="Square"/>
+                        <ComboBox x:Name="WipePatternCombo" Width="150" HorizontalAlignment="Left" SelectedIndex="0" SelectionChanged="WipePattern_Changed">
+                            <ComboBoxItem Content="Left to Right"/>
+                            <ComboBoxItem Content="Top to Bottom"/>
+                            <ComboBoxItem Content="Circle Iris"/>
+                            <ComboBoxItem Content="Diamond Iris"/>
+                            <ComboBoxItem Content="Box Iris"/>
                             <ComboBoxItem Content="Diagonal"/>
                         </ComboBox>
                     </StackPanel>

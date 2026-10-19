@@ -22,7 +22,7 @@
         const pin = (urlParams.get('pin') || '').trim();
         const voiceServer = (urlParams.get('voiceServer') || '').trim();
 
-        const ICE_SERVERS = [
+        let ICE_SERVERS = [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
@@ -36,6 +36,10 @@
                 credential: 'Vidikom'
             }
         ];
+        const localIp = urlParams.get('localIp');
+        if (localIp && /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.|localhost)/.test(localIp)) {
+            ICE_SERVERS = []; // Disable public STUN/TURN on LAN to prevent DNS timeouts without internet
+        }
 
         window._audioSources = window._audioSources || {};
 
@@ -87,19 +91,18 @@
                 for (let i = 0; i < lines.length; i++) {
                     if (lines[i].startsWith(`a=fmtp:${opusPayloadType}`)) {
                         fmtpFound = true;
-                        if (lines[i].includes('maxaveragebitrate')) {
-                            lines[i] = lines[i].replace(/maxaveragebitrate=\d+/, 'maxaveragebitrate=128000');
-                        } else {
-                            lines[i] += ';maxaveragebitrate=128000;stereo=1';
-                        }
+                        lines[i] = `a=fmtp:${opusPayloadType} minptime=10;ptime=10;maxaveragebitrate=128000;stereo=0;useinbandfec=1;usedtx=0;cbr=1;maxplaybackrate=48000`;
                     }
                 }
                 if (!fmtpFound) {
-                    lines.push(`a=fmtp:${opusPayloadType} maxaveragebitrate=128000;stereo=1`);
+                    lines.push(`a=fmtp:${opusPayloadType} minptime=10;ptime=10;maxaveragebitrate=128000;stereo=0;useinbandfec=1;usedtx=0;cbr=1;maxplaybackrate=48000`);
                 }
             }
             return lines.join('\r\n');
         }
+
+        let wsPingInterval = null;
+        let lastWsMessageTime = Date.now();
 
         function initWebSocket() {
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
@@ -131,6 +134,7 @@
             ws = new WebSocket(targetUrl);
 
             ws.onopen = () => {
+                lastWsMessageTime = Date.now();
                 log('Signaling WebSocket connected to /ws/voice');
                 // Join voice room as Director
                 ws.send(JSON.stringify({
@@ -142,12 +146,26 @@
 
                 // Also announce ready for legacy intercom
                 ws.send(JSON.stringify({ type: 'intercom-director-ready' }));
+
+                if (wsPingInterval) clearInterval(wsPingInterval);
+                wsPingInterval = setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        if (Date.now() - lastWsMessageTime > 12000) {
+                            log('Signaling heartbeat timeout, recycling socket...');
+                            try { ws.close(); } catch (_) {}
+                            return;
+                        }
+                        try { ws.send(JSON.stringify({ type: 'ping', id: Date.now().toString() })); } catch (_) {}
+                    }
+                }, 4000);
             };
 
             ws.onmessage = async (e) => {
+                lastWsMessageTime = Date.now();
                 try {
                     const msg = JSON.parse(e.data);
                     const type = msg.type;
+                    if (type === 'pong') return;
 
                     // Mesh events (React Native WebRtcMeshService)
                     if (type === 'peers') {
@@ -188,125 +206,256 @@
             };
 
             ws.onclose = () => {
-            log('Signaling WebSocket closed.');
-            ws = null;
-            if (isConnected || isConnecting) {
-                log('Attempting signaling reconnect in 2s...');
-                setTimeout(() => {
-                    if (isConnected || isConnecting) {
-                        initWebSocket();
-                    }
-                }, 2000);
-            }
-        };
-
-        ws.onerror = (err) => {
-            log('WebSocket error: ' + err);
-        };
-    }
-
-    function ensureMicTracksAttached(pc) {
-        if (!directorStream) return;
-        
-        let audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-        if (!audioSender) {
-            directorStream.getAudioTracks().forEach(track => {
-                track.enabled = !isMicMuted;
-                try { 
-                    pc.addTrack(track, directorStream); 
-                    log('Attached microphone track via addTrack (enabled=' + track.enabled + ')');
-                } catch (e) {
-                    log('Error attaching microphone track: ' + e.message);
+                log('Signaling WebSocket closed.');
+                if (wsPingInterval) {
+                    clearInterval(wsPingInterval);
+                    wsPingInterval = null;
                 }
-            });
+                ws = null;
+                if (isConnected || isConnecting) {
+                    log('Attempting fast signaling reconnect in 400ms...');
+                    setTimeout(() => {
+                        if (isConnected || isConnecting) {
+                            initWebSocket();
+                        }
+                    }, 400);
+                }
+            };
+
+            ws.onerror = (err) => {
+                log('WebSocket error: ' + err);
+            };
         }
-    }
 
-    async function connectIntercom() {
-        if (isConnecting || isConnected) {
-            log('connectIntercom called but already connecting/connected.');
-            return;
-        }
-        isConnecting = true;
-        log('Starting Director intercom...');
-
-        try {
-            // 1. Initialize WebAudio context
-            try {
-                if (!window._audioCtx) {
-                    window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-                if (window._audioCtx.state === 'suspended') {
-                    await window._audioCtx.resume();
-                }
-            } catch (_) {}
-
-            // 2. Capture Director microphone
-            log('Requesting microphone access...');
-            try {
-                directorStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    },
-                    video: false
-                });
-            } catch (micErr1) {
-                try {
-                    directorStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                } catch (micErr2) {
-                    log('Microphone warning: ' + micErr2.message + ' (continuing in listen mode)');
-                }
-            }
-
-            if (directorStream) {
+        function ensureMicTracksAttached(pc) {
+            if (!directorStream) return;
+            
+            let audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+            if (!audioSender) {
                 directorStream.getAudioTracks().forEach(track => {
                     track.enabled = !isMicMuted;
+                    try { 
+                        pc.addTrack(track, directorStream); 
+                        log('Attached microphone track via addTrack (enabled=' + track.enabled + ')');
+                    } catch (e) {
+                        log('Error attaching microphone track: ' + e.message);
+                    }
                 });
-                log('Microphone acquired successfully with ' + directorStream.getAudioTracks().length + ' track(s)');
-                Object.values(peers).forEach(pc => ensureMicTracksAttached(pc));
             }
-
-            isConnected = true;
-            isConnecting = false;
-
-            // 3. Connect to WebSocket signaling NOW that mic is ready
-            initWebSocket();
-
-            postToWpf('intercom_connected');
-        } catch (err) {
-            log('Intercom connect error: ' + err.message);
-            isConnecting = false;
-            isConnected = false;
-            postToWpf('intercom_error');
         }
-    }
-    window.connectIntercom = connectIntercom;
+
+        async function connectIntercom() {
+            if (isConnecting || isConnected) {
+                log('connectIntercom called but already connecting/connected.');
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    initWebSocket();
+                }
+                postToWpf('intercom_connected');
+                return;
+            }
+            isConnecting = true;
+            log('Starting Director intercom...');
+
+            try {
+                // 1. Initialize WebAudio context
+                try {
+                    if (!window._audioCtx) {
+                        window._audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                    }
+                    if (window._audioCtx.state === 'suspended') {
+                        await window._audioCtx.resume();
+                    }
+                } catch (_) {}
+
+                // 2. Capture Director microphone
+                log('Requesting microphone access...');
+                try {
+                    directorStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            latency: 0.01
+                        },
+                        video: false
+                    });
+                } catch (micErr1) {
+                    try {
+                        directorStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                    } catch (micErr2) {
+                        log('Microphone warning: ' + micErr2.message + ' (continuing in listen mode)');
+                    }
+                }
+
+                if (directorStream) {
+                    directorStream.getAudioTracks().forEach(track => {
+                        track.enabled = !isMicMuted;
+                    });
+                    log('Microphone acquired successfully with ' + directorStream.getAudioTracks().length + ' track(s)');
+                    Object.values(peers).forEach(pc => ensureMicTracksAttached(pc));
+                    setupDirectorPcmBroadcast(directorStream);
+                }
+
+                isConnected = true;
+                isConnecting = false;
+
+                // 3. Connect to WebSocket signaling NOW that mic is ready
+                initWebSocket();
+
+                postToWpf('intercom_connected');
+            } catch (err) {
+                log('Intercom connect error: ' + err.message);
+                isConnecting = false;
+                isConnected = false;
+                postToWpf('intercom_error');
+            }
+        }
+        window.connectIntercom = connectIntercom;
+
+        window._pcmNextPlayTime = window._pcmNextPlayTime || {};
+
+        function floatTo16BitBase64(float32Array, inputSampleRate, targetSampleRate) {
+            const ratio = inputSampleRate / targetSampleRate;
+            const outLength = Math.floor(float32Array.length / ratio);
+            const int16 = new Int16Array(outLength);
+            let rms = 0;
+            for (let i = 0; i < outLength; i++) {
+                const idx = Math.min(Math.floor(i * ratio), float32Array.length - 1);
+                const s = Math.max(-1, Math.min(1, float32Array[idx]));
+                rms += s * s;
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            rms = Math.sqrt(rms / Math.max(1, outLength));
+            if (rms < 0.004) return null;
+            const bytes = new Uint8Array(int16.buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        function setupDirectorPcmBroadcast(stream) {
+            try {
+                if (!window._audioCtx) {
+                    window._audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                }
+                if (window._dirPcmProc) {
+                    try { window._dirPcmProc.disconnect(); } catch (_) {}
+                }
+                if (window._dirPcmSrc) {
+                    try { window._dirPcmSrc.disconnect(); } catch (_) {}
+                }
+                const ctx = window._audioCtx;
+                const src = ctx.createMediaStreamSource(stream);
+                const proc = ctx.createScriptProcessor(2048, 1, 1);
+                proc.onaudioprocess = (e) => {
+                    if (isMicMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
+                    const targetAliases = Object.keys(peers).filter(alias => {
+                        const pc = peers[alias];
+                        if (!pc) return false;
+                        return pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed';
+                    });
+                    if (targetAliases.length === 0) return;
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const b64 = floatTo16BitBase64(inputData, ctx.sampleRate || 48000, 16000);
+                    if (!b64) return;
+                    for (const alias of targetAliases) {
+                        try {
+                            ws.send(JSON.stringify({
+                                type: 'signal',
+                                roomId: roomId,
+                                from: 'Director',
+                                to: alias,
+                                data: { type: 'ws-pcm', sr: 16000, pcm: b64 }
+                            }));
+                        } catch (_) {}
+                    }
+                };
+                const zeroGain = ctx.createGain();
+                zeroGain.gain.value = 0;
+                src.connect(proc);
+                proc.connect(zeroGain);
+                zeroGain.connect(ctx.destination);
+                window._dirPcmSrc = src;
+                window._dirPcmProc = proc;
+                log('Director PCM WebSocket fallback broadcaster initialized');
+            } catch (err) {
+                log('setupDirectorPcmBroadcast error: ' + err.message);
+            }
+        }
+
+        function playPeerPcmBase64(fromAlias, b64, sampleRate) {
+            try {
+                if (!window._audioCtx) {
+                    window._audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                }
+                const ctx = window._audioCtx;
+                if (ctx.state === 'suspended') ctx.resume();
+
+                const binary = atob(b64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                const int16 = new Int16Array(bytes.buffer);
+                const float32 = new Float32Array(int16.length);
+                for (let i = 0; i < int16.length; i++) {
+                    float32[i] = Math.max(-1, Math.min(1, int16[i] / 32768.0));
+                }
+
+                const sr = sampleRate || 16000;
+                const audioBuffer = ctx.createBuffer(1, float32.length, sr);
+                audioBuffer.getChannelData(0).set(float32);
+
+                const src = ctx.createBufferSource();
+                src.buffer = audioBuffer;
+                src.connect(ctx.destination);
+
+                const now = ctx.currentTime;
+                let startAt = window._pcmNextPlayTime[fromAlias] || now;
+                if (startAt < now || startAt > now + 0.4) {
+                    startAt = now + 0.02;
+                }
+                src.start(startAt);
+                window._pcmNextPlayTime[fromAlias] = startAt + audioBuffer.duration;
+            } catch (err) {
+                log('playPeerPcmBase64 error: ' + err.message);
+            }
+        }
 
         async function getOrCreatePeer(alias, initiateOffer = false) {
             if (peers[alias]) {
-                if (initiateOffer || peers[alias].connectionState === 'failed' || peers[alias].connectionState === 'closed') {
-                    log(`Recreating peer connection for ${alias} (initiateOffer=${initiateOffer}, state=${peers[alias].connectionState})`);
+                const existingPc = peers[alias];
+                const isHealthy = existingPc.connectionState === 'connected' || existingPc.iceConnectionState === 'connected' || existingPc.iceConnectionState === 'completed';
+                if ((initiateOffer && !isHealthy) || existingPc.connectionState === 'failed' || existingPc.connectionState === 'closed' || existingPc.iceConnectionState === 'failed') {
+                    log(`Recreating peer connection for ${alias} (initiateOffer=${initiateOffer}, state=${existingPc.connectionState})`);
                     cleanupPeer(alias);
                 } else {
-                    return peers[alias];
+                    return existingPc;
                 }
             }
 
-            log('Creating RTCPeerConnection for: ' + alias);
+            log('Creating RTCPeerConnection for: ' + alias + ' (initiateOffer=' + initiateOffer + ')');
             const pc = new RTCPeerConnection({
                 iceServers: ICE_SERVERS
             });
 
             peers[alias] = pc;
-            
             pc._makingOffer = false;
+            pc._negotiationReady = false;
+
+            // Attach microphone track BEFORE assigning onnegotiationneeded so addTrack does not fire a premature offer!
+            ensureMicTracksAttached(pc);
+
             pc.onnegotiationneeded = async () => {
+                if (!pc._negotiationReady || pc._makingOffer || pc.signalingState !== 'stable') {
+                    return;
+                }
                 log('Negotiation needed for: ' + alias);
                 try {
                     pc._makingOffer = true;
-                    const offer = await pc.createOffer();
+                    const offer = await pc.createOffer({ offerToReceiveAudio: true });
                     if (pc.signalingState !== 'stable') return;
                     let modifiedSdp = setHighBitrateOpus(offer.sdp);
                     const localIp = new URLSearchParams(window.location.search).get('localIp');
@@ -330,8 +479,6 @@
                 }
             };
 
-            ensureMicTracksAttached(pc);
-
             pc.ontrack = (event) => {
                 log(`Audio track received from: ${alias}`);
                 let audioEl = document.getElementById('audio-peer-' + alias);
@@ -350,7 +497,7 @@
 
                 try {
                     if (!window._audioCtx) {
-                        window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        window._audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
                     }
                     if (window._audioCtx.state === 'suspended') {
                         window._audioCtx.resume();
@@ -387,15 +534,44 @@
 
             pc.onconnectionstatechange = () => {
                 log(`${alias} connection state: ${pc.connectionState}`);
-                if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                if (pc.connectionState === 'connected') {
+                    pc._negotiationReady = true;
+                } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
                     cleanupPeer(alias);
+                }
+            };
+            
+            pc.oniceconnectionstatechange = () => {
+                log(`${alias} ICE state: ${pc.iceConnectionState}`);
+                if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                    if (pc._disconnectTimer) {
+                        clearTimeout(pc._disconnectTimer);
+                        pc._disconnectTimer = null;
+                    }
+                    pc._negotiationReady = true;
+                } else if (pc.iceConnectionState === 'failed') {
+                    if (pc._disconnectTimer) {
+                        clearTimeout(pc._disconnectTimer);
+                        pc._disconnectTimer = null;
+                    }
+                    cleanupPeer(alias);
+                } else if (pc.iceConnectionState === 'disconnected') {
+                    if (!pc._disconnectTimer) {
+                        pc._disconnectTimer = setTimeout(() => {
+                            pc._disconnectTimer = null;
+                            if (peers[alias] === pc && (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed')) {
+                                log(`${alias} remained disconnected for 6s, cleaning up peer`);
+                                cleanupPeer(alias);
+                            }
+                        }, 6000);
+                    }
                 }
             };
 
             if (initiateOffer) {
                 try {
                     pc._makingOffer = true;
-                    const offer = await pc.createOffer();
+                    const offer = await pc.createOffer({ offerToReceiveAudio: true });
                     let modifiedSdp = setHighBitrateOpus(offer.sdp);
                     const localIp = new URLSearchParams(window.location.search).get('localIp');
                     if (localIp) {
@@ -422,11 +598,24 @@
         }
 
         async function handleSignalData(fromAlias, data) {
+            if (!data) return;
+            if (data.type === 'ws-pcm' && data.pcm) {
+                if (!peers[fromAlias]) {
+                    await getOrCreatePeer(fromAlias, false);
+                }
+                playPeerPcmBase64(fromAlias, data.pcm, data.sr || 16000);
+                return;
+            }
+
             const pc = await getOrCreatePeer(fromAlias, false);
             log(`[handleSignalData] fromAlias=${fromAlias}, pc=${pc}, state=${pc?.signalingState}`);
             if (!pc) return;
 
             if (data.type === 'offer') {
+                if (!data.sdp || !data.sdp.includes('a=ice-ufrag')) {
+                    log(`Ignoring stub/non-WebRTC offer from ${fromAlias} (using ws-pcm fallback)`);
+                    return;
+                }
                 log(`Handling offer from: ${fromAlias}`);
                 const isPolite = false; // Director is always impolite
                 const offerCollision = (data.type === 'offer') && (pc._makingOffer || pc.signalingState !== 'stable');
@@ -437,7 +626,7 @@
                     return;
                 }
 
-                if (offerCollision) {
+                if (offerCollision && pc.signalingState !== 'stable') {
                     log(`Offer collision detected for ${fromAlias}, rolling back local offer`);
                     try {
                         await pc.setLocalDescription({ type: 'rollback' });
@@ -593,7 +782,12 @@
         }, 1500);
 
         window.addEventListener('DOMContentLoaded', () => {
-            log('Director Intercom initialized in idle state. Microphone not accessed until Intercom is ON.');
+            log('Director Intercom initialized. Auto-starting LAN intercom...');
+            setTimeout(() => {
+                if (!isConnected && !isConnecting) {
+                    connectIntercom();
+                }
+            }, 300);
         });
     </script>
 </body>

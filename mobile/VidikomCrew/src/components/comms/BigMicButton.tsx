@@ -12,6 +12,7 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useComms } from '../../context/CommsContext';
+import Icon from '../common/Icon';
 
 export interface BigMicButtonProps {
   mode?: 'toggle' | 'ptt';
@@ -23,7 +24,7 @@ export interface BigMicButtonProps {
 export const BigMicButton: React.FC<BigMicButtonProps> = ({
   mode: propMode,
   disabled: propDisabled,
-  size = 170,
+  size = 190,
   style,
 }) => {
   const { theme } = useTheme();
@@ -42,68 +43,52 @@ export const BigMicButton: React.FC<BigMicButtonProps> = ({
   } = useComms();
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const opacityAnim = useRef(new Animated.Value(0.6)).current;
+  const ringScaleAnim = useRef(new Animated.Value(1)).current;
 
   const effectiveMode = propMode || (settings as any)?.micMode || 'toggle';
   const isPttMode = effectiveMode === 'ptt';
 
-  // Determine active transmitting state
   const isLive = connected && !isMuted && !isListenOnly;
   const isTransmitting = isPttActive && !isListenOnly;
-  const shouldPulse = isLive || isTransmitting;
+  const shouldPulse = (isLive || isTransmitting) && !isListenOnly;
 
   useEffect(() => {
     const proc = (globalThis as any).process;
     const isTest = typeof proc !== 'undefined' && proc.env?.NODE_ENV === 'test';
     if (isTest) {
       pulseAnim.setValue(1);
-      opacityAnim.setValue(0.6);
+      ringScaleAnim.setValue(1);
       return;
     }
 
     let animation: Animated.CompositeAnimation | null = null;
     if (shouldPulse) {
       animation = Animated.loop(
-        Animated.parallel([
-          Animated.sequence([
-            Animated.timing(pulseAnim, {
-              toValue: 1.15,
-              duration: 1000,
-              easing: Easing.out(Easing.ease),
-              useNativeDriver: true,
-            }),
-            Animated.timing(pulseAnim, {
-              toValue: 1.0,
-              duration: 1000,
-              easing: Easing.in(Easing.ease),
-              useNativeDriver: true,
-            }),
-          ]),
-          Animated.sequence([
-            Animated.timing(opacityAnim, {
-              toValue: 0.1,
-              duration: 1000,
-              useNativeDriver: true,
-            }),
-            Animated.timing(opacityAnim, {
-              toValue: 0.6,
-              duration: 1000,
-              useNativeDriver: true,
-            }),
-          ]),
+        Animated.sequence([
+          Animated.timing(ringScaleAnim, {
+            toValue: 1.08,
+            duration: 800,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(ringScaleAnim, {
+            toValue: 1.0,
+            duration: 800,
+            easing: Easing.in(Easing.ease),
+            useNativeDriver: true,
+          }),
         ])
       );
       animation.start();
     } else {
-      pulseAnim.setValue(1);
-      opacityAnim.setValue(0.6);
+      ringScaleAnim.setValue(1);
     }
-    return () => {
-      animation?.stop();
-    };
-  }, [shouldPulse, pulseAnim, opacityAnim]);
 
-  // Compute status text for TEST_IDS.COMMS_MIC_INDICATOR
+    return () => {
+      if (animation) animation.stop();
+    };
+  }, [shouldPulse, ringScaleAnim, pulseAnim]);
+
   let statusText = 'STANDBY';
   if (isListenOnly) {
     statusText = 'LISTEN-ONLY';
@@ -118,7 +103,7 @@ export const BigMicButton: React.FC<BigMicButtonProps> = ({
   }
 
   const handleToggle = () => {
-    if (isListenOnly || propDisabled) return;
+    if (propDisabled || !connected || isListenOnly) return;
     if (typeof toggleMute === 'function') {
       toggleMute();
     } else if (typeof toggleMic === 'function') {
@@ -127,7 +112,7 @@ export const BigMicButton: React.FC<BigMicButtonProps> = ({
   };
 
   const handlePressIn = () => {
-    if (isListenOnly || propDisabled) return;
+    if (propDisabled || !connected || isListenOnly) return;
     if (typeof startPtt === 'function') {
       startPtt();
     } else if (typeof setPttActive === 'function') {
@@ -136,7 +121,7 @@ export const BigMicButton: React.FC<BigMicButtonProps> = ({
   };
 
   const handlePressOut = () => {
-    if (isListenOnly || propDisabled) return;
+    if (propDisabled || !connected || isListenOnly) return;
     if (typeof stopPtt === 'function') {
       stopPtt();
     } else if (typeof setPttActive === 'function') {
@@ -144,101 +129,112 @@ export const BigMicButton: React.FC<BigMicButtonProps> = ({
     }
   };
 
-  // Compute background and border colors
-  let bgColor = theme.surfaceElevated;
-  let borderColor = theme.surfaceBorder;
-  let iconText = '🎙️';
+  const isMicActive = !isMuted && !isListenOnly;
+  const ringColor = isTransmitting || isMicActive ? '#10B981' : '#EF4444';
+  const glowColor = isTransmitting || isMicActive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.35)';
 
   if (isListenOnly) {
-    bgColor = 'rgba(255, 255, 255, 0.05)';
-    borderColor = theme.textDisabled;
-    iconText = '🔒';
-  } else if (!connected) {
-    bgColor = theme.surfaceElevated;
-    borderColor = theme.surfaceBorder;
-    iconText = '🔇';
-  } else if (isTransmitting) {
-    bgColor = theme.primary;
-    borderColor = '#FFFFFF';
-    iconText = '🎙️';
-  } else if (isLive) {
-    bgColor = theme.palette.micActive;
-    borderColor = '#FFFFFF';
-    iconText = '🎙️';
-  } else {
-    // Muted
-    bgColor = theme.surfaceElevated;
-    borderColor = theme.palette.micMuted;
-    iconText = '🔇';
+    return (
+      <View style={[styles.outerContainer, style]}>
+        <TouchableOpacity
+          testID="big-mic-button-listen-only"
+          disabled={true}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: true }}
+          accessibilityLabel="Listen-only mode. Microphone disabled."
+          style={[
+            styles.micButton,
+            {
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              borderColor: '#6B7280',
+              opacity: 0.6,
+            },
+          ]}
+        >
+          <View style={styles.buttonInner}>
+            <Icon name="mic" size={42} color="#6B7280" />
+            <Text style={[styles.centerStatus, { color: '#6B7280' }]}>LOCKED</Text>
+          </View>
+        </TouchableOpacity>
+
+        <Text testID="mic-status-indicator" style={[styles.statusIndicatorText, { color: '#6B7280' }]}>
+          LISTEN-ONLY
+        </Text>
+      </View>
+    );
   }
 
-  const testID = isListenOnly ? 'big-mic-button-listen-only' : 'big-mic-button';
-
   return (
-    <View style={[styles.container, style]}>
-      {/* Animated Pulsing Outer Ring */}
+    <View style={[styles.outerContainer, style]}>
+      {/* Outer Pulse Glow Ring */}
       {shouldPulse && (
         <Animated.View
           style={[
-            styles.pulseRing,
+            styles.glowRing,
             {
-              width: size + 24,
-              height: size + 24,
-              borderRadius: (size + 24) / 2,
-              borderColor: isTransmitting ? theme.primary : theme.palette.micActive,
-              transform: [{ scale: pulseAnim }],
-              opacity: opacityAnim,
+              width: size + 20,
+              height: size + 20,
+              borderRadius: (size + 20) / 2,
+              borderColor: glowColor,
+              transform: [{ scale: ringScaleAnim }],
             },
           ]}
         />
       )}
 
-      {/* Main Touch Target */}
+      {/* Main Touch Dial */}
       <TouchableOpacity
-        testID={testID}
-        disabled={isListenOnly || propDisabled}
+        testID="big-mic-button"
+        disabled={propDisabled || !connected}
+        accessible={true}
         accessibilityRole="button"
         accessibilityLabel={
-          isListenOnly
-            ? 'Microphone Locked in Listen-Only Mode'
-            : isMuted
-            ? 'Unmute Microphone'
-            : 'Mute Microphone'
+          isMuted ? 'Unmute Microphone' : 'Mute Microphone'
         }
         accessibilityHint={
-          isListenOnly
-            ? 'Microphone permission was denied'
-            : isPttMode
-            ? 'Hold to talk, release to mute'
-            : 'Tap to toggle microphone'
+          isPttMode ? 'Hold to talk, release to mute' : 'Tap to toggle microphone'
         }
         accessibilityState={{
-          disabled: isListenOnly || propDisabled,
-          checked: !isMuted && !isListenOnly,
+          disabled: propDisabled || !connected,
+          checked: !isMuted,
         }}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         onPress={!isPttMode ? handleToggle : undefined}
         onPressIn={isPttMode ? handlePressIn : undefined}
         onPressOut={isPttMode ? handlePressOut : undefined}
         style={[
-          styles.button,
+          styles.micButton,
           {
             width: size,
             height: size,
             borderRadius: size / 2,
-            backgroundColor: bgColor,
-            borderColor: borderColor,
+            borderColor: ringColor,
           },
         ]}
       >
-        <Text style={styles.icon}>{iconText}</Text>
-        <Text style={[styles.label, { color: theme.textPrimary }]}>
-          {statusText}
-        </Text>
+        <View style={styles.buttonInner}>
+          <Icon
+            name="mic"
+            size={44}
+            color={isMicActive ? '#10B981' : '#FFFFFF'}
+          />
+          <Text style={[styles.centerStatus, { color: isMicActive ? '#10B981' : '#FFFFFF' }]}>
+            {statusText}
+          </Text>
+        </View>
       </TouchableOpacity>
 
       {/* Status Indicators expected by Unit and E2E Tests */}
-      <Text testID="mic-status-indicator" style={[styles.statusText, { color: theme.textSecondary }]}>
+      <Text
+        testID="mic-status-indicator"
+        style={[
+          styles.statusIndicatorText,
+          { color: isMicActive ? '#10B981' : theme.textSecondary },
+        ]}
+      >
         {statusText}
       </Text>
 
@@ -258,39 +254,43 @@ export const BigMicButton: React.FC<BigMicButtonProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
+  outerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 16,
+    marginVertical: 12,
   },
-  pulseRing: {
+  glowRing: {
     position: 'absolute',
-    borderWidth: 3,
+    borderWidth: 4,
   },
-  button: {
-    justifyContent: 'center',
+  micButton: {
+    backgroundColor: '#1E2026',
+    borderWidth: 4,
     alignItems: 'center',
-    borderWidth: 3,
+    justifyContent: 'center',
     elevation: 8,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
   },
-  icon: {
-    fontSize: 44,
-    marginBottom: 6,
+  buttonInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  label: {
-    fontSize: 15,
-    fontWeight: '700',
+  centerStatus: {
+    fontSize: 12,
+    fontWeight: '800',
     letterSpacing: 1.5,
+    marginTop: 6,
+    textTransform: 'uppercase',
   },
-  statusText: {
+  statusIndicatorText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     marginTop: 10,
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   subIndicator: {
     marginTop: 4,

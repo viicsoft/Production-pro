@@ -1,4 +1,20 @@
 {
-  "name": "CuePilotCrew",
-  "displayName": "CuePilotCrew"
+  "expo": {
+    "name": "VidikomCrew",
+    "slug": "vidikomcrew",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#18191A",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vidikomcrew"
+    },
+    "android": {
+      "package": "com.vidikomcrew",
+      "adaptiveIcon": {
+        "backgroundColor": "#18191A"
+      }
+    }
+  }
 }

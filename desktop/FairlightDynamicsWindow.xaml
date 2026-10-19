@@ -1,9 +1,9 @@
-<Window x:Class="Desktop.FairlightDynamicsWindow"
+﻿<Window x:Class="Desktop.FairlightDynamicsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Desktop"
-        Title="Fairlight Dynamics" Height="520" Width="820"
-        MinWidth="760" MinHeight="480"
+        Title="Fairlight Dynamics" SizeToContent="WidthAndHeight"
+        MinWidth="600" MinHeight="400"
         Background="#18181B" Foreground="#E0E0E0"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
@@ -60,69 +60,121 @@
 
             <!-- Expander / Gate -->
             <Border Grid.Column="0" Background="#1E1E24" CornerRadius="4" Margin="2" Padding="8">
-                <StackPanel>
-                    <TextBlock Text="EXPANDER / GATE" Foreground="#64FFDA" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
-                    <CheckBox x:Name="ChkGateEnable" Content="Gate Enable" Foreground="#AAA" FontSize="9" HorizontalAlignment="Center" Margin="0,4,0,6" Checked="DynControl_Changed" Unchecked="DynControl_Changed"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="EXPANDER / GATE" Foreground="#64FFDA" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
+                        <CheckBox x:Name="ChkGateEnable" Content="Enabled" Foreground="#AAA" FontSize="9" HorizontalAlignment="Center" Margin="0,4,0,4" Checked="DynControl_Changed" Unchecked="DynControl_Changed"/>
 
-                    <TextBlock Text="THRESHOLD (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                    <local:KnobControl x:Name="SldGateThresh" Minimum="-60" Maximum="0" Value="-45" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,2"/>
+                        <!-- Mode Selector -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,4">
+                            <RadioButton x:Name="RadExpanderMode" Content="EXP" Foreground="#AAA" FontSize="9" Margin="0,0,8,0" IsChecked="True" Checked="DynControl_Changed"/>
+                            <RadioButton x:Name="RadGateMode" Content="GATE" Foreground="#AAA" FontSize="9" Checked="DynControl_Changed"/>
+                        </StackPanel>
 
-                    <TextBlock Text="RANGE (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                    <local:KnobControl x:Name="SldGateRange" Minimum="-60" Maximum="0" Value="-18" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,2"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="RATIO" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                    <local:KnobControl x:Name="SldGateRatio" Minimum="1.0" Maximum="10.0" Value="2.0" Unit=": 1" ValueChanged="DynKnob_Changed" Margin="0,2"/>
-                </StackPanel>
+                            <StackPanel Grid.Column="0" Margin="0,0,2,0">
+                                <TextBlock Text="THRESH (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldGateThresh" Minimum="-60" Maximum="0" Value="-45" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+
+                                <TextBlock Text="RANGE (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldGateRange" Minimum="-60" Maximum="0" Value="-18" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+
+                                <TextBlock Text="RATIO" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldGateRatio" Minimum="1.0" Maximum="10.0" Value="2.0" Unit=":1" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Margin="2,0,0,0">
+                                <TextBlock Text="ATTACK (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldGateAttack" Minimum="0.5" Maximum="100.0" Value="1.4" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+
+                                <TextBlock Text="HOLD (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldGateHold" Minimum="0" Maximum="4000" Value="50" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+
+                                <TextBlock Text="RELEASE (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldGateRelease" Minimum="20" Maximum="2000" Value="100" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <!-- Compressor -->
             <Border Grid.Column="1" Background="#1E1E24" CornerRadius="4" Margin="2" Padding="8">
-                <StackPanel>
-                    <TextBlock Text="COMPRESSOR" Foreground="#AAAAAA" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
-                    <CheckBox x:Name="ChkCompEnable" Content="Compressor Enable" IsChecked="True" Foreground="#AAA" FontSize="9" HorizontalAlignment="Center" Margin="0,4,0,6" Checked="DynControl_Changed" Unchecked="DynControl_Changed"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="COMPRESSOR" Foreground="#AAAAAA" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
+                        <CheckBox x:Name="ChkCompEnable" Content="Enabled" IsChecked="True" Foreground="#AAA" FontSize="9" HorizontalAlignment="Center" Margin="0,4,0,6" Checked="DynControl_Changed" Unchecked="DynControl_Changed"/>
 
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                        <!-- Col 1 -->
-                        <StackPanel Grid.Column="0" Margin="0,0,4,0">
-                            <TextBlock Text="THRESHOLD (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                            <local:KnobControl x:Name="SldCompThresh" Minimum="-60" Maximum="0" Value="-14" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,2"/>
+                            <!-- Col 1 -->
+                            <StackPanel Grid.Column="0" Margin="0,0,4,0">
+                                <TextBlock Text="THRESHOLD (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldCompThresh" Minimum="-60" Maximum="0" Value="-14" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,1"/>
 
-                            <TextBlock Text="RATIO" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                            <local:KnobControl x:Name="SldCompRatio" Minimum="1.0" Maximum="20.0" Value="3.0" Unit=": 1" ValueChanged="DynKnob_Changed" Margin="0,2"/>
+                                <TextBlock Text="RATIO" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldCompRatio" Minimum="1.0" Maximum="20.0" Value="3.0" Unit=":1" ValueChanged="DynKnob_Changed" Margin="0,1"/>
 
-                            <TextBlock Text="ATTACK (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                            <local:KnobControl x:Name="SldCompAttack" Minimum="0.5" Maximum="100.0" Value="10.0" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,2"/>
-                        </StackPanel>
+                                <TextBlock Text="ATTACK (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldCompAttack" Minimum="0.5" Maximum="100.0" Value="10.0" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+                            </StackPanel>
 
-                        <!-- Col 2 -->
-                        <StackPanel Grid.Column="1" Margin="4,0,0,0">
-                            <TextBlock Text="RELEASE (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                            <local:KnobControl x:Name="SldCompRelease" Minimum="20" Maximum="1000" Value="100" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,2"/>
+                            <!-- Col 2 -->
+                            <StackPanel Grid.Column="1" Margin="4,0,0,0">
+                                <TextBlock Text="HOLD (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldCompHold" Minimum="0" Maximum="4000" Value="0" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
 
-                            <TextBlock Text="MAKEUP GAIN (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                            <local:KnobControl x:Name="SldCompGain" Minimum="0" Maximum="24" Value="2.0" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,2"/>
-                        </StackPanel>
-                    </Grid>
-                </StackPanel>
+                                <TextBlock Text="RELEASE (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldCompRelease" Minimum="20" Maximum="2000" Value="100" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+
+                                <TextBlock Text="MAKEUP GAIN (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldCompGain" Minimum="0" Maximum="24" Value="2.0" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <!-- Limiter -->
             <Border Grid.Column="2" Background="#1E1E24" CornerRadius="4" Margin="2" Padding="8">
-                <StackPanel>
-                    <TextBlock Text="LIMITER" Foreground="#FF5252" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
-                    <CheckBox x:Name="ChkLimiterEnable" Content="Limiter Enable" IsChecked="True" Foreground="#AAA" FontSize="9" HorizontalAlignment="Center" Margin="0,4,0,6" Checked="DynControl_Changed" Unchecked="DynControl_Changed"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="LIMITER" Foreground="#FF5252" FontWeight="Bold" FontSize="11" HorizontalAlignment="Center"/>
+                        <CheckBox x:Name="ChkLimiterEnable" Content="Enabled" IsChecked="True" Foreground="#AAA" FontSize="9" HorizontalAlignment="Center" Margin="0,4,0,6" Checked="DynControl_Changed" Unchecked="DynControl_Changed"/>
 
-                    <TextBlock Text="THRESHOLD (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                    <local:KnobControl x:Name="SldLimiterThresh" Minimum="-20" Maximum="0" Value="-2" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,2"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="RELEASE (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
-                    <local:KnobControl x:Name="SldLimiterRelease" Minimum="10" Maximum="500" Value="50" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,2"/>
-                </StackPanel>
+                            <StackPanel Grid.Column="0" Margin="0,0,2,0">
+                                <TextBlock Text="THRESHOLD (dB)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldLimiterThresh" Minimum="-20" Maximum="0" Value="-2" Unit="dB" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+
+                                <TextBlock Text="ATTACK (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldLimiterAttack" Minimum="0.5" Maximum="100.0" Value="1.0" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Margin="2,0,0,0">
+                                <TextBlock Text="HOLD (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldLimiterHold" Minimum="0" Maximum="4000" Value="0" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+
+                                <TextBlock Text="RELEASE (ms)" Foreground="#777" FontSize="8" HorizontalAlignment="Center"/>
+                                <local:KnobControl x:Name="SldLimiterRelease" Minimum="10" Maximum="1000" Value="50" Unit="ms" ValueChanged="DynKnob_Changed" Margin="0,1"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
 
@@ -132,3 +184,4 @@
         </StackPanel>
     </Grid>
 </Window>
+

@@ -8,17 +8,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Shapes;
-using System.Windows.Threading;
 using Core;
+using Desktop.HardwareAbstraction;
 
 namespace Desktop
 {
@@ -30,6 +21,9 @@ namespace Desktop
         private readonly List<ChannelStripController> _stripControllers = new();
                 private readonly Random _rnd = new();
         private readonly System.Collections.Concurrent.ConcurrentDictionary<long, (double L, double R)> _liveAudioLevels = new();
+
+        private readonly System.Windows.Media.Brush _meterActiveBrush = CreateMeterGradient();
+        private readonly System.Windows.Media.Brush _meterInactiveBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x55, 0x55, 0x55));
 
         public AudioMixerView(IAtemSwitch switcher, AudioControlService audioService)
         {
@@ -43,12 +37,12 @@ namespace Desktop
                         _meterTimer.Tick += MeterTimer_Tick;
             _meterTimer.Start();
             
-                        _switcher.AudioLevelUpdated += OnAudioLevelUpdated;
+                        _audioService.MeterChanged += OnAudioServiceMeterChanged;
             _audioService.StateChanged += OnAudioStateChanged;
 
             Unloaded += (s, e) => {
                 _meterTimer.Stop();
-                                _switcher.AudioLevelUpdated -= OnAudioLevelUpdated;
+                                _audioService.MeterChanged -= OnAudioServiceMeterChanged;
                 _audioService.StateChanged -= OnAudioStateChanged;
             };
         }
@@ -60,10 +54,10 @@ namespace Desktop
 
             var config = MainWindow.Instance?.GetConfig() ?? InputConfig.Load();
 
-            // 1. Camera Channels (CAM1, CAM2, CAM3, CAM4, ...)
+            // 1. Camera Channels (CAM1 .. CAM40 or Active Inputs)
             var inputs = config.ActiveInputs != null && config.ActiveInputs.Count > 0
                 ? config.ActiveInputs.OrderBy(x => x).ToList()
-                : Enumerable.Range(1, 8).ToList();
+                : Enumerable.Range(1, 40).ToList();
 
             foreach (var inputId in inputs)
             {
@@ -75,27 +69,31 @@ namespace Desktop
             // Divider
             FaderPanel.Children.Add(CreateDivider());
 
-            // 2. Media Player Strip — Canonical Logical ID (Media 1)
-            FaderPanel.Children.Add(CreateFairlightChannelStrip((int)LogicalAudioChannels.Media1, "MEDIA", "Media 1", false));
+            // 2. Media Player Strips (Media 1 to 4)
+            for (int m = 1; m <= 4; m++)
+            {
+                long mediaId = LogicalAudioChannels.Media(m);
+                FaderPanel.Children.Add(CreateFairlightChannelStrip((int)mediaId, $"MP {m}", $"Media {m}", false));
+            }
 
             // Divider
             FaderPanel.Children.Add(CreateDivider());
 
-            // 3. XLR / Audio-In Inputs — Canonical Logical IDs (XLR 1, XLR 2)
+            // 3. XLR / Analog Audio Inputs (XLR 1, XLR 2)
             FaderPanel.Children.Add(CreateFairlightChannelStrip((int)LogicalAudioChannels.Xlr1, "MIC 1", "XLR In 1", false));
             FaderPanel.Children.Add(CreateFairlightChannelStrip((int)LogicalAudioChannels.Xlr2, "MIC 2", "XLR In 2", false));
 
-            // 4. Audio Groups (if any)
-            if (config.AudioGroups != null && config.AudioGroups.Count > 0)
+            // Divider
+            FaderPanel.Children.Add(CreateDivider());
+
+            // 4. MADI Digital Audio Inputs (MADI 1 to 32)
+            for (int m = 1; m <= 32; m++)
             {
-                FaderPanel.Children.Add(CreateDivider(Color.FromRgb(0x88, 0x88, 0x88)));
-                foreach (var grp in config.AudioGroups)
-                {
-                    FaderPanel.Children.Add(CreateFairlightChannelStrip(1000 + (grp.AssignedCameraId ?? 1), grp.Icon, grp.Name, false, grp));
-                }
+                long madiId = LogicalAudioChannels.Madi(m);
+                FaderPanel.Children.Add(CreateFairlightChannelStrip((int)madiId, $"MADI {m}", $"MADI {m}", false));
             }
 
-            // 5. Master Channel Strip (Pinned to the right)
+            // 6. Master Channel Strip (Pinned to the right)
             var masterStrip = CreateMasterStrip();
             MasterPanelContainer.Child = masterStrip;
         }
@@ -544,31 +542,38 @@ namespace Desktop
             btnRow.Children.Add(ctrl.BtnOn);
             btnRow.Children.Add(ctrl.BtnOff);
             
-            UpdatePillButtonVisual(ctrl.BtnOn, settings.IsOn, Color.FromRgb(0xFF, 0x98, 0x00));
-            UpdatePillButtonVisual(ctrl.BtnAfv, settings.IsAfv, Color.FromRgb(0xFF, 0x98, 0x00));
+            UpdatePillButtonVisual(ctrl.BtnOn, settings.IsOn && !settings.IsAfv, Color.FromRgb(0xFF, 0x98, 0x00));
+            UpdatePillButtonVisual(ctrl.BtnAfv, settings.IsAfv && !settings.IsOn, Color.FromRgb(0xFF, 0x98, 0x00));
             UpdatePillButtonVisual(ctrl.BtnOff, !settings.IsOn && !settings.IsAfv, Color.FromRgb(0xFF, 0x98, 0x00));
 
             ctrl.BtnOn.Click += async (s, e) =>
             {
-                if (_switcher != null) await _audioService.SetOnAsync(inputId, !settings.IsOn);
+                if (_switcher != null)
+                {
+                    var target = (settings.IsOn && !settings.IsAfv) ? AudioMixOption.Off : AudioMixOption.On;
+                    await _audioService.SetMixOptionAsync(inputId, target);
+                }
             };
             ctrl.BtnAfv.Click += async (s, e) =>
             {
-                if (_switcher != null) await _audioService.SetAfvAsync(inputId, !settings.IsAfv);
+                if (_switcher != null)
+                {
+                    var target = (settings.IsAfv && !settings.IsOn) ? AudioMixOption.Off : AudioMixOption.Afv;
+                    await _audioService.SetMixOptionAsync(inputId, target);
+                }
             };
             ctrl.BtnOff.Click += async (s, e) =>
             {
                 if (_switcher != null)
                 {
-                    if (settings.IsOn) await _audioService.SetOnAsync(inputId, false);
-                    if (settings.IsAfv) await _audioService.SetAfvAsync(inputId, false);
+                    await _audioService.SetMixOptionAsync(inputId, AudioMixOption.Off);
                 }
             };
             stripStack.Children.Add(btnRow);
 
             ctrl.BtnSolo = new Button
             {
-                Content = "🎧",
+                Content = "H/P",
                 Height = 22,
                 FontSize = 10,
                 Background = settings.Solo ? new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)) : new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x2A)),
@@ -883,7 +888,7 @@ namespace Desktop
 
             var btnSpeaker = new Button
             {
-                Content = "🔊",
+                Content = "MON",
                 Height = 20,
                 FontSize = 9,
                 Background = config.MonitorMuted ? new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)) : new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x2A)),
@@ -902,7 +907,7 @@ namespace Desktop
 
             var btnHp = new Button
             {
-                Content = "🎧",
+                Content = "H/P",
                 Height = 20,
                 FontSize = 9,
                 Margin = new Thickness(1, 0, 1, 0),
@@ -922,7 +927,7 @@ namespace Desktop
 
             var btnMic = new Button
             {
-                Content = "🎤",
+                Content = "MIC",
                 Height = 20,
                 FontSize = 9,
                 Background = config.TalkbackMuted ? new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)) : new SolidColorBrush(Color.FromRgb(0x22, 0x22, 0x2A)),
@@ -963,9 +968,9 @@ namespace Desktop
         {
             try
             {
-                var win = new EqWindow(_audioService, inputId, channelTitle);
-win.Owner = Application.Current.MainWindow;
-win.ShowDialog();
+                var win = new FairlightEqWindow(_audioService, inputId, channelTitle);
+                win.Owner = Application.Current.MainWindow;
+                win.ShowDialog();
             }
             catch (Exception ex)
             {
@@ -1468,10 +1473,7 @@ win.ShowDialog();
 
         #region 30 FPS Live Meter Tick
 
-                        private void OnAudioLevelUpdated(long inputId, double left, double right)
-        {
-            _liveAudioLevels[inputId] = (left, right);
-        }
+                        private void OnAudioServiceMeterChanged(object? sender, AudioMeterState state) { _liveAudioLevels[state.ChannelId] = (state.LevelDb, state.PeakDb); }
 
                 private void OnAudioStateChanged(AudioState state)
         {
@@ -1495,6 +1497,9 @@ win.ShowDialog();
             foreach (var strip in _stripControllers)
             {
                 bool isActive = strip.IsMaster || strip.Settings.IsOn || strip.Settings.IsAfv;
+
+                strip.MeterFillL.Background = isActive ? _meterActiveBrush : _meterInactiveBrush;
+                strip.MeterFillR.Background = isActive ? _meterActiveBrush : _meterInactiveBrush;
 
                 double targetL = 0.0;
                 double targetR = 0.0;
@@ -1611,7 +1616,7 @@ win.ShowDialog();
 
         #endregion
 
-                #region Safe Drag & Wheel Horizontal Scroll Handling (Zero Interception of Child Clicks)
+        #region Safe Drag & Wheel Horizontal Scroll Handling (Zero Interception of Child Clicks)
 
         private bool _isPotentialDrag = false;
         private bool _isDragging = false;
@@ -1623,10 +1628,10 @@ win.ShowDialog();
         {
             while (dep != null)
             {
-                if (dep is Button || dep is ComboBox || dep is Slider ||
+                if (dep is System.Windows.Controls.Button || dep is System.Windows.Controls.ComboBox || dep is System.Windows.Controls.Slider ||
                     dep is System.Windows.Controls.Primitives.Thumb ||
                     dep is System.Windows.Controls.Primitives.ToggleButton ||
-                    dep is TextBox ||
+                    dep is System.Windows.Controls.TextBox ||
                     (dep is FrameworkElement fe && (fe.Tag as string) == "interactive"))
                     return true;
                 dep = VisualTreeHelper.GetParent(dep);
@@ -1634,13 +1639,14 @@ win.ShowDialog();
             return false;
         }
 
-                private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (sender is ScrollViewer scrollViewer && e.Delta != 0)
             {
                 if (System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift))
                 {
-                    if (MainScrollViewer != null) MainScrollViewer.ScrollToVerticalOffset(MainScrollViewer.VerticalOffset - e.Delta);
+                    if (MainScrollViewer != null) 
+                        MainScrollViewer.ScrollToVerticalOffset(MainScrollViewer.VerticalOffset - e.Delta);
                 }
                 else
                 {
@@ -1724,33 +1730,34 @@ win.ShowDialog();
 
         #endregion
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

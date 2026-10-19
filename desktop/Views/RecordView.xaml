@@ -1,4 +1,4 @@
-<UserControl x:Class="Desktop.Views.RecordView"
+﻿<UserControl x:Class="Desktop.Views.RecordView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
@@ -216,12 +216,12 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
 
-                                <Button x:Name="BtnStartRecording" Grid.Column="0" Content="⏺ START RECORDING" Style="{StaticResource RecordStartButtonStyle}" Height="46" Margin="0,0,6,0" Click="BtnStartRecording_Click"/>
-                                <Button x:Name="BtnStopRecording" Grid.Column="1" Content="⬛ STOP RECORDING" Style="{StaticResource RecordStopButtonStyle}" Height="46" Margin="6,0,0,0" IsEnabled="False" Click="BtnStopRecording_Click"/>
+                                <Button x:Name="BtnStartRecording" Grid.Column="0" Content="START RECORDING" Style="{StaticResource RecordStartButtonStyle}" Height="46" Margin="0,0,6,0" Click="BtnStartRecording_Click"/>
+                                <Button x:Name="BtnStopRecording" Grid.Column="1" Content="STOP RECORDING" Style="{StaticResource RecordStopButtonStyle}" Height="46" Margin="6,0,0,0" IsEnabled="False" Click="BtnStopRecording_Click"/>
                             </Grid>
 
                             <!-- Switch Active Disk Button -->
-                            <Button x:Name="BtnSwitchDisk" Content="🔀 Switch Active Disk" Style="{StaticResource SecondaryButtonStyle}" Height="36" Margin="0,0,0,14" Click="BtnSwitchDisk_Click"/>
+                            <Button x:Name="BtnSwitchDisk" Content="Switch Active Disk" Style="{StaticResource SecondaryButtonStyle}" Height="36" Margin="0,0,0,14" Click="BtnSwitchDisk_Click"/>
 
                             <!-- Status Feedback Banner -->
                             <Border x:Name="PnlStatusBanner" Background="#141416" BorderBrush="#2C2C32" BorderThickness="1" CornerRadius="4" Padding="12,10">
@@ -230,7 +230,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="TxtStatusBannerIcon" Text="○" FontSize="13" Foreground="#71717A" Margin="0,1,10,0" VerticalAlignment="Top"/>
+                                    
                                     <StackPanel Grid.Column="1">
                                         <TextBlock x:Name="TxtStatusHeadline" Text="Recording Engine Idle" FontWeight="Bold" FontSize="11" Foreground="#A1A1AA"/>
                                         <TextBlock x:Name="TxtStatusDetails" Text="Disks mounted and ready. Click 'Start Recording' to begin disk capture." FontSize="10" Foreground="#71717A" TextWrapping="Wrap" Margin="0,2,0,0"/>
@@ -378,7 +378,7 @@
 
                             <!-- Refresh Action -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button x:Name="BtnRefreshDisks" Content="🔄 Refresh Disks" Style="{StaticResource SecondaryButtonStyle}" Padding="14,6" Click="BtnRefreshDisks_Click"/>
+                                <Button x:Name="BtnRefreshDisks" Content="Refresh Disks" Style="{StaticResource SecondaryButtonStyle}" Padding="14,6" Click="BtnRefreshDisks_Click"/>
                             </StackPanel>
 
                         </StackPanel>
@@ -389,3 +389,4 @@
         </ScrollViewer>
     </Grid>
 </UserControl>
+

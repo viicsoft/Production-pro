@@ -933,12 +933,50 @@
             connectWs();
         }
 
+        let wsReconnectTimer = null;
+        let wsReconnectAttempt = 0;
+        let lastWsMessageAt = Date.now();
+        let lastPingSentAt = 0;
+        let lastPingId = '';
+        let wakeLockSentinel = null;
+
+        async function requestScreenWakeLock() {
+            try {
+                if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+                    if (!wakeLockSentinel || wakeLockSentinel.released) {
+                        wakeLockSentinel = await navigator.wakeLock.request('screen');
+                    }
+                }
+            } catch (_) {}
+        }
+
+        function scheduleWsReconnect(immediate = false) {
+            if (!roomId || !myCam) return;
+            if (wsReconnectTimer) {
+                if (!immediate) return;
+                clearTimeout(wsReconnectTimer);
+                wsReconnectTimer = null;
+            }
+            const baseDelay = immediate ? 50 : Math.min(250 * Math.pow(1.6, Math.min(wsReconnectAttempt, 5)), 2000);
+            const jitter = immediate ? 0 : Math.floor(Math.random() * 120);
+            wsReconnectAttempt++;
+            wsReconnectTimer = setTimeout(() => {
+                wsReconnectTimer = null;
+                connectWs();
+            }, baseDelay + jitter);
+        }
+
         function leaveRoom() {
+            if (wsReconnectTimer) {
+                clearTimeout(wsReconnectTimer);
+                wsReconnectTimer = null;
+            }
             if (ws) {
                 ws.onclose = null; // Prevent auto-reconnect
                 ws.close();
                 ws = null;
             }
+            disconnectIntercom(true);
             localStorage.removeItem('atem_room');
             localStorage.removeItem('atem_pin');
             localStorage.removeItem('atem_cam');
@@ -951,6 +989,10 @@
         }
 
         function switchCamera() {
+            if (wsReconnectTimer) {
+                clearTimeout(wsReconnectTimer);
+                wsReconnectTimer = null;
+            }
             if (ws) {
                 ws.onclose = null; // Prevent auto-reconnect temporarily
                 ws.close();
@@ -963,59 +1005,117 @@
 
         function connectWs() {
             showScreen('main');
-            
-            // Auto-connect intercom when joining the room
-            if (!intercomConnected) {
-                toggleIntercom();
+            if (wsReconnectTimer) {
+                clearTimeout(wsReconnectTimer);
+                wsReconnectTimer = null;
             }
-            
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+
+            requestScreenWakeLock();
+
             // Determine connection mode
-            const isOnline = location.host.includes('CuePilot.app') || location.host.includes('github.io');
+            const isOnline = location.host.includes('CuePilot.app') || location.host.includes('vidikom.app') || location.host.includes('github.io');
             
-            if (isOnline) {
-                // ONLINE MODE: connect to cloud relay WebSocket
-                ws = new WebSocket(`wss://${location.host}/ws/room`);
-                
-                ws.onopen = () => {
-                    if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
-                    // Send crew-join message to the relay
+            try {
+                if (isOnline) {
+                    // ONLINE MODE: connect to cloud relay WebSocket
+                    ws = new WebSocket(`wss://${location.host}/ws/room`);
+                } else {
+                    // LAN MODE: connect directly to desktop's embedded server
+                    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const host = location.host || 'localhost:8080';
+                    ws = new WebSocket(`${proto}//${host}/ws?roomId=${encodeURIComponent(roomId)}&pin=${encodeURIComponent(pin)}`);
+                }
+            } catch (e) {
+                scheduleWsReconnect(false);
+                return;
+            }
+
+            ws.onopen = () => {
+                wsReconnectAttempt = 0;
+                lastWsMessageAt = Date.now();
+                requestScreenWakeLock();
+
+                const sigStatus = document.querySelector('.signal-status');
+                if (sigStatus) {
+                    sigStatus.innerText = isOnline ? "Online" : "Strong";
+                    sigStatus.style.color = "var(--tally-green)";
+                }
+                const sigSvg = document.querySelector('.signal-indicator svg');
+                if (sigSvg) sigSvg.style.stroke = "var(--tally-green)";
+
+                if (isOnline) {
                     ws.send(JSON.stringify({ 
                         type: 'crew-join', 
                         roomId: roomId, 
                         pin: pin, 
                         cam: myCam ? myCam.toString() : ""
                     }));
-                };
-            } else {
-                // LAN MODE: connect directly to desktop's embedded server
-                const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const host = location.host || 'localhost:8080';
-                ws = new WebSocket(`${proto}//${host}/ws?roomId=${roomId}&pin=${pin}`);
-                
-                ws.onopen = () => {
-                    if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
-                    document.querySelector('.signal-status').innerText = "Strong";
-                    document.querySelector('.signal-status').style.color = "var(--text-secondary)";
-                    document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-green)";
+                } else {
                     if (myCam) {
                         ws.send(JSON.stringify({ type: 'identity', cam: myCam.toString() }));
                     }
-                };
-            }
+                    ws.send(JSON.stringify({ type: 'request-state' }));
+                }
+
+                // Auto-connect or heal intercom when signaling is open
+                if (!intercomConnected && !isConnecting) {
+                    startIntercomConnection(desiredMicMuted);
+                } else if (pc && (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected')) {
+                    // Healthy existing WebRTC peer, keep it alive
+                } else if (intercomConnected) {
+                    // Re-offer over newly restored WebSocket
+                    sendIntercomOffer();
+                }
+            };
 
             ws.onclose = () => {
-                document.querySelector('.signal-status').innerText = "Reconnecting...";
-                document.querySelector('.signal-status').style.color = "var(--tally-red)";
-                document.querySelector('.signal-indicator svg').style.stroke = "var(--tally-red)";
-                setTimeout(connectWs, 2000); // Auto-reconnect
+                ws = null;
+                const sigStatus = document.querySelector('.signal-status');
+                if (sigStatus) {
+                    sigStatus.innerText = "Reconnecting...";
+                    sigStatus.style.color = "var(--tally-red)";
+                }
+                const sigSvg = document.querySelector('.signal-indicator svg');
+                if (sigSvg) sigSvg.style.stroke = "var(--tally-red)";
+                scheduleWsReconnect(false);
+            };
+
+            ws.onerror = () => {
+                try { if (ws) ws.close(); } catch (_) {}
             };
 
             ws.onmessage = async (e) => {
+                lastWsMessageAt = Date.now();
                 try {
                     const data = JSON.parse(e.data);
                     
-                    // Handle relay lifecycle messages
+                    if (data.type === 'pong') {
+                        if (data.id && data.id === lastPingId && lastPingSentAt > 0) {
+                            const latency = Math.round(performance.now() - lastPingSentAt);
+                            const status = document.querySelector('.signal-status');
+                            if (status) {
+                                status.innerText = latency < 50 ? 'Strong' : latency < 150 ? 'Good' : 'Weak';
+                                status.style.color = latency < 50 ? 'var(--tally-green)' : latency < 150 ? '#F59E0B' : 'var(--tally-red)';
+                            }
+                        }
+                        return;
+                    }
+
+                    // Handle relay lifecycle messages without ever dropping persistent session
                     if (data.type === 'joined') {
+                        const sigStatus = document.querySelector('.signal-status');
+                        if (sigStatus) {
+                            sigStatus.innerText = data.waiting ? "Standby (Director)" : "Online";
+                            sigStatus.style.color = data.waiting ? "#F59E0B" : "var(--tally-green)";
+                        }
+                        const sigSvg = document.querySelector('.signal-indicator svg');
+                        if (sigSvg) sigSvg.style.stroke = data.waiting ? "#F59E0B" : "var(--tally-green)";
+                        return;
+                    }
+                    if (data.type === 'director-reconnected') {
                         const sigStatus = document.querySelector('.signal-status');
                         if (sigStatus) {
                             sigStatus.innerText = "Online";
@@ -1023,31 +1123,37 @@
                         }
                         const sigSvg = document.querySelector('.signal-indicator svg');
                         if (sigSvg) sigSvg.style.stroke = "var(--tally-green)";
+                        if (ws && ws.readyState === WebSocket.OPEN && myCam) {
+                            ws.send(JSON.stringify({ type: 'identity', cam: myCam.toString() }));
+                            ws.send(JSON.stringify({ type: 'request-state' }));
+                        }
+                        sendIntercomOffer();
+                        return;
+                    }
+                    if (data.type === 'director-disconnected' || data.type === 'room-ended') {
+                        const sigStatus = document.querySelector('.signal-status');
+                        if (sigStatus) {
+                            sigStatus.innerText = "Waiting for Director...";
+                            sigStatus.style.color = "#F59E0B";
+                        }
                         return;
                     }
                     if (data.type === 'error') {
                         const sigStatus = document.querySelector('.signal-status');
                         if (sigStatus) {
-                            sigStatus.innerText = data.message || "Error";
-                            sigStatus.style.color = "var(--tally-red)";
+                            sigStatus.innerText = "Reconnecting...";
+                            sigStatus.style.color = "#F59E0B";
                         }
-                        const sigSvg = document.querySelector('.signal-indicator svg');
-                        if (sigSvg) sigSvg.style.stroke = "var(--tally-red)";
-                        alert(data.message || "Connection error");
-                        leaveRoom();
-                        return;
-                    }
-                    if (data.type === 'room-ended') {
-                        alert("The director has ended this room session.");
-                        leaveRoom();
+                        scheduleWsReconnect(false);
                         return;
                     }
                     
                     if (data.type === 'tally') {
                         const me = data.mes && data.mes[0];
                         if (me) {
-                            const isPgm = me.program && me.program.includes(parseInt(myCam));
-                            const isPvw = me.preview && me.preview.includes(parseInt(myCam));
+                            const camNum = parseInt(myCam);
+                            const isPgm = Array.isArray(me.program) && me.program.includes(camNum);
+                            const isPvw = Array.isArray(me.preview) && me.preview.includes(camNum);
                             updateTallyUI(isPgm, isPvw);
                         }
                     }
@@ -1058,12 +1164,11 @@
                         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
                     }
                     else if (data.type === 'reminder' && (!data.targetCameras || data.targetCameras.includes(parseInt(myCam)))) {
-                        alert("Director reminder: " + data.text);
                         if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
                     }
                     else if (data.type === 'intercom-answer') {
                         console.log('[Intercom] Received answer from Director');
-                        if (pc) {
+                        if (pc && data.sdp) {
                             await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
                         }
                     }
@@ -1086,46 +1191,101 @@
         let pc = null;
         let localStream = null;
         let isMicMuted = true;
+        let desiredMicMuted = true;
         let intercomConnected = false;
         let isConnecting = false;
+        let intercomRetryTimer = null;
 
-        function disconnectIntercom() {
+        function tuneOpusSdp(sdp) {
+            if (!sdp) return sdp;
+            const lines = sdp.split('\r\n');
+            let opusPt = null;
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith('a=rtpmap:') && lines[i].toLowerCase().includes('opus')) {
+                    const m = lines[i].match(/a=rtpmap:(\d+)/);
+                    if (m) opusPt = m[1];
+                }
+            }
+            if (opusPt) {
+                let found = false;
+                const fmtp = `a=fmtp:${opusPt} minptime=10;ptime=10;maxaveragebitrate=128000;stereo=0;useinbandfec=1;usedtx=0;cbr=1;maxplaybackrate=48000`;
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].startsWith(`a=fmtp:${opusPt}`)) {
+                        lines[i] = fmtp;
+                        found = true;
+                    }
+                }
+                if (!found) lines.push(fmtp);
+            }
+            return lines.join('\r\n');
+        }
+
+        async function sendIntercomOffer() {
+            if (!pc || !ws || ws.readyState !== WebSocket.OPEN || !myCam) return;
+            try {
+                const offer = await pc.createOffer({ offerToReceiveAudio: true });
+                const tunedSdp = tuneOpusSdp(offer.sdp);
+                await pc.setLocalDescription({ type: offer.type, sdp: tunedSdp });
+                ws.send(JSON.stringify({
+                    type: 'intercom-offer',
+                    cam: myCam.toString(),
+                    sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
+                }));
+            } catch (e) {
+                console.warn('[Intercom] Offer error:', e);
+            }
+        }
+
+        function disconnectIntercom(manual = false) {
+            if (intercomRetryTimer) {
+                clearTimeout(intercomRetryTimer);
+                intercomRetryTimer = null;
+            }
             if (pc) {
                 try { pc.close(); } catch (e) {}
                 pc = null;
             }
-            if (localStream) {
+            if (manual && localStream) {
                 localStream.getTracks().forEach(t => t.stop());
                 localStream = null;
             }
             const audioEl = document.getElementById('director-audio');
-            if (audioEl) audioEl.remove();
+            if (manual && audioEl) audioEl.remove();
 
-            if (ws && ws.readyState === WebSocket.OPEN && myCam) {
+            if (manual && ws && ws.readyState === WebSocket.OPEN && myCam) {
                 ws.send(JSON.stringify({ type: 'intercom-leave', cam: myCam.toString() }));
             }
 
             intercomConnected = false;
             isConnecting = false;
-            isMicMuted = true;
+            if (manual) {
+                isMicMuted = true;
+                desiredMicMuted = true;
+            }
 
             const statusText = document.getElementById('comms-status-text');
             if (statusText) {
-                statusText.innerText = "Disconnected";
+                statusText.innerText = manual ? "Disconnected" : "Reconnecting audio...";
                 statusText.style.color = "var(--text-secondary)";
             }
             updateMicUI();
+
+            if (!manual && roomId && myCam) {
+                intercomRetryTimer = setTimeout(() => {
+                    intercomRetryTimer = null;
+                    startIntercomConnection(desiredMicMuted);
+                }, 1000);
+            }
         }
 
-        async function toggleIntercom() {
+        async function startIntercomConnection(startMuted = true) {
             const statusText = document.getElementById('comms-status-text');
+            if (isConnecting) return;
+            isConnecting = true;
+            updateMicUI();
 
-            if (!intercomConnected) {
-                if (isConnecting) return;
-                isConnecting = true;
-                updateMicUI();
-
-                try {
+            try {
+                if (!localStream || localStream.getAudioTracks().every(t => t.readyState === 'ended')) {
                     console.log('[Intercom] Requesting microphone access...');
                     localStream = await navigator.mediaDevices.getUserMedia({
                         audio: {
@@ -1133,104 +1293,101 @@
                             noiseSuppression: true,
                             autoGainControl: true,
                             sampleRate: 48000,
-                            channelCount: 1
+                            channelCount: 1,
+                            latency: 0.01
                         },
                         video: false
                     });
-
-                    // Start with mic muted
-                    localStream.getAudioTracks().forEach(track => { track.enabled = false; });
-                    isMicMuted = true;
-
-                    console.log('[Intercom] Microphone access granted');
-
-                    // Create RTCPeerConnection
-                    pc = new RTCPeerConnection({
-                        iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' },
-                            { urls: 'stun:stun1.l.google.com:19302' }
-                        ]
-                    });
-
-                    // Add local audio tracks to peer connection
-                    localStream.getAudioTracks().forEach(track => {
-                        pc.addTrack(track, localStream);
-                    });
-
-                    // Handle incoming Director audio track
-                    pc.ontrack = (event) => {
-                        console.log('[Intercom] Director audio track received');
-                        let audioEl = document.getElementById('director-audio');
-                        if (!audioEl) {
-                            audioEl = document.createElement('audio');
-                            audioEl.id = 'director-audio';
-                            audioEl.autoplay = true;
-                            audioEl.playsInline = true;
-                            document.body.appendChild(audioEl);
-                        }
-                        audioEl.srcObject = event.streams[0] || new MediaStream([event.track]);
-                        audioEl.play().catch(e => console.warn('[Intercom] Autoplay blocked:', e.message));
-                    };
-
-                    // Send ICE candidates to Director
-                    pc.onicecandidate = (event) => {
-                        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({
-                                type: 'intercom-ice',
-                                cam: myCam ? myCam.toString() : '',
-                                candidate: event.candidate
-                            }));
-                        }
-                    };
-
-                    pc.onconnectionstatechange = () => {
-                        console.log('[Intercom] Peer connection state:', pc.connectionState);
-                        if (pc.connectionState === 'connected') {
-                            intercomConnected = true;
-                            isConnecting = false;
-                            if (statusText) {
-                                statusText.innerText = isMicMuted ? "Connected (muted)" : "Connected (LIVE)";
-                                statusText.style.color = "var(--tally-green)";
-                            }
-                            updateMicUI();
-                        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-                            disconnectIntercom();
-                        }
-                    };
-
-                    // Create offer and send to Director
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'intercom-offer',
-                            cam: myCam ? myCam.toString() : '',
-                            sdp: offer
-                        }));
-                        console.log('[Intercom] Sent offer to Director');
-                    }
-
-                    intercomConnected = true;
-                    isConnecting = false;
-                    if (statusText) {
-                        statusText.innerText = "Connected (muted)";
-                        statusText.style.color = "var(--tally-green)";
-                    }
-                    updateMicUI();
-
-                } catch (e) {
-                    console.error('[Intercom] Connection failed:', e);
-                    disconnectIntercom();
-                    if (statusText) {
-                        statusText.innerText = "Mic error: " + (e.name === 'NotAllowedError' ? "Permission denied" : e.message);
-                        statusText.style.color = "var(--tally-red)";
-                    }
-                    updateMicUI();
                 }
+
+                isMicMuted = startMuted;
+                desiredMicMuted = startMuted;
+                localStream.getAudioTracks().forEach(track => { track.enabled = !isMicMuted; });
+
+                if (pc) {
+                    try { pc.close(); } catch (_) {}
+                }
+
+                const isLanHost = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|127\.|localhost)/.test(location.hostname);
+                pc = new RTCPeerConnection({
+                    iceServers: isLanHost ? [] : [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                });
+
+                localStream.getAudioTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+
+                pc.ontrack = (event) => {
+                    console.log('[Intercom] Director audio track received');
+                    let audioEl = document.getElementById('director-audio');
+                    if (!audioEl) {
+                        audioEl = document.createElement('audio');
+                        audioEl.id = 'director-audio';
+                        audioEl.autoplay = true;
+                        audioEl.playsInline = true;
+                        document.body.appendChild(audioEl);
+                    }
+                    audioEl.srcObject = event.streams[0] || new MediaStream([event.track]);
+                    audioEl.play().catch(e => console.warn('[Intercom] Autoplay blocked:', e.message));
+                };
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'intercom-ice',
+                            cam: myCam ? myCam.toString() : '',
+                            candidate: event.candidate
+                        }));
+                    }
+                };
+
+                pc.onconnectionstatechange = () => {
+                    if (!pc) return;
+                    console.log('[Intercom] Peer connection state:', pc.connectionState);
+                    if (pc.connectionState === 'connected') {
+                        intercomConnected = true;
+                        isConnecting = false;
+                        if (statusText) {
+                            statusText.innerText = isMicMuted ? "Connected (muted)" : "Connected (LIVE)";
+                            statusText.style.color = isMicMuted ? "var(--tally-green)" : "var(--tally-red)";
+                        }
+                        updateMicUI();
+                    } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                        disconnectIntercom(false);
+                    }
+                };
+
+                await sendIntercomOffer();
+
+                intercomConnected = true;
+                isConnecting = false;
+                if (statusText) {
+                    statusText.innerText = isMicMuted ? "Connected (muted)" : "Connected (LIVE)";
+                    statusText.style.color = isMicMuted ? "var(--tally-green)" : "var(--tally-red)";
+                }
+                updateMicUI();
+            } catch (e) {
+                console.error('[Intercom] Connection failed:', e);
+                isConnecting = false;
+                intercomConnected = false;
+                if (statusText) {
+                    statusText.innerText = "Mic error: " + (e.name === 'NotAllowedError' ? "Permission denied" : e.message);
+                    statusText.style.color = "var(--tally-red)";
+                }
+                updateMicUI();
+            }
+        }
+
+        async function toggleIntercom() {
+            const statusText = document.getElementById('comms-status-text');
+            if (!intercomConnected) {
+                await startIntercomConnection(true);
             } else {
-                // Toggle mic mute/unmute
                 isMicMuted = !isMicMuted;
+                desiredMicMuted = isMicMuted;
                 if (localStream) {
                     localStream.getAudioTracks().forEach(track => {
                         track.enabled = !isMicMuted;
@@ -1321,26 +1478,52 @@
             }
         }
 
-        // Client-Side Ping
+        // Client-Side Heartbeat & Dead-Socket Watchdog (3s interval, 8s liveness timeout)
         setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN && !location.host.includes('CuePilot.app')) {
-                const start = performance.now();
-                const pingId = Math.random().toString(36).substring(7);
-                // Listen for pong
-                const handler = (e) => {
-                    const data = JSON.parse(e.data);
-                    if (data.type === 'pong' && data.id === pingId) {
-                        const latency = Math.round(performance.now() - start);
-                        const status = document.querySelector('.signal-status');
-                        status.innerText = latency < 50 ? 'Strong' : latency < 150 ? 'Good' : 'Weak';
-                        status.style.color = latency < 50 ? 'var(--tally-green)' : latency < 150 ? '#F59E0B' : 'var(--tally-red)';
-                        ws.removeEventListener('message', handler);
-                    }
-                };
-                ws.addEventListener('message', handler);
-                ws.send(JSON.stringify({ type: 'ping', id: pingId }));
+            requestScreenWakeLock();
+            if (!roomId || !myCam) return;
+            if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+                scheduleWsReconnect(true);
+                return;
             }
-        }, 5000);
+            if (ws.readyState === WebSocket.OPEN) {
+                if (Date.now() - lastWsMessageAt > 8000) {
+                    console.warn('[WS] Heartbeat timeout (>8s), recycling socket...');
+                    try { ws.close(); } catch (_) {}
+                    ws = null;
+                    scheduleWsReconnect(true);
+                    return;
+                }
+                lastPingSentAt = performance.now();
+                lastPingId = Math.random().toString(36).substring(7);
+                try {
+                    ws.send(JSON.stringify({ type: 'ping', id: lastPingId }));
+                } catch (_) {}
+            }
+        }, 3000);
+
+        // Auto-recover immediately on screen wake, tab visibility, or Wi-Fi network change
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                requestScreenWakeLock();
+                if (roomId && myCam) {
+                    if (!ws || ws.readyState !== WebSocket.OPEN) {
+                        scheduleWsReconnect(true);
+                    } else {
+                        try { ws.send(JSON.stringify({ type: 'request-state' })); } catch (_) {}
+                    }
+                }
+            }
+        });
+        window.addEventListener('online', () => {
+            if (roomId && myCam) scheduleWsReconnect(true);
+        });
+        window.addEventListener('focus', () => {
+            requestScreenWakeLock();
+            if (roomId && myCam && (!ws || ws.readyState !== WebSocket.OPEN)) {
+                scheduleWsReconnect(true);
+            }
+        });
 
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.error(err));

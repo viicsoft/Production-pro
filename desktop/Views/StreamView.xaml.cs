@@ -100,7 +100,7 @@ namespace Desktop.Views
 
                     TxtTelemetryService.Text = string.IsNullOrWhiteSpace(settings.ServiceName) ? "Custom" : settings.ServiceName;
                     TxtTelemetryUrl.Text = settings.Url;
-                    TxtTelemetryBitrateRange.Text = $"{settings.LowBitrate / 1000:N0} â€“ {settings.HighBitrate / 1000:N0} kbps";
+                    TxtTelemetryBitrateRange.Text = $"{settings.LowBitrate / 1000:N0} - {settings.HighBitrate / 1000:N0} kbps";
 
                     SelectPresetMatchingUrl(settings.Url);
                 }
@@ -169,8 +169,7 @@ namespace Desktop.Views
                     TxtHealthStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
 
                     // Status Banner
-                    TxtStatusBannerIcon.Text = "ðŸ”´";
-                    TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
+
                     TxtStatusHeadline.Text = "Live Broadcast Active";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
                     TxtStatusDetails.Text = $"Transmitting RTMP feed at {status.EncodingBitrate / 1000:N0} kbps. Zero dropped frames.";
@@ -196,8 +195,6 @@ namespace Desktop.Views
                     TxtStatState.Text = "CONNECTING";
                     TxtStatState.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
 
-                    TxtStatusBannerIcon.Text = "â³";
-                    TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                     TxtStatusHeadline.Text = "Connecting to RTMP Endpoint...";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                     TxtStatusDetails.Text = "Handshaking with ingestion server and negotiating codec profile.";
@@ -241,8 +238,6 @@ namespace Desktop.Views
                     TxtHealthStatus.Text = "STANDBY";
                     TxtHealthStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
 
-                    TxtStatusBannerIcon.Text = "â—‹";
-                    TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
                     TxtStatusHeadline.Text = "Stream Engine Ready";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xA1, 0xA1, 0xAA));
                     TxtStatusDetails.Text = "Configure RTMP credentials and click 'Go On Air' to start live broadcast.";
@@ -257,8 +252,7 @@ namespace Desktop.Views
             {
                 TxtStatusHeadline.Text = $"Stream Error: {status.Error}";
                 TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
-                TxtStatusBannerIcon.Text = "âš ï¸";
-                TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
+
             }
         }
 
@@ -295,7 +289,7 @@ namespace Desktop.Views
                 TxtHighBitrate.Text = high.ToString();
                 TxtTelemetryService.Text = preset;
                 TxtTelemetryUrl.Text = url;
-                TxtTelemetryBitrateRange.Text = string.Format("{0:N0} â€“ {1:N0} kbps", low / 1000, high / 1000);
+                TxtTelemetryBitrateRange.Text = string.Format("{0:N0} - {1:N0} kbps", low / 1000, high / 1000);
             }
             else
             {
@@ -311,14 +305,14 @@ namespace Desktop.Views
                 TxtStreamKey.Text = PwdStreamKey.Password;
                 PwdStreamKey.Visibility = Visibility.Collapsed;
                 TxtStreamKey.Visibility = Visibility.Visible;
-                BtnToggleKeyReveal.Content = "ðŸ”’";
+                BtnToggleKeyReveal.Content = _isKeyRevealed ? "Hide" : "Show";
             }
             else
             {
                 PwdStreamKey.Password = TxtStreamKey.Text;
                 TxtStreamKey.Visibility = Visibility.Collapsed;
                 PwdStreamKey.Visibility = Visibility.Visible;
-                BtnToggleKeyReveal.Content = "ðŸ‘";
+                BtnToggleKeyReveal.Content = _isKeyRevealed ? "Hide" : "Show";
             }
         }
 
@@ -373,7 +367,7 @@ namespace Desktop.Views
 
                 TxtTelemetryService.Text = serviceName;
                 TxtTelemetryUrl.Text = url;
-                TxtTelemetryBitrateRange.Text = $"{lowBitrate / 1000:N0} â€“ {highBitrate / 1000:N0} kbps";
+                TxtTelemetryBitrateRange.Text = $"{lowBitrate / 1000:N0} - {highBitrate / 1000:N0} kbps";
 
                 MainWindow.Instance?.ShowNotification("Stream settings saved successfully.", isError: false);
             }
@@ -468,6 +462,9 @@ namespace Desktop.Views
         #endregion
     }
 }
+
+
+
 
 
 

@@ -5,6 +5,7 @@ namespace Desktop.HardwareAbstraction
     public interface IAudioDynamicsDriver
     {
         event System.Action<string, long, Core.DynamicsUpdate>? HardwareDynamicsStateChanged;
+        Task<Core.DynamicsState?> GetDynamicsStateAsync(long physicalChannel) => Task.FromResult<Core.DynamicsState?>(null);
 
         Task SetMakeupGainAsync(long physicalChannel, double makeupGain);
         

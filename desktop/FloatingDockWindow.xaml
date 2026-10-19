@@ -2,37 +2,46 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="FloatingDockWindow"
+        Icon="pack://application:,,,/icon.ico"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
         Topmost="True"
         ShowInTaskbar="False"
         ResizeMode="CanResizeWithGrip"
-        MinHeight="450" MinWidth="680"
-        Height="780" Width="740"
+        MinHeight="620" MinWidth="860"
+        Height="760" Width="980"
+        WindowStartupLocation="CenterScreen"
         Closed="Window_Closed"
         Loaded="Window_Loaded">
     
-    <Border Background="#121214" CornerRadius="8" BorderBrush="#333" BorderThickness="1" x:Name="MainBorder">
+    <Border Background="#121216" CornerRadius="10" BorderBrush="#383844" BorderThickness="1" x:Name="MainBorder" Margin="8">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="20" ShadowDepth="6" Direction="270" Opacity="0.75"/>
+        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="30"/> <!-- Title Bar -->
+                <RowDefinition Height="36"/> <!-- Sleek Title Bar -->
                 <RowDefinition Height="*"/>  <!-- Content -->
             </Grid.RowDefinitions>
 
-            <!-- Custom Title Bar -->
-            <Border Grid.Row="0" Background="#1F1F23" CornerRadius="8,8,0,0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <!-- Custom Broadcast Title Bar -->
+            <Border Grid.Row="0" Background="#1A1A20" CornerRadius="10,10,0,0" BorderBrush="#2C2C36" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
-                    <TextBlock x:Name="TitleText" Text="TITLE" Foreground="#EEE" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="12,0"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="5,0">
-                        <Button x:Name="BtnMinimize" Content="−" Width="22" Height="22" Background="Transparent" Foreground="#AAA" BorderThickness="0" Cursor="Hand" Click="Minimize_Click"/>
-                        <Button x:Name="BtnClose" Content="✕" Width="22" Height="22" Background="Transparent" Foreground="#AAA" BorderThickness="0" Cursor="Hand" Click="Close_Click"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0">
+                        <Border Width="8" Height="8" CornerRadius="4" Background="#FF9800" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock x:Name="TitleText" Text="SUPERSOURCE STUDIO" Foreground="#F4F4F6" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                        <TextBlock Text="•  MULTI-BOX COMPOSITOR &amp; BRANDING" Foreground="#787888" FontWeight="SemiBold" FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="8,0">
+                        <Button x:Name="BtnMinimize" Content="—" Width="26" Height="24" Background="Transparent" Foreground="#A1A1AA" BorderThickness="0" Cursor="Hand" Click="Minimize_Click" ToolTip="Minimize Roll-Up"/>
+                        <Button x:Name="BtnClose" Content="✕" Width="26" Height="24" Background="Transparent" Foreground="#A1A1AA" BorderThickness="0" Cursor="Hand" Click="Close_Click" ToolTip="Close"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
             <!-- Dynamic Content Area -->
-            <ContentControl x:Name="DockContent" Grid.Row="1" Margin="5"/>
+            <ContentControl x:Name="DockContent" Grid.Row="1" Margin="6"/>
         </Grid>
     </Border>
 </Window>

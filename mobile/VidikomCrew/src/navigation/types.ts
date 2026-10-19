@@ -3,7 +3,7 @@ import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigat
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 /**
- * 4 Primary tabs for VidikomCrew mobile broadcast client
+ * Tab parameter list for VidikomCrew mobile broadcast client
  */
 export type TabParamList = {
   Tally: undefined;
@@ -12,13 +12,23 @@ export type TabParamList = {
   ColorBalance: undefined;
   Control: undefined;
   Settings: undefined;
+  LIVE: undefined;
+  COMMS: undefined;
+  SHOTS: undefined;
+  TOOLS: undefined;
 };
 
 /**
  * Root Stack parameter list for top-level navigation container
  */
 export type RootStackParamList = {
+  Lobby: undefined;
   MainTabs: NavigatorScreenParams<TabParamList> | undefined;
+  ShotDetails: { shot?: any } | undefined;
+  AudioMixer: undefined;
+  ColorMatch: undefined;
+  Switcher: undefined;
+  Settings: undefined;
 };
 
 /**

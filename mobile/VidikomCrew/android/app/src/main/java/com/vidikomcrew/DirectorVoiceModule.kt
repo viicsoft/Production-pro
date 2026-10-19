@@ -1,7 +1,9 @@
 package com.vidikomcrew
 
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -30,6 +32,13 @@ class DirectorVoiceModule(private val reactContext: ReactApplicationContext) :
             tts?.language = Locale.US
             tts?.setPitch(0.95f) // Crisp, authoritative broadcast director pitch
             tts?.setSpeechRate(1.08f) // Fast, professional broadcast cadence
+            try {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+                tts?.setAudioAttributes(attrs)
+            } catch (_: Exception) {}
             isInitialized = true
 
             // If a speech was requested before init finished, execute it now
@@ -42,7 +51,10 @@ class DirectorVoiceModule(private val reactContext: ReactApplicationContext) :
 
     private fun speakInternal(text: String) {
         val utteranceId = "director_cue_${System.currentTimeMillis()}"
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        val params = Bundle().apply {
+            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_VOICE_CALL)
+        }
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }
 
     @ReactMethod

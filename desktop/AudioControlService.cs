@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Collections.Concurrent;
 using System.Threading;
@@ -7,16 +7,39 @@ using Desktop.HardwareAbstraction;
 
 namespace Desktop
 {
-    public record AudioState(long InputId, double Volume = 0.0, bool IsOn = false, bool IsAfv = false, Core.EqState? Eq = null, Core.DynamicsState? Dynamics = null);
+    public enum AudioMixOption
+    {
+        Off = 0,
+        On = 1,
+        Afv = 2
+    }
+
+    public record AudioState(
+        long InputId,
+        double Volume = 0.0,
+        AudioMixOption MixOption = AudioMixOption.Off,
+        Core.EqState? Eq = null,
+        Core.DynamicsState? Dynamics = null
+    )
+    {
+        public bool IsOn => MixOption == AudioMixOption.On;
+        public bool IsAfv => MixOption == AudioMixOption.Afv;
+
+        public AudioState(long InputId, double Volume, bool IsOn, bool IsAfv, Core.EqState? Eq = null, Core.DynamicsState? Dynamics = null)
+            : this(InputId, Volume, IsOn ? AudioMixOption.On : (IsAfv ? AudioMixOption.Afv : AudioMixOption.Off), Eq, Dynamics)
+        {
+        }
+    }
 
     public class AudioControlService
     {
         private readonly AudioHardwareRegistry _registry;
         private readonly AudioRoutingMap _map;
         private readonly ConcurrentDictionary<long, AudioState> _stateCache = new();
-        private readonly ConcurrentDictionary<long, SemaphoreSlim> _locks = new();
+        private readonly object _stateLock = new();
 
         public event Action<AudioState>? StateChanged;
+        public event EventHandler<AudioMeterState>? MeterChanged;
 
         public AudioControlService(AudioHardwareRegistry registry, AudioRoutingMap map)
         {
@@ -24,19 +47,22 @@ namespace Desktop
             _map = map;
             _registry.DriverStateChanged += OnHardwareStateChanged;
             _registry.DriverEqStateChanged += OnHardwareEqStateChanged;
+                        _registry.MeterChanged += (s, e) => {
+                if (s is IAudioHardwareDriver driver && _map.TryGetLogicalRoute(driver.DeviceId, e.ChannelId, out long logicalChannel))
+                {
+                    MeterChanged?.Invoke(this, new AudioMeterState(logicalChannel, e.LevelDb, e.PeakDb, e.Timestamp));
+                }
+            };
             _registry.HardwareDynamicsStateChanged += OnHardwareDynamicsStateChanged;
         }
-
-        private SemaphoreSlim GetLock(long logicalChannel) => _locks.GetOrAdd(logicalChannel, _ => new SemaphoreSlim(1, 1));
 
         private void OnHardwareEqStateChanged(string deviceId, long physicalChannel, bool? eqEnabled, Core.EqBandUpdate? update)
         {
             if (!_map.TryGetLogicalRoute(deviceId, physicalChannel, out long logicalChannel))
                 return;
 
-            var sem = GetLock(logicalChannel);
-            sem.Wait();
-            try
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var eq = state.Eq ?? Core.EqState.CreateDefault();
@@ -70,14 +96,14 @@ namespace Desktop
 
                 if (changed)
                 {
-                    var newState = state with { Eq = eq };
-                    _stateCache[logicalChannel] = newState;
-                    StateChanged?.Invoke(newState);
+                    updatedState = state with { Eq = eq };
+                    _stateCache[logicalChannel] = updatedState;
                 }
             }
-            finally
+
+            if (updatedState != null)
             {
-                sem.Release();
+                StateChanged?.Invoke(updatedState);
             }
         }
 
@@ -86,25 +112,41 @@ namespace Desktop
             if (!_map.TryGetLogicalRoute(deviceId, physicalChannel, out long logicalChannel))
                 return;
 
-            var sem = GetLock(logicalChannel);
-            sem.Wait();
-            try
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 
                 double newVol = volume ?? state.Volume;
-                bool newOn = isOn ?? state.IsOn;
-                bool newAfv = isAfv ?? state.IsAfv;
-                if (Math.Abs(state.Volume - newVol) > 0.001 || state.IsOn != newOn || state.IsAfv != newAfv)
+                AudioMixOption newMix = state.MixOption;
+
+                if (isOn.HasValue && isAfv.HasValue)
                 {
-                    var newState = state with { Volume = newVol, IsOn = newOn, IsAfv = newAfv };
-                    _stateCache[logicalChannel] = newState;
-                    StateChanged?.Invoke(newState);
+                    if (isOn.Value) newMix = AudioMixOption.On;
+                    else if (isAfv.Value) newMix = AudioMixOption.Afv;
+                    else newMix = AudioMixOption.Off;
+                }
+                else if (isOn.HasValue)
+                {
+                    if (isOn.Value) newMix = AudioMixOption.On;
+                    else if (state.MixOption == AudioMixOption.On) newMix = AudioMixOption.Off;
+                }
+                else if (isAfv.HasValue)
+                {
+                    if (isAfv.Value) newMix = AudioMixOption.Afv;
+                    else if (state.MixOption == AudioMixOption.Afv) newMix = AudioMixOption.Off;
+                }
+
+                if (Math.Abs(state.Volume - newVol) > 0.001 || state.MixOption != newMix)
+                {
+                    updatedState = state with { Volume = newVol, MixOption = newMix };
+                    _stateCache[logicalChannel] = updatedState;
                 }
             }
-            finally
+
+            if (updatedState != null)
             {
-                sem.Release();
+                StateChanged?.Invoke(updatedState);
             }
         }
 
@@ -118,77 +160,127 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Volume)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await driver.SetVolumeAsync(physicalChannel, volume);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
-                
                 if (Math.Abs(state.Volume - volume) > 0.001)
                 {
-                    await driver.SetVolumeAsync(physicalChannel, volume);
-                    
-                    var newState = state with { Volume = volume };
-                    _stateCache[logicalChannel] = newState;
-                    StateChanged?.Invoke(newState);
+                    updatedState = state with { Volume = volume };
+                    _stateCache[logicalChannel] = updatedState;
                 }
             }
-            finally
+
+            if (updatedState != null)
             {
-                sem.Release();
+                StateChanged?.Invoke(updatedState);
             }
         }
 
-        public async Task SetOnAsync(long logicalChannel, bool isOn)
+        public async Task SetMixOptionAsync(long logicalChannel, AudioMixOption mixOption)
         {
             if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
             var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.On)) return;
+            if (driver == null) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            if (mixOption == AudioMixOption.On && !driver.SupportsChannelCapability(physicalChannel, AudioCapability.On)) return;
+            if (mixOption == AudioMixOption.Afv && !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Afv)) return;
+
+            if (mixOption == AudioMixOption.On)
+            {
+                await driver.SetOnAsync(physicalChannel, true);
+            }
+            else if (mixOption == AudioMixOption.Afv)
+            {
+                await driver.SetAfvAsync(physicalChannel, true);
+            }
+            else
+            {
+                if (driver.SupportsChannelCapability(physicalChannel, AudioCapability.On))
+                    await driver.SetOnAsync(physicalChannel, false);
+                if (driver.SupportsChannelCapability(physicalChannel, AudioCapability.Afv))
+                    await driver.SetAfvAsync(physicalChannel, false);
+            }
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
-                if (state.IsOn != isOn)
+                if (state.MixOption != mixOption)
                 {
-                    await driver.SetOnAsync(physicalChannel, isOn);
-                    
-                    var newState = state with { IsOn = isOn };
-                    _stateCache[logicalChannel] = newState;
-                    StateChanged?.Invoke(newState);
+                    updatedState = state with { MixOption = mixOption };
+                    _stateCache[logicalChannel] = updatedState;
                 }
             }
-            finally
+
+            if (updatedState != null)
             {
-                sem.Release();
+                StateChanged?.Invoke(updatedState);
             }
         }
 
-        public async Task SetAfvAsync(long logicalChannel, bool isAfv)
-        {
-            if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return;
-            var driver = _registry.GetDriver(deviceId);
-            if (driver == null || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Afv)) return;
+        public Task SetOnAsync(long logicalChannel, bool isOn) => SetMixOptionAsync(logicalChannel, isOn ? AudioMixOption.On : AudioMixOption.Off);
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+        public Task SetAfvAsync(long logicalChannel, bool isAfv) => SetMixOptionAsync(logicalChannel, isAfv ? AudioMixOption.Afv : AudioMixOption.Off);
+
+        public async Task<Core.EqState?> GetEqStateAsync(long logicalChannel)
+        {
+            var st = GetState(logicalChannel);
+            if (st?.Eq != null) return st.Eq;
+
+            if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return null;
+            var driver = _registry.GetDriver(deviceId);
+            if (driver == null) return null;
+
+            var eq = await driver.GetEqStateAsync(physicalChannel);
+            if (eq != null)
             {
-                var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
-                if (state.IsAfv != isAfv)
+                AudioState? updatedState = null;
+                lock (_stateLock)
                 {
-                    await driver.SetAfvAsync(physicalChannel, isAfv);
-                    
-                    var newState = state with { IsAfv = isAfv };
-                    _stateCache[logicalChannel] = newState;
-                    StateChanged?.Invoke(newState);
+                    var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
+                    updatedState = state with { Eq = eq };
+                    _stateCache[logicalChannel] = updatedState;
+                }
+
+                if (updatedState != null)
+                {
+                    StateChanged?.Invoke(updatedState);
                 }
             }
-            finally
+            return eq;
+        }
+
+        public async Task<Core.DynamicsState?> GetDynamicsStateAsync(long logicalChannel)
+        {
+            var st = GetState(logicalChannel);
+            if (st?.Dynamics != null) return st.Dynamics;
+
+            if (!_map.TryGetPhysicalRoute(logicalChannel, out var deviceId, out var physicalChannel)) return null;
+            var driver = _registry.GetDriver(deviceId);
+            if (driver is Desktop.HardwareAbstraction.IAudioDynamicsDriver dynDriver)
             {
-                sem.Release();
+                var dyn = await dynDriver.GetDynamicsStateAsync(physicalChannel);
+                if (dyn != null)
+                {
+                    AudioState? updatedState = null;
+                    lock (_stateLock)
+                    {
+                        var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
+                        updatedState = state with { Dynamics = dyn };
+                        _stateCache[logicalChannel] = updatedState;
+                    }
+
+                    if (updatedState != null)
+                    {
+                        StateChanged?.Invoke(updatedState);
+                    }
+                }
+                return dyn;
             }
+            return null;
         }
 
         public AudioState? GetState(long logicalChannel)
@@ -216,20 +308,26 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await driver.SetEqBandGainAsync(physicalChannel, bandIndex, gain);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
-                await driver.SetEqBandGainAsync(physicalChannel, bandIndex, gain);
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var eq = state.Eq ?? Core.EqState.CreateDefault();
                 var bands = new System.Collections.Generic.List<Core.EqBandState>(eq.Bands!);
-                bands[bandIndex] = bands[bandIndex] with { Gain = gain };
-                var newState = state with { Eq = eq with { Bands = bands } };
-                _stateCache[logicalChannel] = newState;
-                StateChanged?.Invoke(newState);
+                if (bandIndex >= 0 && bandIndex < bands.Count)
+                {
+                    bands[bandIndex] = bands[bandIndex] with { Gain = gain };
+                    updatedState = state with { Eq = eq with { Bands = bands } };
+                    _stateCache[logicalChannel] = updatedState;
+                }
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         public async Task SetEqBandFrequencyAsync(long logicalChannel, int bandIndex, double frequency)
@@ -239,20 +337,26 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await driver.SetEqBandFrequencyAsync(physicalChannel, bandIndex, frequency);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
-                await driver.SetEqBandFrequencyAsync(physicalChannel, bandIndex, frequency);
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var eq = state.Eq ?? Core.EqState.CreateDefault();
                 var bands = new System.Collections.Generic.List<Core.EqBandState>(eq.Bands!);
-                bands[bandIndex] = bands[bandIndex] with { Frequency = frequency };
-                var newState = state with { Eq = eq with { Bands = bands } };
-                _stateCache[logicalChannel] = newState;
-                StateChanged?.Invoke(newState);
+                if (bandIndex >= 0 && bandIndex < bands.Count)
+                {
+                    bands[bandIndex] = bands[bandIndex] with { Frequency = frequency };
+                    updatedState = state with { Eq = eq with { Bands = bands } };
+                    _stateCache[logicalChannel] = updatedState;
+                }
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         public async Task SetEqBandQFactorAsync(long logicalChannel, int bandIndex, double qFactor)
@@ -262,20 +366,26 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await driver.SetEqBandQFactorAsync(physicalChannel, bandIndex, qFactor);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
-                await driver.SetEqBandQFactorAsync(physicalChannel, bandIndex, qFactor);
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var eq = state.Eq ?? Core.EqState.CreateDefault();
                 var bands = new System.Collections.Generic.List<Core.EqBandState>(eq.Bands!);
-                bands[bandIndex] = bands[bandIndex] with { QFactor = qFactor };
-                var newState = state with { Eq = eq with { Bands = bands } };
-                _stateCache[logicalChannel] = newState;
-                StateChanged?.Invoke(newState);
+                if (bandIndex >= 0 && bandIndex < bands.Count)
+                {
+                    bands[bandIndex] = bands[bandIndex] with { QFactor = qFactor };
+                    updatedState = state with { Eq = eq with { Bands = bands } };
+                    _stateCache[logicalChannel] = updatedState;
+                }
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         public async Task SetEqBandShapeAsync(long logicalChannel, int bandIndex, int shape)
@@ -284,20 +394,26 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await driver.SetEqBandShapeAsync(physicalChannel, bandIndex, shape);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
-                await driver.SetEqBandShapeAsync(physicalChannel, bandIndex, shape);
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var eq = state.Eq ?? Core.EqState.CreateDefault();
                 var bands = new System.Collections.Generic.List<Core.EqBandState>(eq.Bands!);
-                bands[bandIndex] = bands[bandIndex] with { Shape = shape };
-                var newState = state with { Eq = eq with { Bands = bands } };
-                _stateCache[logicalChannel] = newState;
-                StateChanged?.Invoke(newState);
+                if (bandIndex >= 0 && bandIndex < bands.Count)
+                {
+                    bands[bandIndex] = bands[bandIndex] with { Shape = shape };
+                    updatedState = state with { Eq = eq with { Bands = bands } };
+                    _stateCache[logicalChannel] = updatedState;
+                }
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         public async Task SetEqBandEnabledAsync(long logicalChannel, int bandIndex, bool enabled)
@@ -306,20 +422,26 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await driver.SetEqBandEnabledAsync(physicalChannel, bandIndex, enabled);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
-                await driver.SetEqBandEnabledAsync(physicalChannel, bandIndex, enabled);
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var eq = state.Eq ?? Core.EqState.CreateDefault();
                 var bands = new System.Collections.Generic.List<Core.EqBandState>(eq.Bands!);
-                bands[bandIndex] = bands[bandIndex] with { Enabled = enabled };
-                var newState = state with { Eq = eq with { Bands = bands } };
-                _stateCache[logicalChannel] = newState;
-                StateChanged?.Invoke(newState);
+                if (bandIndex >= 0 && bandIndex < bands.Count)
+                {
+                    bands[bandIndex] = bands[bandIndex] with { Enabled = enabled };
+                    updatedState = state with { Eq = eq with { Bands = bands } };
+                    _stateCache[logicalChannel] = updatedState;
+                }
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         public async Task SetEqEnabledAsync(long logicalChannel, bool enabled)
@@ -328,26 +450,29 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Eq)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await driver.SetEqEnabledAsync(physicalChannel, enabled);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
-                await driver.SetEqEnabledAsync(physicalChannel, enabled);
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var eq = state.Eq ?? Core.EqState.CreateDefault();
-                var newState = state with { Eq = eq with { Enabled = enabled } };
-                _stateCache[logicalChannel] = newState;
-                StateChanged?.Invoke(newState);
+                updatedState = state with { Eq = eq with { Enabled = enabled } };
+                _stateCache[logicalChannel] = updatedState;
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         private void OnHardwareDynamicsStateChanged(string deviceId, long physicalChannel, Core.DynamicsUpdate update)
         {
             if (!_map.TryGetLogicalRoute(deviceId, physicalChannel, out long logicalChannel)) return;
-            var sem = GetLock(logicalChannel);
-            sem.Wait();
-            try
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var dyn = state.Dynamics ?? Core.DynamicsState.CreateDefault();
@@ -390,12 +515,15 @@ namespace Desktop
                 }
 
                 if (changed) {
-                    var newState = state with { Dynamics = dyn };
-                    _stateCache[logicalChannel] = newState;
-                    StateChanged?.Invoke(newState);
+                    updatedState = state with { Dynamics = dyn };
+                    _stateCache[logicalChannel] = updatedState;
                 }
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         private async Task ExecuteDynamicsCommandAsync(long logicalChannel, Func<Desktop.HardwareAbstraction.IAudioDynamicsDriver, long, Task> action, Func<Core.DynamicsState, Core.DynamicsState> stateUpdate)
@@ -404,18 +532,21 @@ namespace Desktop
             var driver = _registry.GetDriver(deviceId);
             if (driver == null || !driver.IsConnected || !driver.SupportsChannelCapability(physicalChannel, AudioCapability.Dynamics) || !(driver is Desktop.HardwareAbstraction.IAudioDynamicsDriver dynDriver)) return;
 
-            var sem = GetLock(logicalChannel);
-            await sem.WaitAsync();
-            try
+            await action(dynDriver, physicalChannel);
+
+            AudioState? updatedState = null;
+            lock (_stateLock)
             {
-                await action(dynDriver, physicalChannel);
                 var state = _stateCache.GetOrAdd(logicalChannel, id => new AudioState(id));
                 var dyn = state.Dynamics ?? Core.DynamicsState.CreateDefault();
-                var newState = state with { Dynamics = stateUpdate(dyn) };
-                _stateCache[logicalChannel] = newState;
-                StateChanged?.Invoke(newState);
+                updatedState = state with { Dynamics = stateUpdate(dyn) };
+                _stateCache[logicalChannel] = updatedState;
             }
-            finally { sem.Release(); }
+
+            if (updatedState != null)
+            {
+                StateChanged?.Invoke(updatedState);
+            }
         }
 
         public Task SetMakeupGainAsync(long logicalChannel, double v) { ValidateNumeric(v); return ExecuteDynamicsCommandAsync(logicalChannel, (d, p) => d.SetMakeupGainAsync(p, v), dyn => dyn with { MakeupGain = v }); }
@@ -448,3 +579,5 @@ namespace Desktop
         }
     }
 }
+
+

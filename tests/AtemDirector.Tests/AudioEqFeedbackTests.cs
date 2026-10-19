@@ -1,4 +1,4 @@
-using Desktop;
+﻿using Desktop;
 using Desktop.HardwareAbstraction;
 using Xunit;
 using Core;
@@ -60,6 +60,7 @@ namespace AtemDirector.Tests
         public bool IsConnected => true;
 
         public event System.Action<string, long, double?, bool?, bool?>? HardwareStateChanged;
+        public event EventHandler<Desktop.HardwareAbstraction.AudioMeterState>? MeterChanged;
         public event System.Action<string, long, bool?, Core.EqBandUpdate?>? HardwareEqStateChanged;
 
         public int LastEqBandIndex = -1;
@@ -90,4 +91,6 @@ namespace AtemDirector.Tests
         }
     }
 }
+
+
 

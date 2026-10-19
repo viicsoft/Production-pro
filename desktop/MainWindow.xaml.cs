@@ -61,6 +61,7 @@ namespace Desktop
         private readonly SimAtem _simAtem = new SimAtem();
         private IAtemSwitch _switcher;
         private AudioControlService _audioService;
+        private Desktop.AudioGrouping.AudioGroupingService _audioGroupingService;
         private readonly ObservableCollection<TallyUpdate> _tallies = new();
         private ClientWebSocket? _ws;
         private CancellationTokenSource? _cts;
@@ -87,10 +88,20 @@ namespace Desktop
 
         private readonly List<Border> _tickMarks = new();
 
-        private static readonly string LogFile = "debug.log";
+        private static readonly string LogFile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Vidikom",
+            "logs",
+            "debug.log");
         public static void Log(string msg)
         {
-            try { File.AppendAllText(LogFile, $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch { }
+            try
+            {
+                var dir = Path.GetDirectoryName(LogFile);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                File.AppendAllText(LogFile, $"{DateTime.Now:HH:mm:ss.fff} {msg}\n");
+            }
+            catch { }
         }
 
         public static MainWindow Instance { get; private set; }
@@ -146,18 +157,18 @@ namespace Desktop
                 {
                     if (_switcher is AtemHardwareAdapter adapter && adapter.IsHardware)
                     {
-                        StatusText.Text = $"ðŸŸ¢ Physical Switcher ({_switcher.DeviceName})";
+                        StatusText.Text = $"Physical Switcher ({_switcher.DeviceName})";
                         StatusText.Foreground = Brushes.LimeGreen;
                     }
                     else
                     {
-                        StatusText.Text = "ðŸŸ¢ Virtual Switcher (Standalone Ready)";
+                        StatusText.Text = "Virtual Switcher (Standalone Ready)";
                         StatusText.Foreground = Brushes.LimeGreen;
                     }
                 }
                 else
                 {
-                    StatusText.Text = "âšª Standby";
+                    StatusText.Text = "Standby";
                     StatusText.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#888888")!;
                 }
             }
@@ -165,12 +176,77 @@ namespace Desktop
             if (MenuDisconnect != null) MenuDisconnect.IsEnabled = isConnected;
         }
 
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
+        private static extern IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        private System.Drawing.Icon? _win32IconBig;
+        private System.Drawing.Icon? _win32IconSmall;
+
+        private void ApplyWin32WindowIcon()
+        {
+            try
+            {
+                Icon = BitmapFrame.Create(new Uri("pack://application:,,,/icon.ico", UriKind.Absolute));
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+
+                var sri = Application.GetResourceStream(new Uri("pack://application:,,,/icon.ico", UriKind.Absolute));
+                if (sri?.Stream != null)
+                {
+                    using var ms = new MemoryStream();
+                    sri.Stream.CopyTo(ms);
+                    ms.Position = 0;
+                    _win32IconBig = new System.Drawing.Icon(ms, 48, 48);
+                    ms.Position = 0;
+                    _win32IconSmall = new System.Drawing.Icon(ms, 16, 16);
+
+                    const int WM_SETICON = 0x0080;
+                    const int GCLP_HICON = -14;
+                    const int GCLP_HICONSM = -34;
+
+                    SendMessage(hwnd, WM_SETICON, (IntPtr)1, _win32IconBig.Handle);
+                    SendMessage(hwnd, WM_SETICON, (IntPtr)0, _win32IconSmall.Handle);
+                    SetClassLongPtr(hwnd, GCLP_HICON, _win32IconBig.Handle);
+                    SetClassLongPtr(hwnd, GCLP_HICONSM, _win32IconSmall.Handle);
+                }
+            }
+            catch { }
+        }
+
+        private string _lastKnownIp = "";
         public MainWindow() : this(null) { }
 
         public MainWindow(IAtemSwitch? switcher = null)
         {
             Instance = this;
             InitializeComponent();
+            SourceInitialized += (_, _) => ApplyWin32WindowIcon();
+            
+            _lastKnownIp = GetLocalIpAddress();
+            System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += (s, e) => {
+                Dispatcher.InvokeAsync(() => {
+                    var newIp = GetLocalIpAddress();
+                    if (newIp != _lastKnownIp && !string.IsNullOrEmpty(newIp) && !newIp.StartsWith("127."))
+                    {
+                        _lastKnownIp = newIp;
+                        if (RoomManager.ActiveRoom != null && RoomManager.ActiveRoom.NetworkMode == NetworkMode.LAN)
+                        {
+                            LogIntercom($"[Auto-Recovery] Network IP changed to {newIp}. Refreshing WebView.");
+                            NavigateIntercomToActiveRoom(); // Safely navigate the existing WebView with the new localIp query param
+                            
+                            // Check if QR code dialog is visible (TxtQrJoinUrl has text) and refresh it if so
+                            if (!string.IsNullOrEmpty(TxtQrJoinUrl.Text))
+                            {
+                                BtnShowQr_Click(null, new RoutedEventArgs());
+                            }
+                        }
+                    }
+                });
+            };
+            
             _switcher = switcher ?? new AtemHardwareAdapter(_simAtem, autoFallbackToSimulator: true);
             
             var registry = new AudioHardwareRegistry();
@@ -179,6 +255,7 @@ namespace Desktop
             var map = AudioRoutingMap.CreateDefaultAtemMap("atem-main", 40);
             
             _audioService = new AudioControlService(registry, map);
+            _audioGroupingService = new Desktop.AudioGrouping.AudioGroupingService(_switcher, _audioService);
 
             _switcher.ConnectionChanged += isConnected => Dispatcher.InvokeAsync(async () =>
             {
@@ -189,7 +266,11 @@ namespace Desktop
                 }
             });
             _switcher.InputsUpdated += () => Dispatcher.InvokeAsync(async () => await SyncFromSwitcherAsync());
-            _switcher.ProgramPreviewChanged += (pgm, pvw) => Dispatcher.InvokeAsync(() => UpdateButtonStyles((int)pgm, (int)pvw));
+            _switcher.ProgramPreviewChanged += (pgm, pvw) =>
+            {
+                PwaServer.Instance.BroadcastTallyFast(pgm, pvw);
+                Dispatcher.InvokeAsync(() => UpdateButtonStyles((int)pgm, (int)pvw));
+            };
             _switcher.StreamStatusChanged += status => Dispatcher.InvokeAsync(() =>
             {
                 if (MenuStartStreaming != null) MenuStartStreaming.IsEnabled = !status.IsStreaming;
@@ -213,9 +294,16 @@ namespace Desktop
             _config = InputConfig.Load();
 
             _speechService = new SpeechCommandService(_switcher, _config);
-            _speechService.OnTranscriptRecognized += (t) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"ðŸŽ¤ Heard: {t}");
-            _speechService.OnCommandExecuted += (c) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"âš¡ {c}");
-            _speechService.OnError += (err) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"âš ï¸ Voice Error: {err}");
+            _speechService.OnTranscriptRecognized += (t) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"Heard: {t}");
+            _speechService.OnCommandExecuted += (c) => Dispatcher.InvokeAsync(() => SpeechStatusText.Text = $"{c}");
+            _speechService.OnError += (err) => Dispatcher.InvokeAsync(() =>
+            {
+                BtnVoiceControl.IsChecked = false;
+                _config.VoiceControlEnabled = false;
+                _config.Save();
+                SpeechStatusText.Text = "";
+                ShowNotification($"Voice Control: {err}", isError: true);
+            });
 
             ShotSuggestionsViewInstance = new ShotSuggestionsView(_switcher);
             PanelShotSuggestions.Content = ShotSuggestionsViewInstance;
@@ -228,7 +316,9 @@ namespace Desktop
             // Restore transition style
             if (Enum.TryParse<TransitionStyle>(_config.SelectedTransitionStyle, out var saved))
                 _selectedStyle = saved;
-            RateTextBox.Text = (_config.AutoTransitionRateMs / 1000.0).ToString("0.0");
+            double initialRateSec = Math.Clamp(_config.AutoTransitionRateMs / 1000.0, 0.1, 5.0);
+            RateTextBox.Text = initialRateSec.ToString("0.0");
+            if (RateSlider != null) RateSlider.Value = initialRateSec;
 
             _simAtem.TransitionPositionChanged += pos =>
             {
@@ -284,6 +374,7 @@ namespace Desktop
                     ComboMicrophone.SelectedIndex = Math.Max(0, idx);
                 }
                 TxtWakeWord.Text = _config.WakeWord ?? "";
+                SpeechStatusText.Text = "";
                 BtnVoiceControl.IsChecked = _config.VoiceControlEnabled;
 
                 if (_config.VoiceControlEnabled)
@@ -311,6 +402,9 @@ namespace Desktop
                 };
                 
                 PwaServer.Instance.GetActiveInputs = () => _config.ActiveInputs.OrderBy(id => id).Select(id => new { id = id, label = _config.GetLabel(id) });
+                PwaServer.Instance.GetTransitionStyle = () => _selectedStyle.ToString();
+                PwaServer.Instance.GetTransitionRateMs = () => _config.AutoTransitionRateMs;
+                PwaServer.Instance.GetTransitionPosition = () => _faderPosition;
                 PwaServer.Instance.OnAudioControl = (inputId, vol, on, afv) => 
                 {
                     if (vol.HasValue) _ = _audioService.SetVolumeAsync(inputId, vol.Value);
@@ -318,21 +412,60 @@ namespace Desktop
                     if (afv.HasValue) _ = _audioService.SetAfvAsync(inputId, afv.Value);
                 };
                 PwaServer.Instance.GetAudioStateAsync = () => Task.FromResult<object>(_audioService.GetAllStates());
-                _audioService.StateChanged += (state) => PwaServer.Instance.BroadcastAudioState();
-                PwaServer.Instance.OnControlSwitch = (mode, inputId) => Dispatcher.InvokeAsync(async () =>
+                _audioService.StateChanged += (state) =>
                 {
-                    if (mode == "pgm")
-                        await _switcher.SetProgramInputAsync(0, inputId);
-                    else if (mode == "pvw")
-                        await _switcher.SetPreviewInputAsync(0, inputId);
-                    else if (mode == "auto")
-                        await _switcher.AutoTransitionAsync(0);
-                    else if (mode == "cut")
-                        await _switcher.PerformCutAsync(0);
+                    PwaServer.Instance.BroadcastAudioState();
+                    if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState && state != null)
+                    {
+                        _ = RemoteSwitcherClient.Instance.SendAudioControlAsync(state.InputId, state.Volume, state.IsOn, state.IsAfv);
+                    }
+                };
+                PwaServer.Instance.OnControlSwitch = (mode, inputId) => _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var m = (mode ?? "").Trim().ToLowerInvariant();
+                        if (m == "pgm")
+                            await Dispatcher.InvokeAsync(async () => await PerformCutAsync((int)inputId));
+                        else if (m == "pvw")
+                            await Dispatcher.InvokeAsync(async () => await PerformPreviewSelect((int)inputId));
+                        else if (m == "auto")
+                            await _switcher.AutoTransitionAsync(0, _config.AutoTransitionRateMs);
+                        else if (m == "cut")
+                            await _switcher.PerformCutAsync(0);
+                    }
+                    catch { }
                 });
+                PwaServer.Instance.OnExtendedSwitchCommand = (mode, inputId, val, on, styleStr) => _ = Task.Run(async () =>
+                {
+                    await HandleIncomingRemoteSwitchCommandAsync(mode, inputId, val, on, styleStr);
+                });
+
+                WireRemoteSwitcherClientEvents();
+
                 _ = PwaServer.Instance.StartAsync(8080);
                 
                 InitializeWebViewAsync();
+
+                // Support optional CLI auto-link: --connect-pin <PIN> [--connect-host <IP_OR_ROOM>]
+                var args = Environment.GetCommandLineArgs();
+                string? cliPin = null;
+                string? cliHost = null;
+                for (int i = 1; i < args.Length; i++)
+                {
+                    if (string.Equals(args[i], "--connect-pin", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                        cliPin = args[++i];
+                    else if (string.Equals(args[i], "--connect-host", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                        cliHost = args[++i];
+                }
+                if (!string.IsNullOrWhiteSpace(cliPin))
+                {
+                    _ = Dispatcher.InvokeAsync(async () =>
+                    {
+                        await Task.Delay(600);
+                        await ConnectRemoteSwitcherByPinAsync(cliPin!, cliHost, allowSelf: true);
+                    });
+                }
             };
 
             _cts = new CancellationTokenSource();
@@ -366,7 +499,7 @@ namespace Desktop
         private async Task ConnectCloudRelayAsync()
         {
             var activeRoom = RoomManager.ActiveRoom;
-            if (activeRoom == null || activeRoom.NetworkMode != NetworkMode.Online || string.IsNullOrEmpty(activeRoom.RelayUrl))
+            if (activeRoom == null || (activeRoom.NetworkMode != NetworkMode.Online && activeRoom.NetworkMode != NetworkMode.Hybrid) || string.IsNullOrEmpty(activeRoom.RelayUrl))
             {
                 return;
             }
@@ -408,7 +541,7 @@ namespace Desktop
             }
             finally
             {
-                Dispatcher.InvokeAsync(() => UpdateHeaderState());
+                _ = Dispatcher.InvokeAsync(() => UpdateHeaderState());
             }
         }
 
@@ -436,7 +569,10 @@ namespace Desktop
                 
                 IntercomWebView = new Microsoft.Web.WebView2.Wpf.WebView2();
                 
-                string userDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector", "webview2_data");
+                string folderName = desktop.App.IsSecondaryLocalInstance
+                    ? $"webview2_data_{Environment.ProcessId}"
+                    : "webview2_data";
+                string userDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector", folderName);
                 LogIntercom($"Intercom init: user data folder = {userDataFolder}");
 
                 try 
@@ -463,25 +599,10 @@ namespace Desktop
                 LogIntercom("Intercom init: starting EnsureCoreWebView2Async");
                 var initTask = IntercomWebView.EnsureCoreWebView2Async(env);
 
-                LogIntercom("Intercom init: showing window to allocate HWND");
-                _intercomWindow = new Window
-                {
-                    Owner = this,
-                    Width = 2,
-                    Height = 2,
-                    ShowInTaskbar = false,
-                    WindowStyle = WindowStyle.None,
-                    AllowsTransparency = false,
-                    Title = "BackgroundIntercom",
-                    IsHitTestVisible = false,
-                    ShowActivated = false,
-                    Topmost = false,
-                    Left = 0,
-                    Top = 0,
-                    Opacity = 0.01
-                };
-                _intercomWindow.Content = IntercomWebView;
-                _intercomWindow.Show();
+                LogIntercom("Intercom init: attaching WebView to IntercomHostPanel");
+                IntercomWebView.Width = 1;
+                IntercomWebView.Height = 1;
+                IntercomHostPanel.Children.Add(IntercomWebView);
 
                 LogIntercom("Intercom init: awaiting EnsureCoreWebView2Async");
                 await initTask;
@@ -509,10 +630,25 @@ namespace Desktop
                     }
                 };
 
-                IntercomWebView.CoreWebView2.NavigationCompleted += (s, e) =>
+                IntercomWebView.CoreWebView2.NavigationCompleted += async (s, e) =>
                 {
                     LogIntercom($"WebView2 navigation completed: success={e.IsSuccess}, errorStatus={e.WebErrorStatus}");
-                    // Explicitly do NOT auto-connect here. Intercom audio and mic are strictly activated when user clicks INTERCOM: ON.
+                    if (e.IsSuccess && RoomManager.ActiveRoom != null && !_intercomManuallyDisabled)
+                    {
+                        try
+                        {
+                            await Task.Delay(300);
+                            if (IntercomWebView?.CoreWebView2 != null && !_intercomManuallyDisabled)
+                            {
+                                var scriptRes = await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
+                                LogIntercom($"Auto-invoked connectIntercom() on NavigationCompleted: {scriptRes}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogIntercom("Auto connectIntercom failed", ex);
+                        }
+                    }
                 };
 
                 IntercomWebView.CoreWebView2.WebMessageReceived += (s, e) =>
@@ -533,12 +669,12 @@ namespace Desktop
                             _isIntercomActive = true;
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x43, 0xA0, 0x47)); // Green
                             BtnToggleIntercom.Foreground = Brushes.White;
-                            BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: ON";
+                            BtnToggleIntercom.Content = "INTERCOM: ON";
 
                             BtnToggleMicMute.Visibility = Visibility.Visible;
                             BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
                             BtnToggleMicMute.Foreground = Brushes.White;
-                            BtnToggleMicMute.Content = "ðŸŽ™ï¸ MIC: LIVE";
+                            BtnToggleMicMute.Content = "MIC: LIVE";
                             _isMicMuted = false;
                             
                             _ = IntercomWebView.CoreWebView2.ExecuteScriptAsync("setMicMute(false);");
@@ -551,7 +687,7 @@ namespace Desktop
                             _isIntercomActive = false;
                             BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                             BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
-                            BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
+                            BtnToggleIntercom.Content = "INTERCOM: OFF";
 
                             BtnToggleMicMute.Visibility = Visibility.Collapsed;
                             _isMicMuted = false;
@@ -564,7 +700,7 @@ namespace Desktop
                             _isMicMuted = true;
                             BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F)); // Red
                             BtnToggleMicMute.Foreground = Brushes.White;
-                            BtnToggleMicMute.Content = "ðŸ”‡ MIC: MUTED";
+                            BtnToggleMicMute.Content = "MIC: MUTED";
                         });
                     }
                     else if (msg == "mic_live")
@@ -574,7 +710,7 @@ namespace Desktop
                             _isMicMuted = false;
                             BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
                             BtnToggleMicMute.Foreground = Brushes.White;
-                            BtnToggleMicMute.Content = "ðŸŽ™ï¸ MIC: LIVE";
+                            BtnToggleMicMute.Content = "MIC: LIVE";
                         });
                     }
                 };
@@ -593,25 +729,28 @@ namespace Desktop
             if (IntercomWebView?.CoreWebView2 == null) return;
             try
             {
+                if (RoomManager.ActiveRoom == null)
+                {
+                    RoomManager.EnsureActiveRoom();
+                }
                 var activeRoom = RoomManager.ActiveRoom;
-                var intercomRoomId = activeRoom?.RoomId ?? "";
+                var intercomRoomId = activeRoom?.RoomId ?? "intercom";
                 var intercomPin = activeRoom?.Pin ?? "";
-                string voiceServer = "vidikom.app";
-                if (activeRoom?.NetworkMode == NetworkMode.Online && !string.IsNullOrEmpty(activeRoom.RelayUrl))
+                // Always connect Director Intercom to local LAN PwaServer so same-network crew work with or without internet
+                string voiceServer = $"ws://127.0.0.1:{PwaServer.Instance.ActivePort}";
+                string cloudVoiceServer = "";
+                if ((activeRoom?.NetworkMode == NetworkMode.Online || activeRoom?.NetworkMode == NetworkMode.Hybrid) &&
+                    !string.IsNullOrEmpty(activeRoom.RelayUrl))
                 {
                     try
                     {
                         var uri = new Uri(activeRoom.RelayUrl.Replace("ws://", "http://").Replace("wss://", "https://"));
-                        voiceServer = uri.Host;
+                        cloudVoiceServer = uri.Host;
                     }
                     catch
                     {
-                        voiceServer = "vidikom.app";
+                        cloudVoiceServer = "vidikom.app";
                     }
-                }
-                else
-                {
-                    voiceServer = "ws://127.0.0.1:8080";
                 }
                 // Load from virtual host mapping so page loads locally without depending on network port 8080
                 var localIp = "127.0.0.1";
@@ -619,7 +758,7 @@ namespace Desktop
                     localIp = GetLocalIpAddress();
                 } catch { }
 
-                var url = $"https://intercom.atem/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&localIp={localIp}&_v={DateTime.UtcNow.Ticks}";
+                var url = $"https://intercom.atem/director-intercom.html?roomId={intercomRoomId}&pin={intercomPin}&roomName={intercomRoomId}&voiceServer={voiceServer}&cloudVoiceServer={cloudVoiceServer}&localIp={localIp}&_v={DateTime.UtcNow.Ticks}";
                 LogIntercom($"Intercom init: navigating to {url}");
                 IntercomWebView.Source = new Uri(url);
                 LogIntercom("Intercom navigation initiated");
@@ -630,8 +769,25 @@ namespace Desktop
             }
         }
 
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [MainWindow] OnClosing called! StackTrace: {Environment.StackTrace}\n");
+            }
+            catch { }
+            base.OnClosing(e);
+        }
+
         protected override void OnClosed(EventArgs e)
         {
+            try
+            {
+                var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [MainWindow] OnClosed called! StackTrace: {Environment.StackTrace}\n");
+            }
+            catch { }
             _cts?.Cancel();
             FrameCaptureService.Instance.Stop();
             _speechService?.StopListeningAsync();
@@ -654,7 +810,11 @@ namespace Desktop
 
             Task.Run(async () =>
             {
-                try { desktop.BackgroundServiceManager.StopServices(); } catch { }
+                if (!desktop.App.IsSecondaryLocalInstance)
+                {
+                    try { desktop.BackgroundServiceManager.StopServices(); } catch { }
+                }
+                try { await RemoteSwitcherClient.Instance.DisconnectAsync(); } catch { }
                 try { await PwaServer.Instance.DisposeAsync(); } catch { }
                 Environment.Exit(0);
             });
@@ -673,13 +833,13 @@ namespace Desktop
             if (enable)
             {
                 int micIndex = ComboMicrophone.SelectedIndex >= 0 ? ComboMicrophone.SelectedIndex : 0;
-                SpeechStatusText.Text = "ðŸŽ¤ Voice Control starting...";
+                SpeechStatusText.Text = "Voice Control starting...";
                 await _speechService.StartListeningAsync(micIndex, TxtWakeWord.Text);
             }
             else
             {
                 await _speechService.StopListeningAsync();
-                SpeechStatusText.Text = "ðŸŽ¤ Voice Control disabled";
+                SpeechStatusText.Text = "";
             }
         }
 
@@ -1071,6 +1231,10 @@ namespace Desktop
 
                 // Send position asynchronously to simulator & hardware in background without blocking UI
                 _ = _switcher.SetTransitionPositionAsync(0, pos);
+                if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                {
+                    _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("tbar", 0, pos);
+                }
 
                 // If transition completed (hit 0.0 or 1.0) or mouse released, refresh button state
                 if (pos <= 0.0 || pos >= 1.0 || isEnding)
@@ -1113,6 +1277,10 @@ namespace Desktop
             e.Handled = true;
             double newPos = Math.Clamp(_faderPosition + nudge, 0.0, 1.0);
             await _switcher.SetTransitionPositionAsync(0, newPos);
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("tbar", 0, newPos);
+            }
             UpdateFaderVisual(newPos);
             RefreshButtonStatesFromSimulator();
         }
@@ -1127,7 +1295,30 @@ namespace Desktop
             {
                 UpdateButtonStyles(pvw.InputId, pgm.InputId);
             }
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("cut");
+            }
             await _switcher.PerformCutAsync(0);
+        }
+
+                private void BtnScrollLeft_Click(object sender, RoutedEventArgs e)
+        {
+            BottomBarScroll.ScrollToHorizontalOffset(BottomBarScroll.HorizontalOffset - 150);
+        }
+
+        private void BtnScrollRight_Click(object sender, RoutedEventArgs e)
+        {
+            BottomBarScroll.ScrollToHorizontalOffset(BottomBarScroll.HorizontalOffset + 150);
+        }
+
+        private void BottomBarScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (BtnScrollLeft != null && BtnScrollRight != null)
+            {
+                BtnScrollLeft.Visibility = BottomBarScroll.HorizontalOffset > 0 ? Visibility.Visible : Visibility.Collapsed;
+                BtnScrollRight.Visibility = BottomBarScroll.HorizontalOffset < BottomBarScroll.ScrollableWidth ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
 
         private void BottomBarScroll_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
@@ -1146,7 +1337,7 @@ namespace Desktop
                 var btn = sender as Button;
                 if (btn == null) return;
                 
-                // Visual toggle stub
+                // Reset all individual tab buttons
                 TabSwitcher.Style = (Style)FindResource("ViewTabButton");
                 TabMedia.Style = (Style)FindResource("ViewTabButton");
                 TabAudio.Style = (Style)FindResource("ViewTabButton");
@@ -1158,8 +1349,62 @@ namespace Desktop
                 if (TabRecord != null) TabRecord.Style = (Style)FindResource("ViewTabButton");
                 if (TabMacros != null) TabMacros.Style = (Style)FindResource("ViewTabButton");
                 if (TabOutputs != null) TabOutputs.Style = (Style)FindResource("ViewTabButton");
-                
+                if (TabAfvGroups != null) TabAfvGroups.Style = (Style)FindResource("ViewTabButton");
+
+                // Close any open view group popups and reset group button headers/styles
+                var groupDefaultStyle = (Style)FindResource("ViewGroupToggleButton");
+                var groupSelectedStyle = (Style)FindResource("ViewGroupToggleButtonSelected");
+                if (GroupTabAudio != null)
+                {
+                    GroupTabAudio.IsChecked = false;
+                    GroupTabAudio.Style = groupDefaultStyle;
+                    GroupTabAudio.Content = "AUDIO";
+                }
+                if (GroupTabDirector != null)
+                {
+                    GroupTabDirector.IsChecked = false;
+                    GroupTabDirector.Style = groupDefaultStyle;
+                    GroupTabDirector.Content = "STUDIO & AI";
+                }
+                if (GroupTabBroadcast != null)
+                {
+                    GroupTabBroadcast.IsChecked = false;
+                    GroupTabBroadcast.Style = groupDefaultStyle;
+                    GroupTabBroadcast.Content = "BROADCAST";
+                }
+
                 btn.Style = (Style)FindResource("ViewTabButtonSelected");
+
+                // Highlight parent group button if a grouped tab was selected
+                var selectedTag = btn.Tag?.ToString();
+                if (GroupTabAudio != null && (selectedTag == "Audio" || selectedTag == "AfvGroups"))
+                {
+                    GroupTabAudio.Style = groupSelectedStyle;
+                    GroupTabAudio.Content = selectedTag == "Audio" ? "AUDIO: MIXER" : "AUDIO: AFV";
+                }
+                else if (GroupTabDirector != null && (selectedTag == "Room" || selectedTag == "ShotSuggestions" || selectedTag == "Macros"))
+                {
+                    GroupTabDirector.Style = groupSelectedStyle;
+                    GroupTabDirector.Content = selectedTag switch
+                    {
+                        "Room" => "STUDIO: ROOM",
+                        "ShotSuggestions" => "STUDIO: AI SHOTS",
+                        "Macros" => "STUDIO: MACROS",
+                        _ => "STUDIO & AI"
+                    };
+                }
+                else if (GroupTabBroadcast != null && (selectedTag == "Stream" || selectedTag == "Record" || selectedTag == "Outputs" || selectedTag == "Connection"))
+                {
+                    GroupTabBroadcast.Style = groupSelectedStyle;
+                    GroupTabBroadcast.Content = selectedTag switch
+                    {
+                        "Stream" => "BROADCAST: STREAM",
+                        "Record" => "BROADCAST: RECORD",
+                        "Outputs" => "BROADCAST: OUTPUTS",
+                        "Connection" => "BROADCAST: CONNECT",
+                        _ => "BROADCAST"
+                    };
+                }
 
                 // Hide all panels
                 if (PanelSwitcher != null) PanelSwitcher.Visibility = Visibility.Collapsed;
@@ -1173,9 +1418,10 @@ namespace Desktop
                 if (PanelRecord != null) PanelRecord.Visibility = Visibility.Collapsed;
                 if (PanelMacros != null) PanelMacros.Visibility = Visibility.Collapsed;
                 if (PanelOutputs != null) PanelOutputs.Visibility = Visibility.Collapsed;
+                if (PanelAfvGroups != null) PanelAfvGroups.Visibility = Visibility.Collapsed;
 
                 // Show selected panel
-                switch (btn.Tag?.ToString())
+                switch (selectedTag)
                 {
                     case "Switcher": 
                         if (PanelSwitcher != null) PanelSwitcher.Visibility = Visibility.Visible; 
@@ -1250,6 +1496,14 @@ namespace Desktop
                             PanelOutputs.Visibility = Visibility.Visible;
                         }
                         break;
+                    case "AfvGroups":
+                        if (PanelAfvGroups != null)
+                        {
+                            if (PanelAfvGroups.Content == null)
+                                PanelAfvGroups.Content = new Desktop.Views.AfvGroupsView(_audioGroupingService, _audioService);
+                            PanelAfvGroups.Visibility = Visibility.Visible;
+                        }
+                        break;
                 }
             }
             catch (Exception ex)
@@ -1274,6 +1528,7 @@ namespace Desktop
                 "Record" => TabRecord,
                 "Macros" => TabMacros,
                 "Outputs" => TabOutputs,
+                "AfvGroups" => TabAfvGroups,
                 _ => null
             };
             if (targetTab != null)
@@ -1546,6 +1801,7 @@ namespace Desktop
         {
             var btn = sender as Button;
             if (btn == null) return;
+            if (GroupDocks != null) GroupDocks.IsChecked = false;
             
             try
             {
@@ -1603,6 +1859,10 @@ namespace Desktop
                     if (current == 0) current = TransitionSelection.Background; // Ensure at least something is selected
                     
                     await _switcher.SetNextTransitionSelectionAsync(0, current);
+                    if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                    {
+                        _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("next-transition", (long)selection);
+                    }
                     RefreshButtonStatesFromSimulator();
                 }
             }
@@ -1616,7 +1876,12 @@ namespace Desktop
                 var me = state.MEs.FirstOrDefault();
                 if (me != null && me.UpstreamKeyOnAir != null && keyer < me.UpstreamKeyOnAir.Length)
                 {
-                    await _switcher.SetKeyerOnAirAsync(0, keyer, !me.UpstreamKeyOnAir[keyer]);
+                    bool newState = !me.UpstreamKeyOnAir[keyer];
+                    await _switcher.SetKeyerOnAirAsync(0, keyer, newState);
+                    if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                    {
+                        _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("usk-onair", keyer, null, newState);
+                    }
                     RefreshButtonStatesFromSimulator();
                 }
             }
@@ -1629,7 +1894,12 @@ namespace Desktop
                 var state = await _switcher.GetStateAsync();
                 if (state.DownstreamKeyers != null && dsk < state.DownstreamKeyers.Length)
                 {
-                    await _switcher.SetDskTieAsync(dsk, !state.DownstreamKeyers[dsk].Tie);
+                    bool newState = !state.DownstreamKeyers[dsk].Tie;
+                    await _switcher.SetDskTieAsync(dsk, newState);
+                    if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                    {
+                        _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("dsk-tie", dsk, null, newState);
+                    }
                     RefreshButtonStatesFromSimulator();
                 }
             }
@@ -1642,7 +1912,12 @@ namespace Desktop
                 var state = await _switcher.GetStateAsync();
                 if (state.DownstreamKeyers != null && dsk < state.DownstreamKeyers.Length)
                 {
-                    await _switcher.SetDskOnAirAsync(dsk, !state.DownstreamKeyers[dsk].OnAir);
+                    bool newState = !state.DownstreamKeyers[dsk].OnAir;
+                    await _switcher.SetDskOnAirAsync(dsk, newState);
+                    if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                    {
+                        _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("dsk-onair", dsk, null, newState);
+                    }
                     RefreshButtonStatesFromSimulator();
                 }
             }
@@ -1653,7 +1928,34 @@ namespace Desktop
             if (sender is Button btn && int.TryParse(btn.Tag?.ToString(), out int dsk))
             {
                 await _switcher.AutoDskAsync(dsk);
+                if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                {
+                    _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("dsk-auto", dsk);
+                }
                 RefreshButtonStatesFromSimulator();
+            }
+        }
+
+        private bool _updatingRateControls;
+
+        private async void DskRateSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_updatingRateControls || _switcher == null) return;
+            if (sender is Slider slider && int.TryParse(slider.Tag?.ToString(), out int dsk))
+            {
+                double rate = Math.Round(e.NewValue, 1);
+                _updatingRateControls = true;
+                try
+                {
+                    if (dsk == 0 && Dsk1RateText != null) Dsk1RateText.Text = rate.ToString("0.0");
+                    if (dsk == 1 && Dsk2RateText != null) Dsk2RateText.Text = rate.ToString("0.0");
+                }
+                finally { _updatingRateControls = false; }
+                try { await _switcher.SetDskRateAsync(dsk, rate); } catch { }
+                if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                {
+                    _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("dsk-rate", dsk, rate);
+                }
             }
         }
 
@@ -1661,26 +1963,71 @@ namespace Desktop
         {
             if (sender is TextBox tb && int.TryParse(tb.Tag?.ToString(), out int dsk) && double.TryParse(tb.Text, out double rate))
             {
+                rate = Math.Clamp(rate, 0.1, 10.0);
+                _updatingRateControls = true;
+                try
+                {
+                    if (dsk == 0 && Dsk1RateSlider != null) Dsk1RateSlider.Value = Math.Clamp(rate, 0.1, 5.0);
+                    if (dsk == 1 && Dsk2RateSlider != null) Dsk2RateSlider.Value = Math.Clamp(rate, 0.1, 5.0);
+                }
+                finally { _updatingRateControls = false; }
                 await _switcher.SetDskRateAsync(dsk, rate);
+                if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                {
+                    _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("dsk-rate", dsk, rate);
+                }
             }
         }
 
         private async void Ftb_Click(object sender, RoutedEventArgs e)
         {
             await _switcher.PerformFtbAsync(0);
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("ftb");
+            }
             RefreshButtonStatesFromSimulator();
+        }
+
+        private async void FtbRateSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_updatingRateControls || _switcher == null) return;
+            double rate = Math.Round(e.NewValue, 1);
+            _updatingRateControls = true;
+            try
+            {
+                if (FtbRateText != null) FtbRateText.Text = rate.ToString("0.0");
+            }
+            finally { _updatingRateControls = false; }
+            try { await _switcher.SetFtbRateAsync(0, rate); } catch { }
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("ftb-rate", 0, rate);
+            }
         }
 
         private async void FtbRate_LostFocus(object sender, RoutedEventArgs e)
         {
             if (sender is TextBox tb && double.TryParse(tb.Text, out double rate))
             {
+                rate = Math.Clamp(rate, 0.1, 10.0);
+                _updatingRateControls = true;
+                try
+                {
+                    if (FtbRateSlider != null) FtbRateSlider.Value = Math.Clamp(rate, 0.1, 5.0);
+                }
+                finally { _updatingRateControls = false; }
                 await _switcher.SetFtbRateAsync(0, rate);
+                if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                {
+                    _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("ftb-rate", 0, rate);
+                }
             }
         }
 
         private bool _isIntercomActive = false;
         private bool _isMicMuted = false;
+        private bool _intercomManuallyDisabled = false;
 
         private async void BtnToggleMicMute_Click(object sender, RoutedEventArgs e)
         {
@@ -1693,13 +2040,13 @@ namespace Desktop
                 {
                     BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0xD3, 0x2F, 0x2F)); // Red
                     BtnToggleMicMute.Foreground = Brushes.White;
-                    BtnToggleMicMute.Content = "ðŸ”‡ MIC: MUTED";
+                    BtnToggleMicMute.Content = "MIC: MUTED";
                 }
                 else
                 {
                     BtnToggleMicMute.Background = new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)); // Green
                     BtnToggleMicMute.Foreground = Brushes.White;
-                    BtnToggleMicMute.Content = "ðŸŽ™ï¸ MIC: LIVE";
+                    BtnToggleMicMute.Content = "MIC: LIVE";
                 }
                 await IntercomWebView.CoreWebView2.ExecuteScriptAsync($"setMicMute({(_isMicMuted ? "true" : "false")});");
             }
@@ -1724,7 +2071,8 @@ namespace Desktop
                 
                 if (_isIntercomActive)
                 {
-                    BtnToggleIntercom.Content = "ðŸŽ™ï¸ CONNECTING...";
+                    _intercomManuallyDisabled = false;
+                    BtnToggleIntercom.Content = "CONNECTING...";
                     var scriptRes = await IntercomWebView.CoreWebView2.ExecuteScriptAsync("connectIntercom();");
                     LogIntercom($"connectIntercom() invoked: {scriptRes}");
 
@@ -1734,12 +2082,12 @@ namespace Desktop
                         await Task.Delay(6000);
                         await Dispatcher.InvokeAsync(() =>
                         {
-                            if (BtnToggleIntercom.Content?.ToString() == "ðŸŽ™ï¸ CONNECTING...")
+                            if (BtnToggleIntercom.Content?.ToString() == "CONNECTING...")
                             {
                                 LogIntercom("Intercom toggle timeout, resetting button to OFF");
                                 BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                                 BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
-                                BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
+                                BtnToggleIntercom.Content = "INTERCOM: OFF";
                                 BtnToggleMicMute.Visibility = Visibility.Collapsed;
                                 _isIntercomActive = false;
                                 _isMicMuted = false;
@@ -1749,9 +2097,10 @@ namespace Desktop
                 }
                 else
                 {
+                    _intercomManuallyDisabled = true;
                     BtnToggleIntercom.Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
                     BtnToggleIntercom.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
-                    BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
+                    BtnToggleIntercom.Content = "INTERCOM: OFF";
                     BtnToggleMicMute.Visibility = Visibility.Collapsed;
                     _isMicMuted = false;
                     await IntercomWebView.CoreWebView2.ExecuteScriptAsync("disconnectIntercom();");
@@ -1762,7 +2111,7 @@ namespace Desktop
                 LogIntercom("Intercom toggle failed", ex);
                 System.Windows.MessageBox.Show("The Intercom backend process encountered an error and cannot be reached. Please restart the application.", "Intercom Error");
                 _isIntercomActive = false;
-                BtnToggleIntercom.Content = "ðŸŽ™ï¸ INTERCOM: OFF";
+                BtnToggleIntercom.Content = "INTERCOM: OFF";
                 BtnToggleMicMute.Visibility = Visibility.Collapsed;
                 _isMicMuted = false;
             }
@@ -1770,6 +2119,10 @@ namespace Desktop
 
         private async void AutoButton_Click(object sender, RoutedEventArgs e)
         {
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("auto");
+            }
             await _switcher.AutoTransitionAsync(0, _config.AutoTransitionRateMs);
         }
 
@@ -1782,6 +2135,10 @@ namespace Desktop
                 _config.SelectedTransitionStyle = style.ToString();
                 _config.Save();
                 _ = _switcher.SetTransitionStyleAsync(0, style);
+                if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                {
+                    _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("style", 0, null, null, style.ToString());
+                }
 
                 UpdateTransitionStyleButtons();
             }
@@ -1802,22 +2159,60 @@ namespace Desktop
             }
         }
 
+        private async void RateSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_updatingRateControls || _config == null) return;
+            double seconds = Math.Round(e.NewValue, 1);
+            _updatingRateControls = true;
+            try
+            {
+                if (RateTextBox != null) RateTextBox.Text = seconds.ToString("0.0");
+            }
+            finally { _updatingRateControls = false; }
+
+            _config.AutoTransitionRateMs = (int)(seconds * 1000);
+            _config.Save();
+            if (_switcher != null)
+            {
+                try { await _switcher.SetTransitionRateAsync(0, seconds); } catch { }
+            }
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("rate", 0, seconds);
+            }
+        }
+
         private void RateTextBox_LostFocus(object sender, RoutedEventArgs e) => ApplyRate();
         private void RateTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter) { ApplyRate(); e.Handled = true; }
         }
 
-        private void ApplyRate()
+        private async void ApplyRate()
         {
             if (double.TryParse(RateTextBox.Text, out double seconds) && seconds >= 0.1 && seconds <= 10.0)
             {
                 _config.AutoTransitionRateMs = (int)(seconds * 1000);
                 _config.Save();
+                _updatingRateControls = true;
+                try
+                {
+                    if (RateSlider != null) RateSlider.Value = Math.Clamp(seconds, 0.1, 5.0);
+                }
+                finally { _updatingRateControls = false; }
+                if (_switcher != null)
+                {
+                    try { await _switcher.SetTransitionRateAsync(0, seconds); } catch { }
+                }
+                if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+                {
+                    _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("rate", 0, seconds);
+                }
             }
             else
             {
-                RateTextBox.Text = (_config.AutoTransitionRateMs / 1000.0).ToString("0.0");
+                double currentSec = _config.AutoTransitionRateMs / 1000.0;
+                RateTextBox.Text = currentSec.ToString("0.0");
             }
         }
 
@@ -2087,7 +2482,16 @@ namespace Desktop
                     if (me.FadeToBlack != null)
                     {
                         BtnFtb.Style = (Style)FindResource(me.FadeToBlack.OnAir ? "TransitionStyleButtonRed" : "TransitionActionButton");
-                        FtbRateText.Text = me.FadeToBlack.Rate.ToString("0.0");
+                        if (FtbRateText != null && !FtbRateText.IsKeyboardFocused && FtbRateSlider != null && !FtbRateSlider.IsMouseCaptureWithin)
+                        {
+                            _updatingRateControls = true;
+                            try
+                            {
+                                FtbRateText.Text = me.FadeToBlack.Rate.ToString("0.0");
+                                FtbRateSlider.Value = Math.Clamp(me.FadeToBlack.Rate, 0.1, 5.0);
+                            }
+                            finally { _updatingRateControls = false; }
+                        }
                     }
                 }
                 
@@ -2096,11 +2500,29 @@ namespace Desktop
                 {
                     BtnDsk1Tie.Style = (Style)FindResource(state.DownstreamKeyers[0].Tie ? "TransitionStyleButtonSelected" : "TransitionStyleButton");
                     BtnDsk1OnAir.Style = (Style)FindResource(state.DownstreamKeyers[0].OnAir ? "TransitionStyleButtonRed" : "TransitionStyleButton");
-                    Dsk1RateText.Text = state.DownstreamKeyers[0].Rate.ToString("0.0");
+                    if (Dsk1RateText != null && !Dsk1RateText.IsKeyboardFocused && Dsk1RateSlider != null && !Dsk1RateSlider.IsMouseCaptureWithin)
+                    {
+                        _updatingRateControls = true;
+                        try
+                        {
+                            Dsk1RateText.Text = state.DownstreamKeyers[0].Rate.ToString("0.0");
+                            Dsk1RateSlider.Value = Math.Clamp(state.DownstreamKeyers[0].Rate, 0.1, 5.0);
+                        }
+                        finally { _updatingRateControls = false; }
+                    }
                     
                     BtnDsk2Tie.Style = (Style)FindResource(state.DownstreamKeyers[1].Tie ? "TransitionStyleButtonSelected" : "TransitionStyleButton");
                     BtnDsk2OnAir.Style = (Style)FindResource(state.DownstreamKeyers[1].OnAir ? "TransitionStyleButtonRed" : "TransitionStyleButton");
-                    Dsk2RateText.Text = state.DownstreamKeyers[1].Rate.ToString("0.0");
+                    if (Dsk2RateText != null && !Dsk2RateText.IsKeyboardFocused && Dsk2RateSlider != null && !Dsk2RateSlider.IsMouseCaptureWithin)
+                    {
+                        _updatingRateControls = true;
+                        try
+                        {
+                            Dsk2RateText.Text = state.DownstreamKeyers[1].Rate.ToString("0.0");
+                            Dsk2RateSlider.Value = Math.Clamp(state.DownstreamKeyers[1].Rate, 0.1, 5.0);
+                        }
+                        finally { _updatingRateControls = false; }
+                    }
                 }
             }
             catch { }
@@ -2126,6 +2548,9 @@ namespace Desktop
             {
                 try
                 {
+                    // Broadcast to PWA & Mobile clients FIRST before waiting for WPF UI dispatcher
+                    _ = PwaServer.Instance.BroadcastTallyAsync(state);
+
                     var updates = TallyEngine.Compute(state).Where(t => t.MeIndex == 0).OrderBy(t => t.CamAlias).ToList();
                     var app = Application.Current;
                     if (app?.Dispatcher != null && !app.Dispatcher.HasShutdownStarted)
@@ -2146,15 +2571,12 @@ namespace Desktop
                             await _ws.SendAsync(Encoding.UTF8.GetBytes(payload), WebSocketMessageType.Text, true, token);
                         }
                     }
-
-                    // Broadcast to new PWA server clients
-                    _ = PwaServer.Instance.BroadcastTallyAsync(state);
                 } catch { }
             }
         }
 
         private int _lastUiProgramInput = -1;
-        private void UpdateButtonStyles(int programInput, int previewInput)
+                private void UpdateButtonStyles(int programInput, int previewInput)
         {
             if (_lastUiProgramInput != programInput)
             {
@@ -2169,24 +2591,40 @@ namespace Desktop
                 else if (cam.InputId == previewInput) cam.State = CamState.Preview;
                 else cam.State = CamState.Neutral;
             }
+
+
         }
 
         private async Task PerformCutAsync(int inputIndex)
         {
-            // Optimistic instant UI update (< 1ms)
+            // Optimistic instant UI & mobile tally update (< 1ms)
             var pvw = _camButtons.FirstOrDefault(c => c.State == CamState.Preview);
             int pvwId = pvw != null ? pvw.InputId : inputIndex;
-            UpdateButtonStyles(inputIndex, pvwId == inputIndex ? (int)_lastProgramInput : pvwId);
+            int nextPvw = pvwId == inputIndex ? (int)_lastProgramInput : pvwId;
+            PwaServer.Instance.BroadcastTallyFast(inputIndex, nextPvw);
+            UpdateButtonStyles(inputIndex, nextPvw);
+
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("pgm", inputIndex);
+            }
 
             await _switcher.CutAsync(0, inputIndex);
         }
 
         private async Task PerformPreviewSelect(int inputIndex)
         {
-            // Optimistic instant UI update (< 1ms)
+            // Optimistic instant UI & mobile tally update (< 1ms)
             var pgm = _camButtons.FirstOrDefault(c => c.State == CamState.Program);
             int pgmId = pgm != null ? pgm.InputId : (int)_lastProgramInput;
-            UpdateButtonStyles(pgmId > 0 ? pgmId : 1, inputIndex);
+            int currentPgm = pgmId > 0 ? pgmId : 1;
+            PwaServer.Instance.BroadcastTallyFast(currentPgm, inputIndex);
+            UpdateButtonStyles(currentPgm, inputIndex);
+
+            if (RemoteSwitcherClient.Instance.IsConnected && !_applyingRemoteState)
+            {
+                _ = RemoteSwitcherClient.Instance.SendSwitchCommandAsync("pvw", inputIndex);
+            }
 
             await _switcher.SetPreviewAsync(0, inputIndex);
         }
@@ -2358,6 +2796,396 @@ namespace Desktop
 
         #region Room Logic
 
+        private bool _applyingRemoteState = false;
+
+        private void WireRemoteSwitcherClientEvents()
+        {
+            RemoteSwitcherClient.Instance.OnConnectionStateChanged += (connected, message) =>
+            {
+                Dispatcher.InvokeAsync(() =>
+                {
+                    if (TxtRemotePinStatus != null)
+                    {
+                        TxtRemotePinStatus.Text = message;
+                        TxtRemotePinStatus.Foreground = new SolidColorBrush(
+                            connected ? Color.FromRgb(0x00, 0xE6, 0x76) : Color.FromRgb(0xE4, 0xE4, 0xE7));
+                    }
+
+                    if (BtnLinkRemotePin != null)
+                    {
+                        if (connected)
+                        {
+                            BtnLinkRemotePin.Content = $"LINKED: PIN {RemoteSwitcherClient.Instance.ConnectedPin}";
+                            BtnLinkRemotePin.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
+                        }
+                        else
+                        {
+                            BtnLinkRemotePin.Content = "LINK PC (PIN)";
+                            BtnLinkRemotePin.Foreground = Brushes.White;
+                        }
+                    }
+
+                    if (BtnDisconnectRemotePin != null)
+                    {
+                        BtnDisconnectRemotePin.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
+                    }
+
+                    if (connected)
+                    {
+                        StatusText.Text = $"Linked ({RemoteSwitcherClient.Instance.ConnectedHostDisplay})";
+                        StatusText.Foreground = Brushes.LimeGreen;
+                        ShowNotification(message, isError: false);
+                    }
+                });
+            };
+
+            RemoteSwitcherClient.Instance.OnRemoteInputsReceived += (remoteInputs) =>
+            {
+                _simAtem.ApplyRemoteInputs(remoteInputs);
+                Dispatcher.InvokeAsync(() =>
+                {
+                    _applyingRemoteState = true;
+                    try
+                    {
+                        _config.ActiveInputs = remoteInputs.Select(i => (int)i.Id).ToHashSet();
+                        foreach (var inp in remoteInputs)
+                        {
+                            if (!string.IsNullOrWhiteSpace(inp.Name))
+                                _config.CustomLabels[(int)inp.Id] = inp.Name.Trim();
+                        }
+                        RebuildButtonGrid();
+                    }
+                    finally
+                    {
+                        _applyingRemoteState = false;
+                    }
+                });
+            };
+
+            RemoteSwitcherClient.Instance.OnRemoteTallyReceived += (pgm, pvw, nextTrans, usks, ftb, dsks, parsedStyle, rateMs, pos) =>
+            {
+                _simAtem.ApplyRemoteState(pgm, pvw, nextTrans, usks, ftb, dsks, parsedStyle, pos);
+                Dispatcher.InvokeAsync(() =>
+                {
+                    _applyingRemoteState = true;
+                    try
+                    {
+                        _lastProgramInput = pgm;
+                        UpdateButtonStyles((int)pgm, (int)pvw);
+
+                        if (parsedStyle.HasValue)
+                        {
+                            _selectedStyle = parsedStyle.Value;
+                            UpdateTransitionStyleButtons();
+                        }
+
+                        if (rateMs.HasValue && rateMs.Value > 0)
+                        {
+                            _config.AutoTransitionRateMs = rateMs.Value;
+                            double sec = Math.Clamp(rateMs.Value / 1000.0, 0.1, 10.0);
+                            if (RateTextBox != null && !RateTextBox.IsKeyboardFocused && RateSlider != null && !RateSlider.IsMouseCaptureWithin)
+                            {
+                                _updatingRateControls = true;
+                                try
+                                {
+                                    RateTextBox.Text = sec.ToString("0.0");
+                                    RateSlider.Value = Math.Clamp(sec, 0.1, 5.0);
+                                }
+                                finally { _updatingRateControls = false; }
+                            }
+                        }
+
+                        if (pos.HasValue && !_faderDragging)
+                        {
+                            UpdateFaderVisual(pos.Value);
+                        }
+
+                        RefreshButtonStatesFromSimulator();
+                    }
+                    finally
+                    {
+                        _applyingRemoteState = false;
+                    }
+                });
+            };
+
+            RemoteSwitcherClient.Instance.OnRemoteAudioStateReceived += (audioRoot) =>
+            {
+                Dispatcher.InvokeAsync(async () =>
+                {
+                    _applyingRemoteState = true;
+                    try
+                    {
+                        if (audioRoot.TryGetProperty("state", out var stArr) && stArr.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            foreach (var ch in stArr.EnumerateArray())
+                            {
+                                long chId = ch.TryGetProperty("InputId", out var idP0) && idP0.TryGetInt64(out long cId0)
+                                    ? cId0
+                                    : (ch.TryGetProperty("inputId", out var idP1) && idP1.TryGetInt64(out long cId1)
+                                        ? cId1
+                                        : (ch.TryGetProperty("ChannelId", out var idP) && idP.TryGetInt64(out long cId)
+                                            ? cId
+                                            : (ch.TryGetProperty("channelId", out var idP2) && idP2.TryGetInt64(out long cId2) ? cId2 : 0)));
+                                if (chId <= 0) continue;
+
+                                if (ch.TryGetProperty("Volume", out var vP0) && vP0.TryGetDouble(out double vol0))
+                                    await _audioService.SetVolumeAsync(chId, vol0);
+                                else if (ch.TryGetProperty("volume", out var vP1) && vP1.TryGetDouble(out double vol1))
+                                    await _audioService.SetVolumeAsync(chId, vol1);
+                                else if (ch.TryGetProperty("VolumeDb", out var vP) && vP.TryGetDouble(out double vol))
+                                    await _audioService.SetVolumeAsync(chId, vol);
+                                else if (ch.TryGetProperty("volumeDb", out var vP2) && vP2.TryGetDouble(out double vol2))
+                                    await _audioService.SetVolumeAsync(chId, vol2);
+
+                                if (ch.TryGetProperty("IsOn", out var oP) && (oP.ValueKind == System.Text.Json.JsonValueKind.True || oP.ValueKind == System.Text.Json.JsonValueKind.False))
+                                    await _audioService.SetOnAsync(chId, oP.GetBoolean());
+                                else if (ch.TryGetProperty("isOn", out var oP2) && (oP2.ValueKind == System.Text.Json.JsonValueKind.True || oP2.ValueKind == System.Text.Json.JsonValueKind.False))
+                                    await _audioService.SetOnAsync(chId, oP2.GetBoolean());
+
+                                if (ch.TryGetProperty("IsAfv", out var aP) && (aP.ValueKind == System.Text.Json.JsonValueKind.True || aP.ValueKind == System.Text.Json.JsonValueKind.False))
+                                    await _audioService.SetAfvAsync(chId, aP.GetBoolean());
+                                else if (ch.TryGetProperty("isAfv", out var aP2) && (aP2.ValueKind == System.Text.Json.JsonValueKind.True || aP2.ValueKind == System.Text.Json.JsonValueKind.False))
+                                    await _audioService.SetAfvAsync(chId, aP2.GetBoolean());
+                            }
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        _applyingRemoteState = false;
+                    }
+                });
+            };
+        }
+
+        private async Task HandleIncomingRemoteSwitchCommandAsync(string mode, long inputId, double? val, bool? on, string? styleStr)
+        {
+            try
+            {
+                var m = (mode ?? "").Trim().ToLowerInvariant();
+                switch (m)
+                {
+                    case "pgm":
+                        if (inputId > 0)
+                        {
+                            await _switcher.SetProgramInputAsync(0, (int)inputId);
+                            _ = Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        }
+                        break;
+                    case "pvw":
+                        if (inputId > 0)
+                        {
+                            await _switcher.SetPreviewAsync(0, (int)inputId);
+                            _ = Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        }
+                        break;
+                    case "cut":
+                        await _switcher.PerformCutAsync(0);
+                        _ = Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        break;
+                    case "auto":
+                        await _switcher.AutoTransitionAsync(0, _config.AutoTransitionRateMs);
+                        _ = Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        break;
+                    case "ftb":
+                        await _switcher.PerformFtbAsync(0);
+                        _ = Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        break;
+                    case "ftb-rate":
+                        if (val.HasValue)
+                        {
+                            await _switcher.SetFtbRateAsync(0, val.Value);
+                            await Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        }
+                        break;
+                    case "tbar":
+                        if (val.HasValue)
+                        {
+                            double pos = Math.Clamp(val.Value, 0.0, 1.0);
+                            await _switcher.SetTransitionPositionAsync(0, pos);
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                UpdateFaderVisual(pos);
+                                if (pos <= 0.0 || pos >= 1.0)
+                                    RefreshButtonStatesFromSimulator();
+                            });
+                        }
+                        break;
+                    case "style":
+                        if (!string.IsNullOrWhiteSpace(styleStr) && Enum.TryParse<TransitionStyle>(styleStr, true, out var parsedStyle))
+                        {
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                _selectedStyle = parsedStyle;
+                                _config.SelectedTransitionStyle = parsedStyle.ToString();
+                                _config.Save();
+                                UpdateTransitionStyleButtons();
+                            });
+                            await _switcher.SetTransitionStyleAsync(0, parsedStyle);
+                        }
+                        break;
+                    case "rate":
+                        if (val.HasValue)
+                        {
+                            double sec = Math.Clamp(val.Value, 0.1, 10.0);
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                _config.AutoTransitionRateMs = (int)(sec * 1000);
+                                _config.Save();
+                                _updatingRateControls = true;
+                                try
+                                {
+                                    if (RateTextBox != null) RateTextBox.Text = sec.ToString("0.0");
+                                    if (RateSlider != null) RateSlider.Value = Math.Clamp(sec, 0.1, 5.0);
+                                }
+                                finally { _updatingRateControls = false; }
+                            });
+                            await _switcher.SetTransitionRateAsync(0, sec);
+                        }
+                        break;
+                    case "next-transition":
+                        {
+                            var curState = await _switcher.GetStateAsync();
+                            var me = curState.MEs.FirstOrDefault();
+                            if (me != null)
+                            {
+                                var flag = (TransitionSelection)(int)inputId;
+                                var current = me.NextTransition;
+                                if (on.HasValue)
+                                {
+                                    if (on.Value) current |= flag;
+                                    else current &= ~flag;
+                                }
+                                else
+                                {
+                                    if (current.HasFlag(flag)) current &= ~flag;
+                                    else current |= flag;
+                                }
+                                if (current == 0) current = TransitionSelection.Background;
+                                await _switcher.SetNextTransitionSelectionAsync(0, current);
+                                await Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                            }
+                        }
+                        break;
+                    case "usk-onair":
+                        {
+                            int keyer = (int)inputId;
+                            var curState = await _switcher.GetStateAsync();
+                            var me = curState.MEs.FirstOrDefault();
+                            if (me != null && me.UpstreamKeyOnAir != null && keyer >= 0 && keyer < me.UpstreamKeyOnAir.Length)
+                            {
+                                bool targetOn = on ?? !me.UpstreamKeyOnAir[keyer];
+                                await _switcher.SetKeyerOnAirAsync(0, keyer, targetOn);
+                                await Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                            }
+                        }
+                        break;
+                    case "dsk-tie":
+                        {
+                            int dsk = (int)inputId;
+                            var curState = await _switcher.GetStateAsync();
+                            if (curState.DownstreamKeyers != null && dsk >= 0 && dsk < curState.DownstreamKeyers.Length)
+                            {
+                                bool targetTie = on ?? !curState.DownstreamKeyers[dsk].Tie;
+                                await _switcher.SetDskTieAsync(dsk, targetTie);
+                                await Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                            }
+                        }
+                        break;
+                    case "dsk-onair":
+                        {
+                            int dsk = (int)inputId;
+                            var curState = await _switcher.GetStateAsync();
+                            if (curState.DownstreamKeyers != null && dsk >= 0 && dsk < curState.DownstreamKeyers.Length)
+                            {
+                                bool targetOn = on ?? !curState.DownstreamKeyers[dsk].OnAir;
+                                await _switcher.SetDskOnAirAsync(dsk, targetOn);
+                                await Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                            }
+                        }
+                        break;
+                    case "dsk-auto":
+                        {
+                            int dsk = (int)inputId;
+                            await _switcher.AutoDskAsync(dsk);
+                            await Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        }
+                        break;
+                    case "dsk-rate":
+                        if (val.HasValue)
+                        {
+                            int dsk = (int)inputId;
+                            await _switcher.SetDskRateAsync(dsk, val.Value);
+                            await Dispatcher.InvokeAsync(() => RefreshButtonStatesFromSimulator());
+                        }
+                        break;
+                }
+
+                var updatedState = await _switcher.GetStateAsync();
+                await PwaServer.Instance.BroadcastTallyAsync(updatedState);
+            }
+            catch { }
+        }
+
+        public async Task<(bool ok, string message)> ConnectRemoteSwitcherByPinAsync(string pin, string? hostHint = null, bool allowSelf = false)
+        {
+            var result = await RemoteSwitcherClient.Instance.ConnectByPinAsync(pin, hostHint, allowSelf);
+            return result;
+        }
+
+        private void MenuLinkRemotePin_Click(object sender, RoutedEventArgs e)
+        {
+            if (BtnLinkRemotePin != null)
+            {
+                BtnLinkRemotePin.IsChecked = true;
+                TxtRemotePinInput?.Focus();
+            }
+        }
+
+        private void BtnLinkRemotePin_Checked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (TxtPopupLocalPin != null)
+                    TxtPopupLocalPin.Text = RoomManager.ActiveRoom?.Pin ?? PwaServer.Instance.PinCode;
+                if (TxtPopupLocalIp != null)
+                    TxtPopupLocalIp.Text = $"{GetLocalIpAddress()}:{PwaServer.Instance.ActivePort}";
+                TxtRemotePinInput?.Focus();
+            }
+            catch { }
+        }
+
+        private async void BtnConnectRemotePin_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string pin = (TxtRemotePinInput?.Text ?? "").Trim();
+                string hint = (TxtRemoteHostHintInput?.Text ?? "").Trim();
+                if (pin.Length < 4)
+                {
+                    if (TxtRemotePinStatus != null)
+                    {
+                        TxtRemotePinStatus.Text = "Please enter the 4-digit PIN of the remote switcher.";
+                        TxtRemotePinStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x55, 0x55));
+                    }
+                    return;
+                }
+
+                if (BtnConnectRemotePin != null) BtnConnectRemotePin.IsEnabled = false;
+                await ConnectRemoteSwitcherByPinAsync(pin, hint);
+            }
+            finally
+            {
+                if (BtnConnectRemotePin != null) BtnConnectRemotePin.IsEnabled = true;
+            }
+        }
+
+        private async void BtnDisconnectRemotePin_Click(object sender, RoutedEventArgs e)
+        {
+            await RemoteSwitcherClient.Instance.DisconnectAsync();
+        }
+
         private void UpdateHeaderState()
         {
             if (RoomManager.ActiveRoom != null)
@@ -2376,12 +3204,23 @@ namespace Desktop
                 }
                 
                 TxtHeaderPin.Text = RoomManager.ActiveRoom.Pin;
+                if (TxtPopupLocalPin != null)
+                    TxtPopupLocalPin.Text = RoomManager.ActiveRoom.Pin;
+                if (TxtPopupLocalIp != null)
+                    TxtPopupLocalIp.Text = $"{GetLocalIpAddress()}:{PwaServer.Instance.ActivePort}";
 
                 // Network mode indicator
-                if (RoomManager.ActiveRoom.NetworkMode == NetworkMode.Online)
+                if (RoomManager.ActiveRoom.NetworkMode == NetworkMode.Online || RoomManager.ActiveRoom.NetworkMode == NetworkMode.Hybrid)
                 {
                     var relayConnected = PwaServer.Instance.Relay?.IsConnected == true;
-                    TxtNetworkMode.Text = relayConnected ? "ðŸŒ Online" : "ðŸŒ Connecting...";
+                    if (RoomManager.ActiveRoom.NetworkMode == NetworkMode.Hybrid)
+                    {
+                        TxtNetworkMode.Text = relayConnected ? "Hybrid" : "LAN";
+                    }
+                    else
+                    {
+                        TxtNetworkMode.Text = relayConnected ? "Online" : "Connecting...";
+                    }
                     TxtNetworkMode.Foreground = new System.Windows.Media.SolidColorBrush(
                         relayConnected 
                             ? System.Windows.Media.Color.FromRgb(0x4C, 0xAF, 0x50)  // Green
@@ -2389,7 +3228,7 @@ namespace Desktop
                 }
                 else
                 {
-                    TxtNetworkMode.Text = "ðŸ“¡ LAN";
+                    TxtNetworkMode.Text = "LAN";
                     TxtNetworkMode.Foreground = new System.Windows.Media.SolidColorBrush(
                         System.Windows.Media.Color.FromRgb(0xAA, 0xAA, 0xAA));
                 }
@@ -2562,6 +3401,11 @@ namespace Desktop
         #endregion
     }
 }
+
+
+
+
+
 
 
 

@@ -24,6 +24,48 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private readonly IAtemSwitch _fallback;
     private readonly bool _autoFallbackToSimulator;
+    private static bool _comChecked;
+
+    public static void EnsureComRegistered()
+    {
+        if (_comChecked) return;
+        _comChecked = true;
+        try
+        {
+            string baseDir = AppContext.BaseDirectory;
+            string[] candidates =
+            {
+                System.IO.Path.Combine(baseDir, "BMDSwitcherAPI64.dll"),
+                System.IO.Path.Combine(baseDir, "lib", "BMDSwitcherAPI64.dll"),
+                @"C:\Program Files (x86)\Blackmagic Design\Blackmagic ATEM Switchers\BMDSwitcherAPI\BMDSwitcherAPI64.dll"
+            };
+
+            string? dllPath = null;
+            foreach (var c in candidates)
+            {
+                if (System.IO.File.Exists(c))
+                {
+                    dllPath = System.IO.Path.GetFullPath(c);
+                    break;
+                }
+            }
+            if (dllPath == null) return;
+
+            const string clsidKeyPath = @"Software\Classes\CLSID\{80FE9CCE-1DC9-4BA7-A45A-8297A04F0350}\InprocServer32";
+            using var existing = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(clsidKeyPath, writable: false);
+            var currentVal = existing?.GetValue(null) as string;
+            if (!string.IsNullOrEmpty(currentVal) && System.IO.File.Exists(currentVal))
+                return;
+
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(clsidKeyPath);
+            if (key != null)
+            {
+                key.SetValue(null, dllPath);
+                key.SetValue("ThreadingModel", "Both");
+            }
+        }
+        catch { }
+    }
 
     // COM Objects
     private IBMDSwitcher? _rawSwitcher;
@@ -414,6 +456,7 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
                     IBMDSwitcherDiscovery? discovery = null;
                     try
                     {
+                        EnsureComRegistered();
                         discovery = new CBMDSwitcherDiscovery();
                         IBMDSwitcher? switcher = null;
                         _BMDSwitcherConnectToFailure failReason = 0;
@@ -421,7 +464,14 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
                         // Priority 1: Check USB connection if AUTO, empty host, or "USB"
                         if (string.IsNullOrEmpty(targetAddress) || isAuto)
                         {
-                            discovery.ConnectTo(string.Empty, out switcher, out failReason);
+                            try
+                            {
+                                discovery.ConnectTo(string.Empty, out switcher, out failReason);
+                            }
+                            catch (COMException) when (isAuto)
+                            {
+                                switcher = null;
+                            }
                         }
 
                         // Priority 2: If not found over USB and a network address was specified, try network
@@ -1572,8 +1622,223 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
         }
     }
 
+    private SwitcherState? ReadHardwareState_Locked(SwitcherState fallbackState)
+    {
+        if (!_isHardwareConnected || _cachedHardwareInputs == null || _meBlock == null)
+            return null;
+
+        try
+        {
+            _meBlock.GetProgramInput(out long pgm);
+            _meBlock.GetPreviewInput(out long pvw);
+
+            TransitionSelection nextTrans = fallbackState.MEs.FirstOrDefault()?.NextTransition ?? TransitionSelection.Background;
+            if (_meBlock is IBMDSwitcherTransitionParameters transParams)
+            {
+                try
+                {
+                    transParams.GetNextTransitionSelection(out var comSel);
+                    nextTrans = (TransitionSelection)comSel;
+                }
+                catch { }
+            }
+
+            bool[] uskOnAir = (bool[])(fallbackState.MEs.FirstOrDefault()?.UpstreamKeyOnAir?.Clone() ?? new bool[4]);
+            try
+            {
+                Guid keyIterGuid = typeof(IBMDSwitcherKeyIterator).GUID;
+                _meBlock.CreateIterator(ref keyIterGuid, out IntPtr keyIterPtr);
+                if (keyIterPtr != IntPtr.Zero)
+                {
+                    try
+                    {
+                        var keyIter = (IBMDSwitcherKeyIterator)Marshal.GetObjectForIUnknown(keyIterPtr);
+                        int kIdx = 0;
+                        while (kIdx < uskOnAir.Length)
+                        {
+                            keyIter.Next(out var key);
+                            if (key == null) break;
+                            try
+                            {
+                                key.GetOnAir(out int onAir);
+                                uskOnAir[kIdx] = onAir != 0;
+                            }
+                            finally
+                            {
+                                Marshal.ReleaseComObject(key);
+                            }
+                            kIdx++;
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.Release(keyIterPtr);
+                    }
+                }
+            }
+            catch { }
+
+            FTBState ftbState = fallbackState.MEs.FirstOrDefault()?.FadeToBlack ?? new FTBState(1.0, false);
+            try
+            {
+                _meBlock.GetFadeToBlackRate(out uint ftbFrames);
+                _meBlock.GetFadeToBlackFullyBlack(out int ftbBlack);
+                ftbState = new FTBState(Math.Round(ftbFrames / 30.0, 2), ftbBlack != 0);
+            }
+            catch { }
+
+            var meState = new MEState(0, new HashSet<long> { pgm }, new HashSet<long> { pvw }, nextTrans, uskOnAir, ftbState);
+
+            // Downstream Keyers
+            DSKState[] dskStates = fallbackState.DownstreamKeyers != null
+                ? (DSKState[])fallbackState.DownstreamKeyers.Clone()
+                : new[] { new DSKState(false, 1.0, false), new DSKState(false, 1.0, false) };
+
+            if (_rawSwitcher != null)
+            {
+                try
+                {
+                    Guid dskIterGuid = typeof(IBMDSwitcherDownstreamKeyIterator).GUID;
+                    _rawSwitcher.CreateIterator(ref dskIterGuid, out IntPtr dskIterPtr);
+                    if (dskIterPtr != IntPtr.Zero)
+                    {
+                        try
+                        {
+                            var dskIter = (IBMDSwitcherDownstreamKeyIterator)Marshal.GetObjectForIUnknown(dskIterPtr);
+                            int dIdx = 0;
+                            while (dIdx < dskStates.Length)
+                            {
+                                dskIter.Next(out var dsk);
+                                if (dsk == null) break;
+                                try
+                                {
+                                    dsk.GetTie(out int tie);
+                                    dsk.GetRate(out uint rateFrames);
+                                    dsk.GetOnAir(out int onAir);
+                                    dskStates[dIdx] = new DSKState(tie != 0, Math.Round(rateFrames / 30.0, 2), onAir != 0);
+                                }
+                                finally
+                                {
+                                    Marshal.ReleaseComObject(dsk);
+                                }
+                                dIdx++;
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.Release(dskIterPtr);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // SuperSource Boxes & Art (read from hardware if supported, else preserve fallback state)
+            SuperSourceBoxState[] ssBoxes = fallbackState.SuperSourceBoxes != null
+                ? (SuperSourceBoxState[])fallbackState.SuperSourceBoxes.Clone()
+                : new SuperSourceBoxState[4];
+            SuperSourceArtState? ssArt = fallbackState.SuperSourceArt;
+
+            if (_rawSwitcher != null)
+            {
+                try
+                {
+                    Guid inputIterGuid = typeof(IBMDSwitcherInputIterator).GUID;
+                    _rawSwitcher.CreateIterator(ref inputIterGuid, out IntPtr inputIterPtr);
+                    if (inputIterPtr != IntPtr.Zero)
+                    {
+                        try
+                        {
+                            var inputIter = (IBMDSwitcherInputIterator)Marshal.GetObjectForIUnknown(inputIterPtr);
+                            while (true)
+                            {
+                                inputIter.Next(out var input);
+                                if (input == null) break;
+                                try
+                                {
+                                    input.GetPortType(out var portType);
+                                    if (portType == _BMDSwitcherPortType.bmdSwitcherPortTypeSuperSource && input is IBMDSwitcherInputSuperSource ss)
+                                    {
+                                        ss.GetInputFill(out long fillIn);
+                                        ss.GetInputCut(out long cutIn);
+                                        ss.GetArtOption(out var artOpt);
+                                        ssArt = new SuperSourceArtState(fillIn, cutIn, artOpt == _BMDSwitcherSuperSourceArtOption.bmdSwitcherSuperSourceArtOptionBackground);
+
+                                        Guid boxIterGuid = typeof(IBMDSwitcherSuperSourceBoxIterator).GUID;
+                                        ss.CreateIterator(ref boxIterGuid, out IntPtr boxIterPtr);
+                                        if (boxIterPtr != IntPtr.Zero)
+                                        {
+                                            try
+                                            {
+                                                var boxIter = (IBMDSwitcherSuperSourceBoxIterator)Marshal.GetObjectForIUnknown(boxIterPtr);
+                                                int bIdx = 0;
+                                                while (bIdx < ssBoxes.Length)
+                                                {
+                                                    boxIter.Next(out var box);
+                                                    if (box == null) break;
+                                                    try
+                                                    {
+                                                        box.GetEnabled(out int en);
+                                                        box.GetInputSource(out long src);
+                                                        box.GetPositionX(out double px);
+                                                        box.GetPositionY(out double py);
+                                                        box.GetSize(out double sz);
+                                                        box.GetCropped(out int cr);
+                                                        box.GetCropTop(out double ct);
+                                                        box.GetCropBottom(out double cb);
+                                                        box.GetCropLeft(out double cl);
+                                                        box.GetCropRight(out double crr);
+                                                        ssBoxes[bIdx] = new SuperSourceBoxState(bIdx, en != 0, src, px, py, sz, cr != 0, ct, cb, cl, crr);
+                                                    }
+                                                    finally
+                                                    {
+                                                        Marshal.ReleaseComObject(box);
+                                                    }
+                                                    bIdx++;
+                                                }
+                                            }
+                                            finally
+                                            {
+                                                Marshal.Release(boxIterPtr);
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                                finally
+                                {
+                                    Marshal.ReleaseComObject(input);
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.Release(inputIterPtr);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return new SwitcherState(
+                new List<SwitcherInput>(_cachedHardwareInputs),
+                new List<MEState> { meState },
+                dskStates,
+                ssBoxes,
+                ssArt,
+                fallbackState.AudioInputs,
+                fallbackState.Cameras
+            );
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<SwitcherState> GetStateAsync()
     {
+        var fallbackState = await _fallback.GetStateAsync();
         SwitcherState? hwState = null;
         try
         {
@@ -1581,17 +1846,7 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
             {
                 lock (_syncLock)
                 {
-                    if (_isHardwareConnected && _cachedHardwareInputs != null && _meBlock != null)
-                    {
-                        try
-                        {
-                            _meBlock.GetProgramInput(out long pgm);
-                            _meBlock.GetPreviewInput(out long pvw);
-                            var meState = new MEState(0, new HashSet<long> { pgm }, new HashSet<long> { pvw });
-                            hwState = new SwitcherState(new List<SwitcherInput>(_cachedHardwareInputs), new List<MEState> { meState });
-                        }
-                        catch { }
-                    }
+                    hwState = ReadHardwareState_Locked(fallbackState);
                 }
             }
             else
@@ -1600,52 +1855,54 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
                 {
                     lock (_syncLock)
                     {
-                        if (_isHardwareConnected && _cachedHardwareInputs != null && _meBlock != null)
-                        {
-                            try
-                            {
-                                _meBlock.GetProgramInput(out long pgm);
-                                _meBlock.GetPreviewInput(out long pvw);
-                                var meState = new MEState(0, new HashSet<long> { pgm }, new HashSet<long> { pvw });
-                                return new SwitcherState(new List<SwitcherInput>(_cachedHardwareInputs), new List<MEState> { meState });
-                            }
-                            catch { }
-                        }
+                        return ReadHardwareState_Locked(fallbackState);
                     }
-                    return null;
                 });
             }
         }
         catch { }
 
         if (hwState != null) return hwState;
-        return await _fallback.GetStateAsync();
+        return fallbackState;
     }
 
     public async IAsyncEnumerable<SwitcherState> StateStream([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested && !_isDisconnecting)
+        using var signal = new SemaphoreSlim(0);
+        Action<long, long> onChanged = (_, _) =>
         {
-            SwitcherState? state = null;
-            try
+            try { if (signal.CurrentCount == 0) signal.Release(); } catch { }
+        };
+        ProgramPreviewChanged += onChanged;
+        try
+        {
+            while (!ct.IsCancellationRequested && !_isDisconnecting)
             {
-                state = await GetStateAsync();
-            }
-            catch { }
+                SwitcherState? state = null;
+                try
+                {
+                    state = await GetStateAsync();
+                }
+                catch { }
 
-            if (state != null)
-            {
-                yield return state;
-            }
+                if (state != null)
+                {
+                    yield return state;
+                }
 
-            try
-            {
-                await Task.Delay(250, ct);
+                try
+                {
+                    await signal.WaitAsync(200, ct);
+                }
+                catch
+                {
+                    break;
+                }
             }
-            catch
-            {
-                break;
-            }
+        }
+        finally
+        {
+            ProgramPreviewChanged -= onChanged;
         }
     }
 
@@ -1832,15 +2089,255 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
         await _fallback.SetTransitionStyleAsync(meIndex, style);
     }
 
-    public Task SetDskTieAsync(int dskIndex, bool tie) => _fallback.SetDskTieAsync(dskIndex, tie);
-    public Task SetDskOnAirAsync(int dskIndex, bool onAir) => _fallback.SetDskOnAirAsync(dskIndex, onAir);
-    public Task AutoDskAsync(int dskIndex) => _fallback.AutoDskAsync(dskIndex);
-    public Task SetDskRateAsync(int dskIndex, double rate) => _fallback.SetDskRateAsync(dskIndex, rate);
+    public async Task SetTransitionRateAsync(int meIndex, double rateSeconds)
+    {
+        IBMDSwitcherMixEffectBlock? meBlock = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _meBlock != null && meIndex == 0)
+                meBlock = _meBlock;
+        }
 
-    public Task SetNextTransitionSelectionAsync(int meIndex, TransitionSelection selection) => _fallback.SetNextTransitionSelectionAsync(meIndex, selection);
-    public Task SetKeyerOnAirAsync(int meIndex, int keyerIndex, bool onAir) => _fallback.SetKeyerOnAirAsync(meIndex, keyerIndex, onAir);
+        if (meBlock != null)
+        {
+            uint frames = (uint)Math.Clamp(Math.Round(rateSeconds * 30.0), 1.0, 250.0);
+            await SafeComMeAsync(meBlock, m =>
+            {
+                if (m is IBMDSwitcherTransitionMixParameters mixParams)
+                    try { mixParams.SetRate(frames); } catch { }
+                if (m is IBMDSwitcherTransitionDipParameters dipParams)
+                    try { dipParams.SetRate(frames); } catch { }
+                if (m is IBMDSwitcherTransitionWipeParameters wipeParams)
+                    try { wipeParams.SetRate(frames); } catch { }
+            });
+        }
+    }
 
-    public Task SetFtbRateAsync(int meIndex, double rate) => _fallback.SetFtbRateAsync(meIndex, rate);
+    public async Task SetWipePatternAsync(int meIndex, int patternIndex)
+    {
+        IBMDSwitcherMixEffectBlock? meBlock = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _meBlock != null && meIndex == 0)
+                meBlock = _meBlock;
+        }
+
+        if (meBlock != null)
+        {
+            await SafeComMeAsync(meBlock, m =>
+            {
+                if (m is IBMDSwitcherTransitionWipeParameters wipeParams)
+                {
+                    _BMDSwitcherPatternStyle style = patternIndex switch
+                    {
+                        0 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleCircleIris,
+                        1 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleDiamondIris,
+                        2 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleRectangleIris,
+                        3 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleTopLeftDiagonal,
+                        4 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleLeftToRightBar,
+                        5 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleTopToBottomBar,
+                        6 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleHorizontalBarnDoor,
+                        7 => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleVerticalBarnDoor,
+                        _ => _BMDSwitcherPatternStyle.bmdSwitcherPatternStyleCircleIris
+                    };
+                    try { wipeParams.SetPattern(style); } catch { }
+                }
+            });
+        }
+    }
+
+    private void ExecuteOnHardwareDsk(int dskIndex, Action<IBMDSwitcherDownstreamKey> action)
+    {
+        IBMDSwitcher? switcher = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _rawSwitcher != null)
+                switcher = _rawSwitcher;
+        }
+        if (switcher == null) return;
+
+        try
+        {
+            Guid dskIterGuid = typeof(IBMDSwitcherDownstreamKeyIterator).GUID;
+            switcher.CreateIterator(ref dskIterGuid, out IntPtr dskIterPtr);
+            if (dskIterPtr != IntPtr.Zero)
+            {
+                try
+                {
+                    var dskIter = (IBMDSwitcherDownstreamKeyIterator)Marshal.GetObjectForIUnknown(dskIterPtr);
+                    int idx = 0;
+                    while (true)
+                    {
+                        dskIter.Next(out var dsk);
+                        if (dsk == null) break;
+                        try
+                        {
+                            if (idx == dskIndex)
+                            {
+                                action(dsk);
+                                break;
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.ReleaseComObject(dsk);
+                        }
+                        idx++;
+                    }
+                }
+                finally
+                {
+                    Marshal.Release(dskIterPtr);
+                }
+            }
+        }
+        catch { }
+    }
+
+    public Task SetDskTieAsync(int dskIndex, bool tie)
+    {
+        ExecuteOnHardwareDsk(dskIndex, dsk => dsk.SetTie(tie ? 1 : 0));
+        return _fallback.SetDskTieAsync(dskIndex, tie);
+    }
+
+    public Task SetDskOnAirAsync(int dskIndex, bool onAir)
+    {
+        ExecuteOnHardwareDsk(dskIndex, dsk => dsk.SetOnAir(onAir ? 1 : 0));
+        return _fallback.SetDskOnAirAsync(dskIndex, onAir);
+    }
+
+    public Task AutoDskAsync(int dskIndex)
+    {
+        ExecuteOnHardwareDsk(dskIndex, dsk => dsk.PerformAutoTransition());
+        return _fallback.AutoDskAsync(dskIndex);
+    }
+
+    public Task SetDskRateAsync(int dskIndex, double rate)
+    {
+        uint frames = (uint)Math.Clamp(Math.Round(rate <= 10.0 ? rate * 30.0 : rate), 1.0, 250.0);
+        ExecuteOnHardwareDsk(dskIndex, dsk => dsk.SetRate(frames));
+        return _fallback.SetDskRateAsync(dskIndex, rate);
+    }
+
+    public Task SetDskSourceAsync(int dskIndex, long fillInput, long cutInput, bool preMultiplied = true)
+    {
+        ExecuteOnHardwareDsk(dskIndex, dsk =>
+        {
+            if (fillInput > 0) dsk.SetInputFill(fillInput);
+            if (cutInput > 0) dsk.SetInputCut(cutInput);
+            dsk.SetPreMultiplied(preMultiplied ? 1 : 0);
+        });
+        return Task.CompletedTask;
+    }
+
+    public async Task SetNextTransitionSelectionAsync(int meIndex, TransitionSelection selection)
+    {
+        IBMDSwitcherMixEffectBlock? meBlock = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _meBlock != null && meIndex == 0)
+                meBlock = _meBlock;
+        }
+
+        if (meBlock != null)
+        {
+            await SafeComMeAsync(meBlock, m =>
+            {
+                if (m is IBMDSwitcherTransitionParameters transParams)
+                {
+                    transParams.SetNextTransitionSelection((_BMDSwitcherTransitionSelection)selection);
+                }
+            });
+        }
+        await _fallback.SetNextTransitionSelectionAsync(meIndex, selection);
+    }
+
+    private void ExecuteOnHardwareKeyer(int keyerIndex, Action<IBMDSwitcherKey> action)
+    {
+        IBMDSwitcherMixEffectBlock? meBlock = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _meBlock != null)
+                meBlock = _meBlock;
+        }
+        if (meBlock == null) return;
+
+        try
+        {
+            Guid keyIterGuid = typeof(IBMDSwitcherKeyIterator).GUID;
+            meBlock.CreateIterator(ref keyIterGuid, out IntPtr keyIterPtr);
+            if (keyIterPtr != IntPtr.Zero)
+            {
+                try
+                {
+                    var keyIter = (IBMDSwitcherKeyIterator)Marshal.GetObjectForIUnknown(keyIterPtr);
+                    int idx = 0;
+                    while (true)
+                    {
+                        keyIter.Next(out var key);
+                        if (key == null) break;
+                        try
+                        {
+                            if (idx == keyerIndex)
+                            {
+                                action(key);
+                                break;
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.ReleaseComObject(key);
+                        }
+                        idx++;
+                    }
+                }
+                finally
+                {
+                    Marshal.Release(keyIterPtr);
+                }
+            }
+        }
+        catch { }
+    }
+
+    public Task SetKeyerOnAirAsync(int meIndex, int keyerIndex, bool onAir)
+    {
+        if (meIndex == 0)
+        {
+            ExecuteOnHardwareKeyer(keyerIndex, key => key.SetOnAir(onAir ? 1 : 0));
+        }
+        return _fallback.SetKeyerOnAirAsync(meIndex, keyerIndex, onAir);
+    }
+
+    public Task SetUpstreamKeySourceAsync(int meIndex, int keyerIndex, long fillInput, long cutInput)
+    {
+        if (meIndex == 0)
+        {
+            ExecuteOnHardwareKeyer(keyerIndex, key =>
+            {
+                if (fillInput > 0) key.SetInputFill(fillInput);
+                if (cutInput > 0) key.SetInputCut(cutInput);
+            });
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SetFtbRateAsync(int meIndex, double rate)
+    {
+        IBMDSwitcherMixEffectBlock? meBlock = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _meBlock != null && meIndex == 0)
+                meBlock = _meBlock;
+        }
+
+        if (meBlock != null)
+        {
+            uint frames = (uint)Math.Clamp(Math.Round(rate <= 10.0 ? rate * 30.0 : rate), 1.0, 250.0);
+            try { meBlock.SetFadeToBlackRate(frames); } catch (COMException) { }
+        }
+        return _fallback.SetFtbRateAsync(meIndex, rate);
+    }
 
     public Task PerformFtbAsync(int meIndex)
     {
@@ -1860,12 +2357,478 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
         return _fallback.PerformFtbAsync(meIndex);
     }
 
-    public Task SetSuperSourceBoxEnableAsync(int box, bool enable) => _fallback.SetSuperSourceBoxEnableAsync(box, enable);
-    public Task SetSuperSourceBoxSourceAsync(int box, long source) => _fallback.SetSuperSourceBoxSourceAsync(box, source);
-    public Task SetSuperSourceBoxPositionAsync(int box, double x, double y) => _fallback.SetSuperSourceBoxPositionAsync(box, x, y);
-    public Task SetSuperSourceBoxSizeAsync(int box, double size) => _fallback.SetSuperSourceBoxSizeAsync(box, size);
-    public Task SetSuperSourceBoxCropAsync(int box, bool cropped, double top, double bottom, double left, double right) => _fallback.SetSuperSourceBoxCropAsync(box, cropped, top, bottom, left, right);
-    public Task SetSuperSourceArtAsync(long fillInput, long keyInput, bool artOption) => _fallback.SetSuperSourceArtAsync(fillInput, keyInput, artOption);
+    // ============ SUPERSOURCE & DVE FALLBACK HARDWARE ENGINE ============
+
+    private bool TryExecuteOnHardwareSuperSourceBox(int boxIndex, Action<IBMDSwitcherSuperSourceBox> action)
+    {
+        IBMDSwitcher? switcher = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _rawSwitcher != null)
+                switcher = _rawSwitcher;
+        }
+        if (switcher == null) return false;
+
+        bool executedOnSuperSource = false;
+        try
+        {
+            Guid inputIterGuid = typeof(IBMDSwitcherInputIterator).GUID;
+            switcher.CreateIterator(ref inputIterGuid, out IntPtr inputIterPtr);
+            if (inputIterPtr != IntPtr.Zero)
+            {
+                try
+                {
+                    var inputIter = (IBMDSwitcherInputIterator)Marshal.GetObjectForIUnknown(inputIterPtr);
+                    while (true)
+                    {
+                        inputIter.Next(out var input);
+                        if (input == null) break;
+                        try
+                        {
+                            input.GetPortType(out var portType);
+                            if (portType == _BMDSwitcherPortType.bmdSwitcherPortTypeSuperSource)
+                            {
+                                IntPtr boxIterPtr = IntPtr.Zero;
+                                Guid boxIterGuid = typeof(IBMDSwitcherSuperSourceBoxIterator).GUID;
+                                if (input is IBMDSwitcherInputSuperSource ss)
+                                    ss.CreateIterator(ref boxIterGuid, out boxIterPtr);
+                                else if (input is IBMDSwitcherInputSuperSource_v7_5_2 ss75)
+                                    ss75.CreateIterator(ref boxIterGuid, out boxIterPtr);
+                                else if (input is IBMDSwitcherInputSuperSource_v4_1_3 ss41)
+                                    ss41.CreateIterator(ref boxIterGuid, out boxIterPtr);
+
+                                if (boxIterPtr != IntPtr.Zero)
+                                {
+                                    try
+                                    {
+                                        var boxIter = (IBMDSwitcherSuperSourceBoxIterator)Marshal.GetObjectForIUnknown(boxIterPtr);
+                                        int idx = 0;
+                                        while (true)
+                                        {
+                                            boxIter.Next(out var box);
+                                            if (box == null) break;
+                                            try
+                                            {
+                                                if (idx == boxIndex)
+                                                {
+                                                    action(box);
+                                                    executedOnSuperSource = true;
+                                                    break;
+                                                }
+                                            }
+                                            finally
+                                            {
+                                                Marshal.ReleaseComObject(box);
+                                            }
+                                            idx++;
+                                        }
+                                    }
+                                    finally
+                                    {
+                                        Marshal.Release(boxIterPtr);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.ReleaseComObject(input);
+                        }
+                    }
+                }
+                finally
+                {
+                    Marshal.Release(inputIterPtr);
+                }
+            }
+        }
+        catch { }
+        return executedOnSuperSource;
+    }
+
+    private bool TryExecuteOnHardwareSuperSourceInput(Action<IBMDSwitcherInput> action)
+    {
+        IBMDSwitcher? switcher = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _rawSwitcher != null)
+                switcher = _rawSwitcher;
+        }
+        if (switcher == null) return false;
+
+        bool found = false;
+        try
+        {
+            Guid inputIterGuid = typeof(IBMDSwitcherInputIterator).GUID;
+            switcher.CreateIterator(ref inputIterGuid, out IntPtr inputIterPtr);
+            if (inputIterPtr != IntPtr.Zero)
+            {
+                try
+                {
+                    var inputIter = (IBMDSwitcherInputIterator)Marshal.GetObjectForIUnknown(inputIterPtr);
+                    while (true)
+                    {
+                        inputIter.Next(out var input);
+                        if (input == null) break;
+                        try
+                        {
+                            input.GetPortType(out var portType);
+                            if (portType == _BMDSwitcherPortType.bmdSwitcherPortTypeSuperSource)
+                            {
+                                action(input);
+                                found = true;
+                                break;
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.ReleaseComObject(input);
+                        }
+                    }
+                }
+                finally
+                {
+                    Marshal.Release(inputIterPtr);
+                }
+            }
+        }
+        catch { }
+        return found;
+    }
+
+    public Task SetSuperSourceBoxEnableAsync(int box, bool enable)
+    {
+        bool hadNativeSS = TryExecuteOnHardwareSuperSourceBox(box, b => b.SetEnabled(enable ? 1 : 0));
+        if (!hadNativeSS && box == 0)
+        {
+            // Hardware DVE Keyer 1 fallback for 1 M/E switchers (e.g. ATEM Mini Pro)
+            ExecuteOnHardwareKeyer(0, key =>
+            {
+                try { key.SetType(_BMDSwitcherKeyType.bmdSwitcherKeyTypeDVE); } catch { }
+                if (key is IBMDSwitcherKeyFlyParameters fly)
+                {
+                    try { fly.SetFly(1); } catch { }
+                }
+                try { key.SetOnAir(enable ? 1 : 0); } catch { }
+            });
+        }
+        return _fallback.SetSuperSourceBoxEnableAsync(box, enable);
+    }
+
+    public Task SetSuperSourceBoxSourceAsync(int box, long source)
+    {
+        bool hadNativeSS = TryExecuteOnHardwareSuperSourceBox(box, b => b.SetInputSource(source));
+        if (!hadNativeSS && box == 0)
+        {
+            ExecuteOnHardwareKeyer(0, key =>
+            {
+                try { key.SetType(_BMDSwitcherKeyType.bmdSwitcherKeyTypeDVE); } catch { }
+                try { key.SetInputFill(source); } catch { }
+            });
+        }
+        return _fallback.SetSuperSourceBoxSourceAsync(box, source);
+    }
+
+    public Task SetSuperSourceBoxPositionAsync(int box, double x, double y)
+    {
+        bool hadNativeSS = TryExecuteOnHardwareSuperSourceBox(box, b =>
+        {
+            b.SetPositionX(x);
+            b.SetPositionY(y);
+        });
+        if (!hadNativeSS && box == 0)
+        {
+            ExecuteOnHardwareKeyer(0, key =>
+            {
+                try { key.SetType(_BMDSwitcherKeyType.bmdSwitcherKeyTypeDVE); } catch { }
+                if (key is IBMDSwitcherKeyFlyParameters fly)
+                {
+                    try
+                    {
+                        fly.SetFly(1);
+                        fly.SetPositionX(x);
+                        fly.SetPositionY(y);
+                    }
+                    catch { }
+                }
+            });
+        }
+        return _fallback.SetSuperSourceBoxPositionAsync(box, x, y);
+    }
+
+    public Task SetSuperSourceBoxSizeAsync(int box, double size)
+    {
+        bool hadNativeSS = TryExecuteOnHardwareSuperSourceBox(box, b => b.SetSize(size));
+        if (!hadNativeSS && box == 0)
+        {
+            ExecuteOnHardwareKeyer(0, key =>
+            {
+                try { key.SetType(_BMDSwitcherKeyType.bmdSwitcherKeyTypeDVE); } catch { }
+                if (key is IBMDSwitcherKeyFlyParameters fly)
+                {
+                    try
+                    {
+                        fly.SetFly(1);
+                        fly.SetSizeX(size);
+                        fly.SetSizeY(size);
+                    }
+                    catch { }
+                }
+            });
+        }
+        return _fallback.SetSuperSourceBoxSizeAsync(box, size);
+    }
+
+    public Task SetSuperSourceBoxCropAsync(int box, bool cropped, double top, double bottom, double left, double right)
+    {
+        bool hadNativeSS = TryExecuteOnHardwareSuperSourceBox(box, b =>
+        {
+            b.SetCropped(cropped ? 1 : 0);
+            b.SetCropTop(top);
+            b.SetCropBottom(bottom);
+            b.SetCropLeft(left);
+            b.SetCropRight(right);
+        });
+        if (!hadNativeSS && box == 0)
+        {
+            ExecuteOnHardwareKeyer(0, key =>
+            {
+                if (key is IBMDSwitcherKeyDVEParameters dve)
+                {
+                    try
+                    {
+                        dve.SetMasked(cropped ? 1 : 0);
+                        dve.SetMaskTop(top);
+                        dve.SetMaskBottom(bottom);
+                        dve.SetMaskLeft(left);
+                        dve.SetMaskRight(right);
+                    }
+                    catch { }
+                }
+            });
+        }
+        return _fallback.SetSuperSourceBoxCropAsync(box, cropped, top, bottom, left, right);
+    }
+
+    public Task SetSuperSourceArtAsync(long fillInput, long keyInput, bool artOption)
+    {
+        var comArtOpt = artOption
+            ? _BMDSwitcherSuperSourceArtOption.bmdSwitcherSuperSourceArtOptionBackground
+            : _BMDSwitcherSuperSourceArtOption.bmdSwitcherSuperSourceArtOptionForeground;
+
+        TryExecuteOnHardwareSuperSourceInput(input =>
+        {
+            if (input is IBMDSwitcherInputSuperSource ss)
+            {
+                try { ss.SetInputFill(fillInput); } catch { }
+                try { ss.SetInputCut(keyInput); } catch { }
+                try { ss.SetArtOption(comArtOpt); } catch { }
+            }
+            else if (input is IBMDSwitcherInputSuperSource_v7_5_2 ss75)
+            {
+                try { ss75.SetInputFill(fillInput); } catch { }
+                try { ss75.SetInputCut(keyInput); } catch { }
+                try { ss75.SetArtOption(comArtOpt); } catch { }
+            }
+            else if (input is IBMDSwitcherInputSuperSource_v4_1_3 ss41)
+            {
+                try { ss41.SetInputFill(fillInput); } catch { }
+                try { ss41.SetInputCut(keyInput); } catch { }
+                try { ss41.SetArtOption(comArtOpt); } catch { }
+            }
+        });
+
+        return _fallback.SetSuperSourceArtAsync(fillInput, keyInput, artOption);
+    }
+
+    public Task SetSuperSourceBorderAsync(bool enabled, double widthOut, double widthIn, double hue, double saturation, double luma)
+    {
+        var bevelOpt = (enabled && (widthOut > 0.01 || widthIn > 0.01))
+            ? _BMDSwitcherBorderBevelOption.bmdSwitcherBorderBevelOptionInOut
+            : _BMDSwitcherBorderBevelOption.bmdSwitcherBorderBevelOptionNone;
+
+        bool hadNativeSS = TryExecuteOnHardwareSuperSourceInput(input =>
+        {
+            if (input is IBMDSwitcherSuperSourceBorder border)
+            {
+                try { border.SetBorderEnabled(enabled ? 1 : 0); } catch { }
+                try { border.SetBorderBevel(bevelOpt); } catch { }
+                try { border.SetBorderWidthOut(widthOut); } catch { }
+                try { border.SetBorderWidthIn(widthIn); } catch { }
+                try { border.SetBorderHue(hue); } catch { }
+                try { border.SetBorderSaturation(saturation); } catch { }
+                try { border.SetBorderLuma(luma); } catch { }
+            }
+            else if (input is IBMDSwitcherInputSuperSource_v7_5_2 ss75)
+            {
+                try { ss75.SetBorderEnabled(enabled ? 1 : 0); } catch { }
+                try { ss75.SetBorderBevel(bevelOpt); } catch { }
+                try { ss75.SetBorderWidthOut(widthOut); } catch { }
+                try { ss75.SetBorderWidthIn(widthIn); } catch { }
+                try { ss75.SetBorderHue(hue); } catch { }
+                try { ss75.SetBorderSaturation(saturation); } catch { }
+                try { ss75.SetBorderLuma(luma); } catch { }
+            }
+            else if (input is IBMDSwitcherInputSuperSource_v4_1_3 ss41)
+            {
+                try { ss41.SetBorderEnabled(enabled ? 1 : 0); } catch { }
+                try { ss41.SetBorderBevel(bevelOpt); } catch { }
+                try { ss41.SetBorderWidthOut(widthOut); } catch { }
+                try { ss41.SetBorderWidthIn(widthIn); } catch { }
+                try { ss41.SetBorderHue(hue); } catch { }
+                try { ss41.SetBorderSaturation(saturation); } catch { }
+                try { ss41.SetBorderLuma(luma); } catch { }
+            }
+        });
+
+        // Also apply to DVE Keyer 1 border so 1 M/E switchers update their DVE box border live
+        if (!hadNativeSS)
+        {
+            ExecuteOnHardwareKeyer(0, key =>
+            {
+                if (key is IBMDSwitcherKeyDVEParameters dve)
+                {
+                    try { dve.SetBorderEnabled(enabled ? 1 : 0); } catch { }
+                    try { dve.SetBorderBevel(bevelOpt); } catch { }
+                    try { dve.SetBorderWidthOut(widthOut); } catch { }
+                    try { dve.SetBorderWidthIn(widthIn); } catch { }
+                    try { dve.SetBorderHue(hue); } catch { }
+                    try { dve.SetBorderSaturation(saturation); } catch { }
+                    try { dve.SetBorderLuma(luma); } catch { }
+                }
+            });
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task SetColorGeneratorAsync(int colorIndex, double hue, double saturation, double luma)
+    {
+        IBMDSwitcher? switcher = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _rawSwitcher != null)
+                switcher = _rawSwitcher;
+        }
+        if (switcher != null)
+        {
+            try
+            {
+                Guid inputIterGuid = typeof(IBMDSwitcherInputIterator).GUID;
+                switcher.CreateIterator(ref inputIterGuid, out IntPtr inputIterPtr);
+                if (inputIterPtr != IntPtr.Zero)
+                {
+                    try
+                    {
+                        var inputIter = (IBMDSwitcherInputIterator)Marshal.GetObjectForIUnknown(inputIterPtr);
+                        int cgIdx = 0;
+                        while (true)
+                        {
+                            inputIter.Next(out var input);
+                            if (input == null) break;
+                            try
+                            {
+                                input.GetPortType(out var portType);
+                                if (portType == _BMDSwitcherPortType.bmdSwitcherPortTypeColorGenerator && input is IBMDSwitcherInputColor inputColor)
+                                {
+                                    if (cgIdx == colorIndex)
+                                    {
+                                        inputColor.SetHue(Math.Clamp(hue, 0.0, 359.9));
+                                        inputColor.SetSaturation(Math.Clamp(saturation, 0.0, 1.0));
+                                        inputColor.SetLuma(Math.Clamp(luma, 0.0, 1.0));
+                                        break;
+                                    }
+                                    cgIdx++;
+                                }
+                            }
+                            finally
+                            {
+                                Marshal.ReleaseComObject(input);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.Release(inputIterPtr);
+                    }
+                }
+            }
+            catch { }
+        }
+        return Task.CompletedTask;
+    }
+
+    private void ExecuteOnHardwareMediaPlayer(int playerIndex, Action<IBMDSwitcherMediaPlayer> action)
+    {
+        IBMDSwitcher? switcher = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _rawSwitcher != null)
+                switcher = _rawSwitcher;
+        }
+        if (switcher == null) return;
+
+        try
+        {
+            Guid mpIterGuid = typeof(IBMDSwitcherMediaPlayerIterator).GUID;
+            switcher.CreateIterator(ref mpIterGuid, out IntPtr mpIterPtr);
+            if (mpIterPtr != IntPtr.Zero)
+            {
+                try
+                {
+                    var mpIter = (IBMDSwitcherMediaPlayerIterator)Marshal.GetObjectForIUnknown(mpIterPtr);
+                    int idx = 0;
+                    while (true)
+                    {
+                        mpIter.Next(out var mp);
+                        if (mp == null) break;
+                        try
+                        {
+                            if (idx == playerIndex)
+                            {
+                                action(mp);
+                                break;
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.ReleaseComObject(mp);
+                        }
+                        idx++;
+                    }
+                }
+                finally
+                {
+                    Marshal.Release(mpIterPtr);
+                }
+            }
+        }
+        catch { }
+    }
+
+    public Task SetMediaPlayerSourceAsync(int playerIndex, bool isClip, uint slotIndex)
+    {
+        var srcType = isClip
+            ? _BMDSwitcherMediaPlayerSourceType.bmdSwitcherMediaPlayerSourceTypeClip
+            : _BMDSwitcherMediaPlayerSourceType.bmdSwitcherMediaPlayerSourceTypeStill;
+        ExecuteOnHardwareMediaPlayer(playerIndex, mp => mp.SetSource(srcType, slotIndex));
+        return Task.CompletedTask;
+    }
+
+    public Task SetMediaPlayerTransportAsync(int playerIndex, bool playing, bool loop = false, bool atBeginning = false)
+    {
+        ExecuteOnHardwareMediaPlayer(playerIndex, mp =>
+        {
+            try { mp.SetLoop(loop ? 1 : 0); } catch { }
+            if (atBeginning)
+            {
+                try { mp.SetAtBeginning(); } catch { }
+            }
+            try { mp.SetPlaying(playing ? 1 : 0); } catch { }
+        });
+        return Task.CompletedTask;
+    }
 
     public Task SetAudioVolumeAsync(long inputId, double volume)
     {
@@ -1883,10 +2846,117 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
         return _fallback.SetAudioOnAsync(inputId, on);
     }
 
-    public Task SetCameraIrisAsync(long cameraId, double iris) => _fallback.SetCameraIrisAsync(cameraId, iris);
-    public Task SetCameraFocusAsync(long cameraId, double focus) => _fallback.SetCameraFocusAsync(cameraId, focus);
-    public Task SetCameraGainAsync(long cameraId, double gain) => _fallback.SetCameraGainAsync(cameraId, gain);
-    public Task SetCameraWhiteBalanceAsync(long cameraId, double whiteBalance) => _fallback.SetCameraWhiteBalanceAsync(cameraId, whiteBalance);
+    // ============ BLACKMAGIC SDI/HDMI CAMERA CONTROL PROTOCOL ENGINE ============
+
+    private void ExecuteOnHardwareCameraControl(Action<IBMDSwitcherCameraControl> action, Action<IBMDSwitcherCameraControl_v7_0_3>? fallbackAction = null)
+    {
+        IBMDSwitcher? switcher = null;
+        lock (_syncLock)
+        {
+            if (_isHardwareConnected && _rawSwitcher != null)
+                switcher = _rawSwitcher;
+        }
+        if (switcher == null) return;
+
+        try
+        {
+            if (switcher is IBMDSwitcherCameraControl camCtrl)
+            {
+                action(camCtrl);
+            }
+            else if (fallbackAction != null && switcher is IBMDSwitcherCameraControl_v7_0_3 camCtrl70)
+            {
+                fallbackAction(camCtrl70);
+            }
+        }
+        catch { }
+    }
+
+    public Task SetCameraIrisAsync(long cameraId, double iris)
+    {
+        // Blackmagic Camera Control Protocol: Category 0 (Lens), Parameter 2 (Aperture Normalised 0.0..1.0)
+        double normIris = Math.Clamp(iris > 1.0 ? iris / 100.0 : iris, 0.0, 1.0);
+        uint dev = (uint)Math.Max(1, cameraId);
+        ExecuteOnHardwareCameraControl(
+            cc => cc.SetFloats(dev, 0, 2, 1, ref normIris),
+            cc7 => cc7.SetFloats(dev, 0, 2, 1, ref normIris));
+        return _fallback.SetCameraIrisAsync(cameraId, iris);
+    }
+
+    public Task SetCameraFocusAsync(long cameraId, double focus)
+    {
+        // Category 0 (Lens), Parameter 0 (Focus Normalised 0.0..1.0)
+        double normFocus = Math.Clamp(focus > 1.0 ? focus / 100.0 : focus, 0.0, 1.0);
+        uint dev = (uint)Math.Max(1, cameraId);
+        ExecuteOnHardwareCameraControl(
+            cc => cc.SetFloats(dev, 0, 0, 1, ref normFocus),
+            cc7 => cc7.SetFloats(dev, 0, 0, 1, ref normFocus));
+        return _fallback.SetCameraFocusAsync(cameraId, focus);
+    }
+
+    public Task SetCameraGainAsync(long cameraId, double gain)
+    {
+        // Category 1 (Video), Parameter 13 (Gain in dB: 0, 6, 12, 18)
+        sbyte dbVal = (sbyte)Math.Clamp((int)Math.Round(gain), -12, 36);
+        uint dev = (uint)Math.Max(1, cameraId);
+        ExecuteOnHardwareCameraControl(
+            cc => cc.SetInt8s(dev, 1, 13, 1, ref dbVal),
+            cc7 => cc7.SetBytes(dev, 1, 13, 1, ref dbVal));
+        return _fallback.SetCameraGainAsync(cameraId, gain);
+    }
+
+    public Task SetCameraWhiteBalanceAsync(long cameraId, double whiteBalance)
+    {
+        // Category 1 (Video), Parameter 2 (Manual White Balance Kelvin, 2500..10000)
+        short wbKelvin = (short)Math.Clamp((int)Math.Round(whiteBalance), 2500, 10000);
+        uint dev = (uint)Math.Max(1, cameraId);
+        ExecuteOnHardwareCameraControl(
+            cc => cc.SetInt16s(dev, 1, 2, 1, ref wbKelvin),
+            cc7 => cc7.SetInt16s(dev, 1, 2, 1, ref wbKelvin));
+        return _fallback.SetCameraWhiteBalanceAsync(cameraId, whiteBalance);
+    }
+
+    public Task SetCameraShutterAsync(long cameraId, int shutterDenominator)
+    {
+        // Category 1 (Video), Parameter 5 (Exposure us) or Parameter 12 (Shutter speed index / denominator)
+        int shutterUs = (int)Math.Clamp(Math.Round(1_000_000.0 / Math.Max(24, shutterDenominator)), 100, 42000);
+        uint dev = (uint)Math.Max(1, cameraId);
+        ExecuteOnHardwareCameraControl(
+            cc => cc.SetInt32s(dev, 1, 5, 1, ref shutterUs),
+            cc7 => cc7.SetInt32s(dev, 1, 5, 1, ref shutterUs));
+        return Task.CompletedTask;
+    }
+
+    public Task SetCameraColorBalanceAsync(long cameraId, double red, double green, double blue)
+    {
+        // Category 8 (Color Correction), Parameter 2 (Gain RGBL)
+        uint dev = (uint)Math.Max(1, cameraId);
+        double rVal = Math.Clamp(red, 0.0, 4.0);
+        ExecuteOnHardwareCameraControl(
+            cc => cc.SetFloats(dev, 8, 2, 1, ref rVal),
+            cc7 => cc7.SetFloats(dev, 8, 2, 1, ref rVal));
+        return Task.CompletedTask;
+    }
+
+    public Task SetCameraPtzAsync(long cameraId, double panVelocity, double tiltVelocity, double zoomVelocity = 0)
+    {
+        // Category 11 (PTZ Control), Parameter 0 (Pan/Tilt Velocity), Category 0 Parameter 9 (Continuous Zoom Speed)
+        uint dev = (uint)Math.Max(1, cameraId);
+        double panVal = Math.Clamp(panVelocity, -1.0, 1.0);
+        double zoomVal = Math.Clamp(zoomVelocity, -1.0, 1.0);
+        ExecuteOnHardwareCameraControl(
+            cc =>
+            {
+                cc.SetFloats(dev, 11, 0, 1, ref panVal);
+                if (Math.Abs(zoomVal) > 0.001) cc.SetFloats(dev, 0, 9, 1, ref zoomVal);
+            },
+            cc7 =>
+            {
+                cc7.SetFloats(dev, 11, 0, 1, ref panVal);
+                if (Math.Abs(zoomVal) > 0.001) cc7.SetFloats(dev, 0, 9, 1, ref zoomVal);
+            });
+        return Task.CompletedTask;
+    }
 
     #endregion
 
@@ -3184,7 +4254,8 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
     public event Action<long, bool, bool>? AudioStateChanged;
     public event Action<long, bool?, Core.EqBandUpdate?>? EqStateChanged;
 
-    public Task<Core.EqState?> GetEqStateAsync(long inputId) => _fallback.GetEqStateAsync(inputId);
+    public Task<Core.EqState?> GetEqStateAsync(long inputId) => _audioMonitor?.GetEqStateAsync(inputId) ?? _fallback.GetEqStateAsync(inputId);
+    public Task<Core.DynamicsState?> GetDynamicsStateAsync(long inputId) => _audioMonitor?.GetDynamicsStateAsync(inputId) ?? _fallback.GetDynamicsStateAsync(inputId);
     public Task SetEqEnabledAsync(long inputId, bool enabled)
     {
         _audioMonitor?.SetEqEnabled(inputId, enabled);
@@ -3240,6 +4311,7 @@ public sealed class AtemHardwareAdapter : IAtemSwitch, IDisposable
     public Task SetLimiterAttackAsync(long inputId, double attack) => _audioMonitor?.SetLimiterAttackAsync(inputId, attack) ?? _fallback.SetLimiterAttackAsync(inputId, attack);
     public Task SetLimiterHoldAsync(long inputId, double hold) => _audioMonitor?.SetLimiterHoldAsync(inputId, hold) ?? _fallback.SetLimiterHoldAsync(inputId, hold);
     public Task SetLimiterReleaseAsync(long inputId, double release) => _audioMonitor?.SetLimiterReleaseAsync(inputId, release) ?? _fallback.SetLimiterReleaseAsync(inputId, release);
+    public IReadOnlyList<long> GetDiscoveredFairlightInputs() => _audioMonitor?.GetDiscoveredInputIds() ?? _fallback.GetDiscoveredFairlightInputs();
 }
 
 

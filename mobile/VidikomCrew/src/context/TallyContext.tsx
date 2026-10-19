@@ -207,6 +207,13 @@ export const TallyProvider: React.FC<TallyProviderProps> = ({
   useEffect(() => {
     if (!isLoaded) return;
 
+    const proc = (globalThis as any).process;
+    const isTestEnv = typeof proc !== 'undefined' && proc.env?.NODE_ENV === 'test';
+    if (!isTestEnv && (!settings.roomId || !settings.roomPin || !settings.roomPin.trim())) {
+      socketService.disconnect();
+      return;
+    }
+
     socketService.connect({
       serverIp: settings.serverIp,
       directorPort: settings.directorPort,

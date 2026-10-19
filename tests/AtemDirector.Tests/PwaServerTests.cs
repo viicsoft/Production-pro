@@ -27,27 +27,40 @@ namespace AtemDirector.Tests
                 testAfv = afv;
             };
 
-            // Needs an active room with matching pin/code to be processed, or does it?
-            // Let's create a test JSON.
-            // Oh, we might need RoomManager.ActiveRoom to not be null if we check it in the test.
-            RoomManager.CreateRoom("TEST1", "Dir", Desktop.NetworkMode.LAN, "wss://", "TEST1", "1234");
+            var roomFile = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CuePilot", "active_room.json");
+            string? savedRoomJson = System.IO.File.Exists(roomFile) ? System.IO.File.ReadAllText(roomFile) : null;
 
-            var json = JsonSerializer.Serialize(new {
-                type = "audio-control",
-                code = "1234",
-                input = 42,
-                volume = -15.5,
-                on = true,
-                afv = false
-            });
+            try
+            {
+                RoomManager.CreateRoom("TEST1", "Dir", Desktop.NetworkMode.LAN, "wss://", "TEST1", "1234");
 
-            pwa.HandleRelayMessage(json);
-            
-            Assert.True(fired);
-            Assert.Equal(42, testInputId);
-            Assert.Equal(-15.5, testVol);
-            Assert.True(testOn);
-            Assert.False(testAfv);
+                var json = JsonSerializer.Serialize(new {
+                    type = "audio-control",
+                    code = "1234",
+                    input = 42,
+                    volume = -15.5,
+                    on = true,
+                    afv = false
+                });
+
+                pwa.HandleRelayMessage(json);
+                
+                Assert.True(fired);
+                Assert.Equal(42, testInputId);
+                Assert.Equal(-15.5, testVol);
+                Assert.True(testOn);
+                Assert.False(testAfv);
+            }
+            finally
+            {
+                if (savedRoomJson != null)
+                {
+                    System.IO.File.WriteAllText(roomFile, savedRoomJson);
+                    RoomManager.LoadSavedRoom();
+                }
+            }
         }
     }
 }

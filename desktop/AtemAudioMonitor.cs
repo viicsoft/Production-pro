@@ -167,35 +167,43 @@ namespace Desktop
                 {
                     foreach (var src in sources)
                     {
-                        src.IsActive(out int active);
-                        if (active != 0)
+                        Guid iid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID;
+                        src.GetEffect(ref iid, out IntPtr ppv);
+                        if (ppv != IntPtr.Zero)
                         {
-                            Guid iid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID;
-                            src.GetEffect(ref iid, out IntPtr ppv);
-                            if (ppv != IntPtr.Zero)
+                            try
                             {
                                 var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv);
                                 eq.CreateIterator(typeof(IBMDSwitcherFairlightAudioEqualizerBandIterator).GUID, out IntPtr iterPtr);
                                 if (iterPtr != IntPtr.Zero)
                                 {
-                                    var iter = (IBMDSwitcherFairlightAudioEqualizerBandIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(iterPtr);
-                                    int bIdx = 0;
-                                    while (bIdx <= bandIndex)
+                                    try
                                     {
-                                        iter.Next(out IBMDSwitcherFairlightAudioEqualizerBand band);
-                                        if (band == null) break;
-                                        if (bIdx == bandIndex) action(band);
-                                        bIdx++;
+                                        var iter = (IBMDSwitcherFairlightAudioEqualizerBandIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(iterPtr);
+                                        int bIdx = 0;
+                                        while (bIdx <= bandIndex)
+                                        {
+                                            iter.Next(out IBMDSwitcherFairlightAudioEqualizerBand band);
+                                            if (band == null) break;
+                                            try
+                                            {
+                                                if (bIdx == bandIndex) { action(band); break; }
+                                            }
+                                            finally { System.Runtime.InteropServices.Marshal.ReleaseComObject(band); }
+                                            bIdx++;
+                                        }
                                     }
+                                    finally { System.Runtime.InteropServices.Marshal.Release(iterPtr); }
                                 }
                             }
+                            finally { System.Runtime.InteropServices.Marshal.Release(ppv); }
                         }
                     }
                 }
             });
         }
 
-        public void SetEqEnabled(long inputId, bool enabled) { Task.Run(() => { if (_fairlightSources.TryGetValue(inputId, out var sources)) { foreach (var src in sources) { src.IsActive(out int active); if (active != 0) { Guid iid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID; src.GetEffect(ref iid, out IntPtr ppv); if (ppv != IntPtr.Zero) { var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv); eq.SetEnabled(enabled ? 1 : 0); } } } } }); }
+        public void SetEqEnabled(long inputId, bool enabled) { Task.Run(() => { if (_fairlightSources.TryGetValue(inputId, out var sources)) { foreach (var src in sources) { Guid iid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID; src.GetEffect(ref iid, out IntPtr ppv); if (ppv != IntPtr.Zero) { try { var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv); eq.SetEnabled(enabled ? 1 : 0); } finally { System.Runtime.InteropServices.Marshal.Release(ppv); } } } } }); }
         public void SetEqBandEnabled(long inputId, int bandIndex, bool enabled) { WithEqBand(inputId, bandIndex, b => b.SetEnabled(enabled ? 1 : 0)); }
         public void SetEqBandShape(long inputId, int bandIndex, int shape) { WithEqBand(inputId, bandIndex, b => b.SetShape((_BMDSwitcherFairlightAudioEqualizerBandShape)shape)); }
         public void SetEqBandFrequency(long inputId, int bandIndex, double freq) { WithEqBand(inputId, bandIndex, b => b.SetFrequency((uint)freq)); }
@@ -225,57 +233,133 @@ namespace Desktop
                     _fairlightMixer.CreateIterator(ref iterGuid, out IntPtr iterPtr);
                     if (iterPtr != IntPtr.Zero)
                     {
-                        var iter = (IBMDSwitcherFairlightAudioInputIterator)Marshal.GetObjectForIUnknown(iterPtr);
-                        while (true)
-                        {
-                            iter.Next(out IBMDSwitcherFairlightAudioInput input);
-                            if (input == null) break;
-                            
-                            input.GetId(out long inputId);
-                            
-                            Guid srcIterGuid = typeof(IBMDSwitcherFairlightAudioSourceIterator).GUID;
-                            input.CreateIterator(ref srcIterGuid, out IntPtr srcIterPtr);
-                            if (srcIterPtr != IntPtr.Zero)
+                        try {
+                            var iter = (IBMDSwitcherFairlightAudioInputIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(iterPtr);
+                            while (true)
                             {
-                                var srcIter = (IBMDSwitcherFairlightAudioSourceIterator)Marshal.GetObjectForIUnknown(srcIterPtr);
-                                while (true)
+                                iter.Next(out IBMDSwitcherFairlightAudioInput input);
+                                if (input == null) break;
+                                
+                                input.GetId(out long inputId);
+                                
+                                Guid srcIterGuid = typeof(IBMDSwitcherFairlightAudioSourceIterator).GUID;
+                                input.CreateIterator(ref srcIterGuid, out IntPtr srcIterPtr);
+                                if (srcIterPtr != IntPtr.Zero)
                                 {
-                                    srcIter.Next(out IBMDSwitcherFairlightAudioSource source);
-                                    if (source == null) break;
-                                    
-                                                                        var cb = new FairlightSourceCb(inputId, _levelCallback, _stateCallback, _volumeCallback, source);
-                                    source.AddCallback(cb);
-                                                                        _callbacks.Add(new AttachedCallback(source, cb));
                                     try {
-                                        Guid eqIid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID;
-                                        source.GetEffect(ref eqIid, out IntPtr eqPtr);
-                                        if (eqPtr != IntPtr.Zero) {
-                                            var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(eqPtr);
-                                            var eqCb = new FairlightEqCb(inputId, _eqUpdateCallback, eq);
-                                            eq.AddCallback(eqCb);
-                                            _callbacks.Add(new AttachedCallback(eq, eqCb));
+                                        var srcIter = (IBMDSwitcherFairlightAudioSourceIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(srcIterPtr);
+                                        while (true)
+                                        {
+                                            srcIter.Next(out IBMDSwitcherFairlightAudioSource source);
+                                            if (source == null) break;
                                             
-                                            eq.CreateIterator(typeof(IBMDSwitcherFairlightAudioEqualizerBandIterator).GUID, out IntPtr cbIterPtr);
-                                            if (cbIterPtr != IntPtr.Zero) {
-                                                var cbIter = (IBMDSwitcherFairlightAudioEqualizerBandIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(cbIterPtr);
-                                                for (int bIdx = 0; bIdx < 6; bIdx++) {
-                                                    cbIter.Next(out IBMDSwitcherFairlightAudioEqualizerBand band);
-                                                    if (band == null) break;
-                                                    var bandCb = new FairlightEqBandCb(inputId, bIdx, _eqUpdateCallback, band);
-                                                    band.AddCallback(bandCb);
-                                                    _callbacks.Add(new AttachedCallback(band, bandCb));
+                                            var cb = new FairlightSourceCb(inputId, _levelCallback, _stateCallback, _volumeCallback, source);
+                                            source.AddCallback(cb);
+                                            _callbacks.Add(new AttachedCallback(source, cb));
+                                            
+                                            try {
+                                                Guid eqIid = typeof(IBMDSwitcherFairlightAudioEqualizer).GUID;
+                                                source.GetEffect(ref eqIid, out IntPtr eqPtr);
+                                                if (eqPtr != IntPtr.Zero) {
+                                                    try {
+                                                        var eq = (IBMDSwitcherFairlightAudioEqualizer)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(eqPtr);
+                                                        var eqCb = new FairlightEqCb(inputId, _eqUpdateCallback, eq);
+                                                        eq.AddCallback(eqCb);
+                                                        _callbacks.Add(new AttachedCallback(eq, eqCb));
+                                                        
+                                                        eq.CreateIterator(typeof(IBMDSwitcherFairlightAudioEqualizerBandIterator).GUID, out IntPtr cbIterPtr);
+                                                        if (cbIterPtr != IntPtr.Zero) {
+                                                            try {
+                                                                var cbIter = (IBMDSwitcherFairlightAudioEqualizerBandIterator)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(cbIterPtr);
+                                                                for (int bIdx = 0; bIdx < 6; bIdx++) {
+                                                                    cbIter.Next(out IBMDSwitcherFairlightAudioEqualizerBand band);
+                                                                    if (band == null) break;
+                                                                    var bandCb = new FairlightEqBandCb(inputId, bIdx, _eqUpdateCallback, band);
+                                                                    band.AddCallback(bandCb);
+                                                                    _callbacks.Add(new AttachedCallback(band, bandCb));
+                                                                }
+                                                            } finally { System.Runtime.InteropServices.Marshal.Release(cbIterPtr); }
+                                                        }
+                                                    } finally { System.Runtime.InteropServices.Marshal.Release(eqPtr); }
                                                 }
-                                            }
+                                            } catch { }
+                                            
+                                            try { AttachDynamics(inputId, source); } catch { }
+                                            
+                                            if (!_fairlightSources.ContainsKey(inputId))
+                                                  _fairlightSources[inputId] = new System.Collections.Generic.List<IBMDSwitcherFairlightAudioSource>();
+                                            _fairlightSources[inputId].Add(source);
                                         }
-                                    } catch { }
-                                    try { AttachDynamics(inputId, source); } catch { }
-                                                                          if (!_fairlightSources.ContainsKey(inputId))
-                                          _fairlightSources[inputId] = new List<IBMDSwitcherFairlightAudioSource>();
-                                      _fairlightSources[inputId].Add(source);
+                                    } finally { System.Runtime.InteropServices.Marshal.Release(srcIterPtr); }
                                 }
                             }
-                        }
+                        } finally { System.Runtime.InteropServices.Marshal.Release(iterPtr); }
                     }
+                    
+                    Task.Run(async () =>
+                    {
+                        await Task.Delay(100);
+                        foreach (var inputId in _fairlightSources.Keys.ToList())
+                        {
+                            try
+                            {
+                                var eq = await GetEqStateAsync(inputId);
+                                if (eq != null && _eqUpdateCallback != null)
+                                {
+                                    _eqUpdateCallback(inputId, eq.Enabled, null);
+                                    if (eq.Bands != null)
+                                    {
+                                        for (int i = 0; i < eq.Bands.Count; i++)
+                                        {
+                                            var b = eq.Bands[i];
+                                            _eqUpdateCallback(inputId, null, new Core.EqBandUpdate(
+                                                BandIndex: i,
+                                                Enabled: b.Enabled,
+                                                Shape: b.Shape,
+                                                Frequency: b.Frequency,
+                                                Gain: b.Gain,
+                                                QFactor: b.QFactor
+                                            ));
+                                        }
+                                    }
+                                }
+
+                                var dyn = await GetDynamicsStateAsync(inputId);
+                                if (dyn != null && DynamicsStateChanged != null)
+                                {
+                                    DynamicsStateChanged.Invoke(inputId, new Core.DynamicsUpdate(
+                                        MakeupGain: dyn.MakeupGain,
+                                        Compressor: dyn.Compressor != null ? new Core.CompressorUpdate(
+                                            Enabled: dyn.Compressor.Enabled,
+                                            Threshold: dyn.Compressor.Threshold,
+                                            Ratio: dyn.Compressor.Ratio,
+                                            Attack: dyn.Compressor.Attack,
+                                            Hold: dyn.Compressor.Hold,
+                                            Release: dyn.Compressor.Release
+                                        ) : null,
+                                        Expander: dyn.Expander != null ? new Core.ExpanderUpdate(
+                                            Enabled: dyn.Expander.Enabled,
+                                            GateMode: dyn.Expander.GateMode,
+                                            Threshold: dyn.Expander.Threshold,
+                                            Range: dyn.Expander.Range,
+                                            Ratio: dyn.Expander.Ratio,
+                                            Attack: dyn.Expander.Attack,
+                                            Hold: dyn.Expander.Hold,
+                                            Release: dyn.Expander.Release
+                                        ) : null,
+                                        Limiter: dyn.Limiter != null ? new Core.LimiterUpdate(
+                                            Enabled: dyn.Limiter.Enabled,
+                                            Threshold: dyn.Limiter.Threshold,
+                                            Attack: dyn.Limiter.Attack,
+                                            Hold: dyn.Limiter.Hold,
+                                            Release: dyn.Limiter.Release
+                                        ) : null
+                                    ));
+                                }
+                            }
+                            catch { }
+                        }
+                    });
                 }
                 else if (_switcher is IBMDSwitcherAudioMixer oldMixer)
                 {
@@ -322,6 +406,14 @@ namespace Desktop
                 _callbacks.Clear(); foreach (var kvp in _fairlightSources) { foreach (var src in kvp.Value) { try { System.Runtime.InteropServices.Marshal.ReleaseComObject(src); } catch { } } } _fairlightSources.Clear(); foreach (var kvp in _oldAudioInputs) { try { System.Runtime.InteropServices.Marshal.ReleaseComObject(kvp.Value); } catch { } } _oldAudioInputs.Clear();
             }
             catch { }
+        }
+
+        public IReadOnlyList<long> GetDiscoveredInputIds()
+        {
+            lock (_fairlightSources)
+            {
+                return _fairlightSources.Keys.OrderBy(x => x).ToList();
+            }
         }
 
         // --- Fairlight Mixer Callback (Master Out) ---
@@ -485,6 +577,7 @@ namespace Desktop
         }
     }
 }
+
 
 
 

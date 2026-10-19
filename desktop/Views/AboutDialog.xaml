@@ -107,11 +107,11 @@
                 </Grid.ColumnDefinitions>
 
                 <Border Grid.Column="0" Width="44" Height="44" Background="#2A2A30" CornerRadius="8" BorderBrush="#FF9800" BorderThickness="1.5" Margin="0,0,14,0" VerticalAlignment="Center">
-                    <TextBlock Text="⚡" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Image Source="pack://application:,,,/icon.png" Width="28" Height="28" RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="CuePilot ATEM SOFTWARE CONTROL" FontSize="16" FontWeight="Bold" Foreground="#FF9800"/>
+                    <TextBlock Text="VIDIKOM ATEM SOFTWARE CONTROL" FontSize="16" FontWeight="Bold" Foreground="#FF9800"/>
                     <TextBlock Text="Professional Broadcast Control Surface, SDK Automation &amp; AI Director" FontSize="11" Foreground="#A1A1AA" Margin="0,2,0,0"/>
                 </StackPanel>
 
@@ -125,7 +125,7 @@
         <TabControl x:Name="MainTabs" Grid.Row="1" Background="Transparent" BorderThickness="0">
             
             <!-- TAB 1: ABOUT & SYSTEM -->
-            <TabItem Header="ℹ️ About">
+            <TabItem Header="About">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,10,0,0">
                     <StackPanel>
                         <!-- Software Version Card -->
@@ -203,7 +203,7 @@
             </TabItem>
 
             <!-- TAB 2: DEVICE INFORMATION -->
-            <TabItem Header="📟 Device Info">
+            <TabItem Header="Device Info">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,10,0,0">
                     <StackPanel>
                         <Border Style="{StaticResource CardBorderStyle}">
@@ -217,7 +217,7 @@
                                 <!-- Header & Refresh -->
                                 <DockPanel Grid.Row="0" Margin="0,0,0,12">
                                     <TextBlock Text="SWITCHER HARDWARE IDENTIFICATION" FontSize="12" FontWeight="Bold" Foreground="#FF9800" VerticalAlignment="Center"/>
-                                    <Button DockPanel.Dock="Right" Content="🔄 Refresh Device Info" Style="{StaticResource ActionButtonStyle}" Click="BtnRefreshDevice_Click"/>
+                                    <Button DockPanel.Dock="Right" Content="Refresh Device Info" Style="{StaticResource ActionButtonStyle}" Click="BtnRefreshDevice_Click"/>
                                 </DockPanel>
 
                                 <!-- Properties Grid -->
@@ -261,7 +261,7 @@
 
                                 <!-- Hint Banner -->
                                 <Border Grid.Row="2" Background="#1A1A22" CornerRadius="4" Padding="10">
-                                    <TextBlock Text="💡 To change the connected hardware endpoint, use the 'Connection' tab in the bottom bar or Menu > Connection > Show Connection View." Foreground="#A1A1AA" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="To change the connected hardware endpoint, use the 'Connection' tab in the bottom bar or Menu > Connection > Show Connection View." Foreground="#A1A1AA" FontSize="11" TextWrapping="Wrap"/>
                                 </Border>
                             </Grid>
                         </Border>
@@ -270,7 +270,7 @@
             </TabItem>
 
             <!-- TAB 3: KEYBOARD SHORTCUTS -->
-            <TabItem Header="⌨️ Shortcuts">
+            <TabItem Header="Shortcuts">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,10,0,0">
                     <StackPanel>
                         <Border Style="{StaticResource CardBorderStyle}">
@@ -326,7 +326,7 @@
             </TabItem>
 
             <!-- TAB 4: DIAGNOSTICS & LOGS -->
-            <TabItem Header="🩺 Diagnostics">
+            <TabItem Header="Diagnostics">
                 <Grid Margin="0,10,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>  <!-- Telemetry Row -->
@@ -386,9 +386,9 @@
 
                     <!-- Diagnostics Action Buttons -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
-                        <Button Content="📋 Copy Diagnostics" Style="{StaticResource ActionButtonStyle}" Click="BtnCopyDiagnostics_Click" Margin="0,0,8,0"/>
-                        <Button Content="📂 Open Logs Folder" Style="{StaticResource ActionButtonStyle}" Click="BtnOpenLogsFolder_Click" Margin="0,0,8,0"/>
-                        <Button Content="🔄 Refresh" Style="{StaticResource ActionButtonStyle}" Click="BtnRefreshDiagnostics_Click"/>
+                        <Button Content="Copy Diagnostics" Style="{StaticResource ActionButtonStyle}" Click="BtnCopyDiagnostics_Click" Margin="0,0,8,0"/>
+                        <Button Content="Open Logs Folder" Style="{StaticResource ActionButtonStyle}" Click="BtnOpenLogsFolder_Click" Margin="0,0,8,0"/>
+                        <Button Content="Refresh" Style="{StaticResource ActionButtonStyle}" Click="BtnRefreshDiagnostics_Click"/>
                     </StackPanel>
                 </Grid>
             </TabItem>
@@ -402,4 +402,7 @@
         </Border>
     </Grid>
 </Window>
+
+
+
 

@@ -65,14 +65,14 @@ export interface SettingsContextType {
 export const SETTINGS_STORAGE_KEY = '@vidikom_settings_v1';
 
 export const DEFAULT_SETTINGS: SettingsState = {
-  serverIp: 'vidikom.app',
-  directorPort: 443,
-  voicePort: 443,
-  roomId: '',
+  serverIp: '192.168.1.100',
+  directorPort: 8080,
+  voicePort: 5160,
+  roomId: 'intercom',
   roomPin: '',
   callsign: 'Cam 1',
   cameraId: 1,
-  isCloudRelay: true,
+  isCloudRelay: false,
   masterVolume: 1.0,
   keepScreenAwake: true,
   oledMode: false,
@@ -127,19 +127,13 @@ export const sanitizeSettings = (raw: any): SettingsState => {
   const sIp = typeof raw.serverIp === 'string' && raw.serverIp.trim() !== ''
     ? raw.serverIp.trim()
     : DEFAULT_SETTINGS.serverIp;
-  const isCloud = sIp.includes('vidikom.app') || (typeof raw.isCloudRelay === 'boolean' ? raw.isCloudRelay : DEFAULT_SETTINGS.isCloudRelay);
+  const isCloud = sIp.includes('vidikom.app') || (typeof raw.isCloudRelay === 'boolean' ? raw.isCloudRelay : (sIp.includes('vidikom.app') ? true : DEFAULT_SETTINGS.isCloudRelay));
 
-  // Auto-migrate legacy LAN voicePort 5160 to unified 8080
-  if (!isCloud && (vPort === 5160 || vPort === 443)) {
-    vPort = 8080;
-  }
-  if (!isCloud && (dirPort === 5160 || dirPort === 443)) {
-    dirPort = 8080;
-  }
-  if (isCloud && (dirPort === 8080 || dirPort === 5160)) {
+  // If cloud relay is enabled and ports were not explicitly customized, use standard HTTPS port 443
+  if (isCloud && raw.directorPort === undefined) {
     dirPort = 443;
   }
-  if (isCloud && (vPort === 8080 || vPort === 5160)) {
+  if (isCloud && raw.voicePort === undefined) {
     vPort = 443;
   }
 

@@ -82,7 +82,7 @@ namespace Desktop
 
             foreach (var cat in categories)
             {
-                var item = new TreeViewItem { Header = $"📁 {cat}", Tag = cat, Foreground = Brushes.LightGray };
+                var item = new TreeViewItem { Header = $"{cat}", Tag = cat, Foreground = Brushes.LightGray };
                 CategoryTree.Items.Add(item);
             }
         }
@@ -154,7 +154,7 @@ namespace Desktop
                         };
                         var playIcon = new TextBlock
                         {
-                            Text = "▶ VIDEO",
+                            Text = "VIDEO",
                             Foreground = Brushes.White,
                             FontSize = 16,
                             FontWeight = FontWeights.Bold,
@@ -259,7 +259,7 @@ namespace Desktop
                     {
                         if (child is TextBlock ackTb && ackTb.Tag is string tag && tag == $"ack_{camId}")
                         {
-                            ackTb.Text = "✓ ACK";
+                            ackTb.Text = "ACK";
                             var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
                             timer.Tick += (s, e) =>
                             {
@@ -414,7 +414,7 @@ namespace Desktop
             string? selectedMediaType = null;
             var mediaRow = new StackPanel { Orientation = Orientation.Horizontal };
             var mediaLabel = new TextBlock { Text = "No file selected", Foreground = Brushes.Gray, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-            var browseBtn = new Button { Content = "Browse…", Background = new SolidColorBrush(Color.FromRgb(0x44, 0x44, 0x44)), Foreground = Brushes.White, BorderThickness = new Thickness(0), Padding = new Thickness(10, 5, 10, 5), Cursor = Cursors.Hand };
+            var browseBtn = new Button { Content = "Browse...", Background = new SolidColorBrush(Color.FromRgb(0x44, 0x44, 0x44)), Foreground = Brushes.White, BorderThickness = new Thickness(0), Padding = new Thickness(10, 5, 10, 5), Cursor = Cursors.Hand };
             browseBtn.Click += (s, ev) =>
             {
                 var fd = new Microsoft.Win32.OpenFileDialog
@@ -486,7 +486,7 @@ namespace Desktop
                     lines.Add($"\"{Esc(s.Title)}\",\"{Esc(s.Description)}\",\"{Esc(s.Category)}\"");
                 }
                 File.WriteAllLines(dlg.FileName, lines);
-                MessageBox.Show($"Exported {_allSuggestions.Count} suggestions to CSV.", "CuePilot");
+                MessageBox.Show($"Exported {_allSuggestions.Count} suggestions to CSV.", "Vidikom");
             }
         }
 
@@ -533,7 +533,7 @@ namespace Desktop
                     }
                     else
                     {
-                        // Image or video file — create suggestion from it
+                        // Image or video file - create suggestion from it
                         var isVideo = ext == ".mp4" || ext == ".mov" || ext == ".avi" || ext == ".webm";
                         var mediaType = isVideo ? "video" : "image";
                         var title = Path.GetFileNameWithoutExtension(filePath).Replace("_", " ").Replace("-", " ");
@@ -560,7 +560,7 @@ namespace Desktop
                     BuildCategoryTree();
                     UpdateTiles(selectedCat);
                 }
-                MessageBox.Show($"Imported {imported} item(s).", "CuePilot");
+                MessageBox.Show($"Imported {imported} item(s).", "Vidikom");
             }
             catch (Exception ex)
             {
@@ -677,3 +677,5 @@ namespace Desktop
         }
     }
 }
+
+

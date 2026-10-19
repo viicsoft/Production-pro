@@ -36,6 +36,9 @@ namespace CuePilot.Server
         public static readonly ConcurrentDictionary<WebSocket, VoiceClient> VoiceClientInfo =
             new ConcurrentDictionary<WebSocket, VoiceClient>();
 
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<WebSocket, SemaphoreSlim> WebSocketSendLocks =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<WebSocket, SemaphoreSlim>();
+
         // ---------- ROOM RELAY state (Online Mode) ----------
         public class RelayRoom
         {
@@ -44,6 +47,10 @@ namespace CuePilot.Server
             public string ProductionName { get; set; }
             public WebSocket DirectorWs { get; set; }
             public string? InputsJson { get; set; }
+            public string? LastTallyJson { get; set; }
+            public string LanIp { get; set; } = "";
+            public int DirectorPort { get; set; } = 8080;
+            public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
             public Dictionary<int, Core.CameraRoleMetadata> CameraRoles { get; set; } = new();
             public DateTime LastDirectorSuggestion { get; set; } = DateTime.MinValue;
 
@@ -168,7 +175,10 @@ namespace CuePilot.Server
             app.UseAuthentication();
             app.UseAuthorization();
 
-            app.UseWebSockets();
+            app.UseWebSockets(new WebSocketOptions
+            {
+                KeepAliveInterval = TimeSpan.FromSeconds(10)
+            });
 
             app.MapRazorPages();
 
@@ -217,6 +227,76 @@ namespace CuePilot.Server
                 }
                 return Results.Ok(new { exists = false });
             });
+
+            // API: Validate Room and PIN (matches Desktop API)
+            app.MapGet("/api/room/validate", (string roomId, string pin) =>
+            {
+                var cleanRoomId = roomId?.Replace(" ", "").Trim();
+                var cleanPin = pin?.Trim();
+                
+                if (!string.IsNullOrEmpty(cleanRoomId) && RelayRooms.TryGetValue(cleanRoomId, out var room))
+                {
+                    var expectedPin = room.Pin?.Trim();
+                    if (string.Equals(expectedPin, cleanPin, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Results.Ok(new
+                        {
+                            valid = true,
+                            roomId = room.RoomId,
+                            productionName = room.ProductionName,
+                            directorName = "Cloud Relay",
+                            lanIp = room.LanIp,
+                            directorPort = room.DirectorPort
+                        });
+                    }
+                }
+                return Results.Json(new { valid = false, message = "Invalid Room Code or PIN." }, statusCode: 401);
+            });
+
+            // API: Find active room by PIN (for multi-instance switcher link over LAN or Internet)
+            app.MapGet("/api/room/find-by-pin", (string pin, string? roomId) =>
+            {
+                var cleanPin = pin?.Trim();
+                var cleanRoomId = roomId?.Replace(" ", "").Trim();
+                if (string.IsNullOrEmpty(cleanPin))
+                {
+                    return Results.Json(new { found = false, message = "PIN is required." }, statusCode: 400);
+                }
+
+                RelayRoom? matchedRoom = null;
+                if (!string.IsNullOrEmpty(cleanRoomId) && RelayRooms.TryGetValue(cleanRoomId, out var byId))
+                {
+                    if (string.Equals(byId.Pin?.Trim(), cleanPin, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedRoom = byId;
+                    }
+                }
+
+                if (matchedRoom == null)
+                {
+                    matchedRoom = RelayRooms.Values
+                        .Where(r => string.Equals(r.Pin?.Trim(), cleanPin, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(r => r.DirectorWs.State == WebSocketState.Open ? 1 : 0)
+                        .ThenByDescending(r => r.LastUpdated)
+                        .FirstOrDefault();
+                }
+
+                if (matchedRoom != null)
+                {
+                    return Results.Ok(new
+                    {
+                        found = true,
+                        roomId = matchedRoom.RoomId,
+                        pin = matchedRoom.Pin,
+                        productionName = matchedRoom.ProductionName,
+                        lanIp = matchedRoom.LanIp,
+                        directorPort = matchedRoom.DirectorPort,
+                        directorOnline = matchedRoom.DirectorWs.State == WebSocketState.Open
+                    });
+                }
+
+                return Results.Json(new { found = false, message = "No active room found with that PIN." }, statusCode: 404);
+            });
             // API: Intercom Token (LiveKit JWT for intercom)
             app.MapGet("/api/intercom/token", (string identity, string name, string? roomName) =>
             {
@@ -224,7 +304,7 @@ namespace CuePilot.Server
                 
                 var payload = new Dictionary<string, object>()
                 {
-                    { "exp", DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeSeconds() },
+                    { "exp", DateTimeOffset.UtcNow.AddDays(30).ToUnixTimeSeconds() },
                     { "iss", "devkey" },
                     { "nbf", DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds() },
                     { "sub", identity },
@@ -405,6 +485,27 @@ namespace CuePilot.Server
                 context.Response.StatusCode = 426;
                 await context.Response.WriteAsync("WebSocket Upgrade Required.");
                 return;
+            }
+
+            var reqRoomId = context.Request.Query["roomId"].ToString().Replace(" ", "").Trim();
+            var reqPin = context.Request.Query["pin"].ToString().Trim();
+
+            if (!string.IsNullOrEmpty(reqRoomId) && reqRoomId != "default" && reqRoomId != "intercom")
+            {
+                if (RelayRooms.TryGetValue(reqRoomId, out var activeRoom))
+                {
+                    var expectedPin = activeRoom.Pin?.Trim();
+                    if (!string.IsNullOrEmpty(expectedPin) && !string.Equals(expectedPin, reqPin, StringComparison.OrdinalIgnoreCase))
+                    {
+                        context.Response.StatusCode = 401;
+                        return;
+                    }
+                }
+                else
+                {
+                    context.Response.StatusCode = 404;
+                    return;
+                }
             }
 
             using var ws = await context.WebSockets.AcceptWebSocketAsync();
@@ -600,6 +701,8 @@ namespace CuePilot.Server
                         var pin = root.GetProperty("pin").GetString() ?? "";
                         var prodName = root.TryGetProperty("productionName", out var pn) ? pn.GetString() ?? "" : "";
                         var inputsJson = root.TryGetProperty("inputs", out var inp) ? inp.GetRawText() : null;
+                        var lanIp = root.TryGetProperty("lanIp", out var lip) ? lip.GetString() ?? "" : "";
+                        var directorPort = root.TryGetProperty("directorPort", out var dp) && dp.TryGetInt32(out var dport) ? dport : 8080;
                         
                         var cameraRoles = new Dictionary<int, Core.CameraRoleMetadata>();
                         if (root.TryGetProperty("cameraRoles", out var crProp) && crProp.ValueKind == JsonValueKind.Object)
@@ -619,20 +722,36 @@ namespace CuePilot.Server
                             return;
                         }
 
-                        // Register room
-                        var room = new RelayRoom(roomId, pin, prodName, ws, inputsJson);
-                        room.CameraRoles = cameraRoles;
-                        room.LastDirectorSuggestion = DateTime.UtcNow; // Reset on join
+                        // Register room (preserving cached LastTallyJson if reconnecting)
+                        string? prevTally = RelayRooms.TryGetValue(roomId, out var prevRoom) ? prevRoom.LastTallyJson : null;
+                        var room = new RelayRoom(roomId, pin, prodName, ws, inputsJson)
+                        {
+                            CameraRoles = cameraRoles,
+                            LastDirectorSuggestion = DateTime.UtcNow,
+                            LanIp = lanIp,
+                            DirectorPort = directorPort,
+                            LastTallyJson = prevTally,
+                            LastUpdated = DateTime.UtcNow
+                        };
                         RelayRooms[roomId] = room;
                         var existingCrews = RelayCrews.GetOrAdd(roomId, _ => new ConcurrentDictionary<string, WebSocket>());
 
                         myRoomId = roomId;
                         isDirector = true;
 
-                        Console.WriteLine($"[Relay] Director registered room {roomId} with pin '{pin}'. Found {existingCrews.Count} waiting crew.");
+                        Console.WriteLine($"[Relay] Director registered room {roomId} with pin '{pin}' (LAN {lanIp}:{directorPort}). Found {existingCrews.Count} waiting crew.");
                         await SendJsonAsync(ws, new { type = "room-registered", roomId }, context.RequestAborted);
 
-                        // Broadcast inputs to all connected/waiting crew
+                        // Broadcast director-reconnected and inputs to all connected/waiting crew
+                        var reconnectedBytes = JsonSerializer.SerializeToUtf8Bytes(new { type = "director-reconnected", roomId });
+                        foreach (var kvp in existingCrews)
+                        {
+                            if (kvp.Value.State == WebSocketState.Open)
+                            {
+                                _ = SafeSendAsync(kvp.Value, reconnectedBytes, CancellationToken.None);
+                            }
+                        }
+
                         if (inputsJson != null)
                         {
                             var inputMsg = $"{{\"type\":\"inputs\",\"inputs\":{inputsJson}}}";
@@ -659,23 +778,47 @@ namespace CuePilot.Server
                     }
                     else if (type == "crew-join")
                     {
-                        var roomId = root.GetProperty("roomId").GetString() ?? "";
-                        var pin = root.GetProperty("pin").GetString() ?? "";
+                        var roomId = (root.TryGetProperty("roomId", out var rProp) ? rProp.GetString() ?? "" : "").Replace(" ", "").Trim();
+                        var pin = (root.TryGetProperty("pin", out var pProp) ? pProp.GetString() ?? "" : "").Trim();
                         var cam = root.TryGetProperty("cam", out var c) ? c.ToString() : "";
+
+                        // Allow resolving room by PIN alone if roomId was omitted or not matched directly
+                        RelayRoom? room = null;
+                        if (!string.IsNullOrEmpty(roomId))
+                        {
+                            RelayRooms.TryGetValue(roomId, out room);
+                        }
+                        if (room == null && !string.IsNullOrEmpty(pin))
+                        {
+                            room = RelayRooms.Values
+                                .Where(r => string.Equals(r.Pin?.Trim(), pin, StringComparison.OrdinalIgnoreCase))
+                                .OrderByDescending(r => r.DirectorWs.State == WebSocketState.Open ? 1 : 0)
+                                .ThenByDescending(r => r.LastUpdated)
+                                .FirstOrDefault();
+                            if (room != null)
+                            {
+                                roomId = room.RoomId;
+                            }
+                        }
 
                         // Allow crew to connect even if director is still connecting/reconnecting
                         Console.WriteLine($"[Relay] crew-join attempt: roomId={roomId} pin={pin} cam={cam}");
                         bool isWaitingForDirector = false;
-                        if (!RelayRooms.TryGetValue(roomId, out var room))
+                        if (room == null)
                         {
-                            Console.WriteLine($"[Relay] Room {roomId} not registered yet; holding crew in waiting room.");
-                            isWaitingForDirector = true;
+                            Console.WriteLine($"[Relay] FAIL: Room {roomId} (pin={pin}) does not exist.");
+                            await SendJsonAsync(ws, new { type = "error", message = "Invalid Room Code or PIN" }, context.RequestAborted);
+                            return;
                         }
-                        else if (!string.IsNullOrEmpty(room.Pin) && !string.IsNullOrEmpty(pin) && room.Pin != pin)
+                        else if (!string.IsNullOrEmpty(room.Pin) && !string.Equals(room.Pin, pin, StringComparison.OrdinalIgnoreCase))
                         {
                             Console.WriteLine($"[Relay] FAIL: pin mismatch for room {roomId}. Expected='{room.Pin}' Got='{pin}'");
                             await SendJsonAsync(ws, new { type = "error", message = "Invalid room PIN" }, context.RequestAborted);
                             return;
+                        }
+                        else if (room.DirectorWs.State != WebSocketState.Open)
+                        {
+                            isWaitingForDirector = true;
                         }
 
                         myRoomId = roomId;
@@ -686,15 +829,20 @@ namespace CuePilot.Server
                         crews[myClientId] = ws;
 
                         Console.WriteLine($"[Relay] Crew {myClientId} (cam {cam}) joined room {roomId} (waiting: {isWaitingForDirector})");
-                        await SendJsonAsync(ws, new { type = "joined", roomId, waiting = isWaitingForDirector }, context.RequestAborted);
+                        await SendJsonAsync(ws, new { type = "joined", roomId, productionName = room.ProductionName, lanIp = room.LanIp, directorPort = room.DirectorPort, waiting = isWaitingForDirector }, context.RequestAborted);
                         
-                        if (!isWaitingForDirector && room != null)
+                        if (room != null)
                         {
                             if (room.InputsJson != null)
                             {
                                 var inputMsg = $"{{\"type\":\"inputs\",\"inputs\":{room.InputsJson}}}";
                                 var inputMsgBytes = Encoding.UTF8.GetBytes(inputMsg);
-                                await SafeSendAsync(ws, inputMsgBytes, context.RequestAborted);
+                                _ = SafeSendAsync(ws, inputMsgBytes, context.RequestAborted);
+                            }
+                            if (!string.IsNullOrEmpty(room.LastTallyJson))
+                            {
+                                var tallyMsgBytes = Encoding.UTF8.GetBytes(room.LastTallyJson);
+                                _ = SafeSendAsync(ws, tallyMsgBytes, context.RequestAborted);
                             }
 
                             // Notify director that a crew member joined
@@ -702,7 +850,7 @@ namespace CuePilot.Server
                             {
                                 var notifyBytes = JsonSerializer.SerializeToUtf8Bytes(
                                     new { type = "crew-connected", clientId = myClientId, cam });
-                                await SafeSendAsync(room.DirectorWs, notifyBytes, context.RequestAborted);
+                                _ = SafeSendAsync(room.DirectorWs, notifyBytes, context.RequestAborted);
                             }
                         }
                     }
@@ -727,12 +875,10 @@ namespace CuePilot.Server
                         try
                         {
                             using var doc = JsonDocument.Parse(msgText);
-                            if (doc.RootElement.TryGetProperty("id", out var idProp))
-                            {
-                                var pongBytes = Encoding.UTF8.GetBytes($"{{\"type\":\"pong\",\"id\":\"{idProp.GetString()}\"}}");
-                                await SafeSendAsync(ws, pongBytes, context.RequestAborted);
-                                continue;
-                            }
+                            var idStr = doc.RootElement.TryGetProperty("id", out var idProp) ? idProp.ToString() : "";
+                            var pongBytes = Encoding.UTF8.GetBytes($"{{\"type\":\"pong\",\"id\":\"{idStr}\"}}");
+                            _ = SafeSendAsync(ws, pongBytes, context.RequestAborted);
+                            continue;
                         }
                         catch { }
                     }
@@ -741,18 +887,28 @@ namespace CuePilot.Server
 
                     if (isDirector)
                     {
-                        // Update last suggestion time to prevent server from auto-generating one
-                        if (msgText.Contains("\"type\":\"suggestion\"") && RelayRooms.TryGetValue(myRoomId, out var r))
+                        if (RelayRooms.TryGetValue(myRoomId, out var r))
                         {
-                            r.LastDirectorSuggestion = DateTime.UtcNow;
+                            r.LastUpdated = DateTime.UtcNow;
+                            if (msgText.Contains("\"type\":\"suggestion\""))
+                            {
+                                r.LastDirectorSuggestion = DateTime.UtcNow;
+                            }
+                            else if (msgText.Contains("\"type\":\"tally\""))
+                            {
+                                r.LastTallyJson = msgText;
+                            }
                         }
 
-                        // Director → forward to all crew in this room
+                        // Director → forward to all crew in this room in parallel (zero head-of-line blocking)
                         if (RelayCrews.TryGetValue(myRoomId, out var crews))
                         {
                             foreach (var kv in crews)
                             {
-                                await SafeSendAsync(kv.Value, msgBytes, context.RequestAborted);
+                                if (kv.Value.State == WebSocketState.Open)
+                                {
+                                    _ = SafeSendAsync(kv.Value, msgBytes, CancellationToken.None);
+                                }
                             }
                         }
                     }
@@ -762,7 +918,7 @@ namespace CuePilot.Server
                         if (RelayRooms.TryGetValue(myRoomId, out var room) &&
                             room.DirectorWs.State == WebSocketState.Open)
                         {
-                            await SafeSendAsync(room.DirectorWs, msgBytes, context.RequestAborted);
+                            _ = SafeSendAsync(room.DirectorWs, msgBytes, CancellationToken.None);
                         }
                     }
                 }
@@ -777,18 +933,21 @@ namespace CuePilot.Server
                 {
                     if (isDirector)
                     {
-                        // Director left → close room, notify all crew
-                        Console.WriteLine($"[Relay] Director left room {myRoomId}");
-                        RelayRooms.TryRemove(myRoomId, out _);
-
-                        if (RelayCrews.TryRemove(myRoomId, out var crews))
+                        // Keep room alive across multi-day director reconnects; only notify crew if this socket is still the active DirectorWs
+                        if (RelayRooms.TryGetValue(myRoomId, out var currentRoom) && currentRoom.DirectorWs == ws)
                         {
-                            var endBytes = JsonSerializer.SerializeToUtf8Bytes(
-                                new { type = "room-ended" });
-                            foreach (var kv in crews)
+                            Console.WriteLine($"[Relay] Director disconnected from room {myRoomId}; keeping room & crew alive for reconnect.");
+                            if (RelayCrews.TryGetValue(myRoomId, out var crews))
                             {
-                                await SafeSendAsync(kv.Value, endBytes, CancellationToken.None);
-                                try { await kv.Value.CloseAsync(WebSocketCloseStatus.NormalClosure, "Room ended", CancellationToken.None); } catch { }
+                                var discBytes = JsonSerializer.SerializeToUtf8Bytes(
+                                    new { type = "director-disconnected", roomId = myRoomId });
+                                foreach (var kv in crews)
+                                {
+                                    if (kv.Value.State == WebSocketState.Open)
+                                    {
+                                        _ = SafeSendAsync(kv.Value, discBytes, CancellationToken.None);
+                                    }
+                                }
                             }
                         }
                     }
@@ -821,18 +980,32 @@ namespace CuePilot.Server
         private static Task SendJsonAsync(WebSocket ws, object obj, CancellationToken ct)
         {
             var bytes = JsonSerializer.SerializeToUtf8Bytes(obj);
-            return ws.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
+            return SafeSendAsync(ws, bytes, ct);
         }
 
         private static async Task SafeSendAsync(WebSocket ws, byte[] bytes, CancellationToken ct)
         {
-            if (ws.State == WebSocketState.Open)
+            if (ws == null || ws.State != WebSocketState.Open) return;
+            var sem = WebSocketSendLocks.GetValue(ws, _ => new SemaphoreSlim(1, 1));
+            bool acquired = false;
+            try
             {
-                try
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
+                await sem.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+                acquired = true;
+                if (ws.State == WebSocketState.Open)
                 {
-                    await ws.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
+                    await ws.SendAsync(bytes, WebSocketMessageType.Text, true, timeoutCts.Token).ConfigureAwait(false);
                 }
-                catch { /* Client may have disconnected */ }
+            }
+            catch { /* Client may have disconnected */ }
+            finally
+            {
+                if (acquired)
+                {
+                    try { sem.Release(); } catch { }
+                }
             }
         }
     }

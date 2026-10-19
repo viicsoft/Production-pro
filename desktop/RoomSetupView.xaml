@@ -44,14 +44,14 @@
                         <!-- Relay URL field, shown only in Online mode -->
                         <StackPanel x:Name="PnlRelayUrl" Visibility="Visible" Margin="0,0,0,10">
                             <TextBlock Text="RELAY SERVER URL" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>
-                            <TextBox x:Name="TxtRelayUrl" Height="30" Background="#222226" Foreground="#E4E4E7" BorderBrush="#3D3D44" Padding="8,4" Text="wss://CuePilot.app/ws/room"/>
-                            <TextBlock Text="Crew will connect remotely via CuePilot.app" Foreground="#888890" FontSize="9" Margin="0,3,0,0"/>
+                            <TextBox x:Name="TxtRelayUrl" Height="30" Background="#222226" Foreground="#E4E4E7" BorderBrush="#3D3D44" Padding="8,4" Text="wss://vidikom.app/ws/room"/>
+                            <TextBlock Text="Crew will connect remotely via vidikom.app" Foreground="#888890" FontSize="9" Margin="0,3,0,0"/>
                         </StackPanel>
 
                         <TextBlock Text="INTERCOM CHANNELS" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>
                         <TextBox Text="PROD (Default Channel)" Height="30" Background="#18181B" Foreground="#71717A" BorderBrush="#2C2C32" Padding="8,4" IsEnabled="False" Margin="0,0,0,14"/>
 
-                        <Button x:Name="BtnCreateRoom" Content="🚀 CREATE PRODUCTION ROOM" Background="#FF9800" Foreground="#111113" FontWeight="Bold" FontSize="11" Height="38" Cursor="Hand" Click="BtnCreateRoom_Click">
+                        <Button x:Name="BtnCreateRoom" Content="CREATE PRODUCTION ROOM" Background="#FF9800" Foreground="#111113" FontWeight="Bold" FontSize="11" Height="38" Cursor="Hand" Click="BtnCreateRoom_Click">
                             <Button.Resources>
                                 <Style TargetType="Border">
                                     <Setter Property="CornerRadius" Value="4"/>
@@ -76,7 +76,7 @@
 
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Text="STATUS" Foreground="#888890" FontSize="9" FontWeight="Bold"/>
-                                    <TextBlock Text="● ONLINE" Foreground="#00E676" FontSize="12" FontWeight="Bold" Margin="0,2,0,0"/>
+                                    <TextBlock Text="ONLINE" Foreground="#00E676" FontSize="12" FontWeight="Bold" Margin="0,2,0,0"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="1">
@@ -93,11 +93,11 @@
 
                         <TextBlock Text="CONNECTED CREW MEMBERS" Foreground="#A1A1AA" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
                         
-                        <Border Background="#141416" BorderBrush="#2C2C32" BorderThickness="1" CornerRadius="4" Padding="10">
+                        <Border Background="#141416" BorderBrush="#2C2C32" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,16">
                             <StackPanel>
                                 <Grid Margin="0,0,0,6">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="🟢" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <Ellipse Width="8" Height="8" Fill="#888888" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <TextBlock Text="Director (Host)" Foreground="#E4E4E7" FontWeight="Bold" FontSize="11"/>
                                     </StackPanel>
                                     <TextBlock Text="MASTER OUT" Foreground="#00E676" FontSize="10" HorizontalAlignment="Right" FontWeight="Bold"/>
@@ -105,11 +105,43 @@
                                 <Border Height="1" Background="#222226" Margin="0,4"/>
                                 <Grid Margin="0,4,0,0">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="⚪" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <Ellipse Width="8" Height="8" Fill="#888888" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <TextBlock Text="Camera 1 Operator" Foreground="#888890" FontSize="11"/>
                                     </StackPanel>
                                     <TextBlock Text="Standby" Foreground="#888890" FontSize="10" HorizontalAlignment="Right"/>
                                 </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- MULTI-PC REMOTE SWITCHER LINK BY PIN -->
+                        <Border Background="#141416" BorderBrush="#FF9800" BorderThickness="1" CornerRadius="5" Padding="14,12">
+                            <StackPanel>
+                                <TextBlock Text="LINK TO ANOTHER COMPUTER'S SWITCHER (BY PIN)" Foreground="#FF9800" FontSize="11" FontWeight="Bold" Margin="0,0,0,4"/>
+                                <TextBlock Text="Control another Vidikom switcher on the same network (LAN) or over the Internet by entering its 4-digit PIN." Foreground="#9E9EA8" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                        <TextBlock Text="4-DIGIT PIN" Foreground="#A1A1AA" FontSize="9" FontWeight="Bold" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="TxtJoinPin" MaxLength="8" Height="32" Background="#222226" Foreground="#FFFFFF" BorderBrush="#3D3D44" Padding="8,4" FontFamily="Consolas, Segoe UI" FontSize="14" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="HOST IP OR ROOM ID (OPTIONAL - AUTO DISCOVERS)" Foreground="#A1A1AA" FontSize="9" FontWeight="Bold" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="TxtJoinHostHint" Height="32" Background="#222226" Foreground="#E4E4E7" BorderBrush="#3D3D44" Padding="8,5" FontFamily="Consolas, Segoe UI" FontSize="12"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Button x:Name="BtnJoinByPin" Content="CONNECT &amp; CONTROL REMOTE SWITCHER" Background="#00C853" Foreground="#FFFFFF" FontWeight="Bold" FontSize="11" Height="36" Cursor="Hand" Click="BtnJoinByPin_Click">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <TextBlock x:Name="TxtJoinPinStatus" Text="" Foreground="#A1A1AA" FontSize="10" Margin="0,6,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -118,3 +150,5 @@
         </Grid>
     </ScrollViewer>
 </UserControl>
+
+

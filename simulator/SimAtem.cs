@@ -203,13 +203,11 @@ public sealed class SimAtem : IAtemSwitch
             _isConnected = true;
             _running = true;
 
-            // Fake inputs Cam1..Cam8
-            _inputs.Clear();
+            if (_inputs.Count == 0)
             for (int i = 1; i <= 8; i++)
                 _inputs.Add(new SwitcherInput(i, $"Input{i}", $"Cam{i}"));
 
-            // Single M/E (index 0). Start with PGM=Cam1, PVW=Cam2
-            _mes.Clear();
+            if (_mes.Count == 0)
             _mes.Add(new MEState(
                 MeIndex: 0,
                 Program: new HashSet<long> { 1 },
@@ -219,9 +217,7 @@ public sealed class SimAtem : IAtemSwitch
                 FadeToBlack: new FTBState(1.0, false)
             ));
 
-            // Initialize DSKs
-            _dsks[0] = new DSKState(false, 1.0, false);
-            _dsks[1] = new DSKState(false, 1.0, false);
+            // Preserve existing DSK state
 
             // Initialize SuperSource Boxes
             for (int i = 0; i < 4; i++)
@@ -276,6 +272,107 @@ public sealed class SimAtem : IAtemSwitch
                 (AudioInputState[])_audioInputs.Clone(),
                 (CameraControlState[])_cameras.Clone()
             ));
+        }
+    }
+
+    public void ApplyRemoteInputs(List<SwitcherInput> remoteInputs)
+    {
+        if (remoteInputs == null || remoteInputs.Count == 0) return;
+        lock (_syncLock)
+        {
+            _inputs.Clear();
+            _inputs.AddRange(remoteInputs);
+        }
+        InputsUpdated?.Invoke();
+    }
+
+    public void ApplyRemoteState(
+        long? pgmInput,
+        long? pvwInput,
+        TransitionSelection? nextTransition = null,
+        bool[]? uskOnAir = null,
+        FTBState? ftb = null,
+        DSKState[]? dsks = null,
+        TransitionStyle? style = null,
+        double? transitionPosition = null)
+    {
+        long notifyPgm = 0;
+        long notifyPvw = 0;
+        bool pgmPvwChanged = false;
+        double? notifyPos = null;
+
+        lock (_syncLock)
+        {
+            var me = _mes.FirstOrDefault(m => m.MeIndex == 0);
+            if (me == null)
+            {
+                me = new MEState(0, new HashSet<long> { 1 }, new HashSet<long> { 2 }, TransitionSelection.Background, new bool[4], new FTBState(1.0, false));
+                _mes.Add(me);
+            }
+
+            long oldPgm = me.Program.FirstOrDefault();
+            long oldPvw = me.Preview.FirstOrDefault();
+
+            if (pgmInput.HasValue && pgmInput.Value > 0)
+            {
+                me.Program.Clear();
+                me.Program.Add(pgmInput.Value);
+            }
+            if (pvwInput.HasValue && pvwInput.Value > 0)
+            {
+                me.Preview.Clear();
+                me.Preview.Add(pvwInput.Value);
+            }
+
+            var updatedMe = me;
+            if (nextTransition.HasValue)
+            {
+                updatedMe = updatedMe with { NextTransition = nextTransition.Value };
+            }
+            if (uskOnAir != null && uskOnAir.Length == 4)
+            {
+                updatedMe = updatedMe with { UpstreamKeyOnAir = (bool[])uskOnAir.Clone() };
+            }
+            if (ftb != null)
+            {
+                updatedMe = updatedMe with { FadeToBlack = ftb };
+            }
+            _mes[0] = updatedMe;
+
+            if (dsks != null && dsks.Length >= 2)
+            {
+                _dsks[0] = dsks[0];
+                _dsks[1] = dsks[1];
+            }
+            if (style.HasValue)
+            {
+                _transitionStyle = style.Value;
+            }
+            if (transitionPosition.HasValue)
+            {
+                var clamped = Math.Clamp(transitionPosition.Value, 0.0, 1.0);
+                if (Math.Abs(clamped - _transitionPosition) > 0.001)
+                {
+                    _transitionPosition = clamped;
+                    notifyPos = clamped;
+                }
+            }
+
+            notifyPgm = updatedMe.Program.FirstOrDefault();
+            notifyPvw = updatedMe.Preview.FirstOrDefault();
+            if (notifyPgm != oldPgm || notifyPvw != oldPvw)
+            {
+                pgmPvwChanged = true;
+            }
+        }
+
+        if (pgmPvwChanged && notifyPgm > 0)
+        {
+            ProgramPreviewChanged?.Invoke(notifyPgm, notifyPvw);
+        }
+        if (notifyPos.HasValue)
+        {
+            TransitionPositionChanged?.Invoke(notifyPos.Value);
         }
     }
 
@@ -640,8 +737,9 @@ public sealed class SimAtem : IAtemSwitch
         {
             if (inputId >= 1 && inputId <= 5)
             {
-                _audioInputs[inputId - 1] = _audioInputs[inputId - 1] with { Afv = afv };
-                currentOn = _audioInputs[inputId - 1].On;
+                bool newOn = afv ? false : _audioInputs[inputId - 1].On;
+                _audioInputs[inputId - 1] = _audioInputs[inputId - 1] with { Afv = afv, On = newOn };
+                currentOn = newOn;
             }
         }
         AudioStateChanged?.Invoke(inputId, currentOn, afv);
@@ -655,8 +753,9 @@ public sealed class SimAtem : IAtemSwitch
         {
             if (inputId >= 1 && inputId <= 5)
             {
-                _audioInputs[inputId - 1] = _audioInputs[inputId - 1] with { On = on };
-                currentAfv = _audioInputs[inputId - 1].Afv;
+                bool newAfv = on ? false : _audioInputs[inputId - 1].Afv;
+                _audioInputs[inputId - 1] = _audioInputs[inputId - 1] with { On = on, Afv = newAfv };
+                currentAfv = newAfv;
             }
         }
         AudioStateChanged?.Invoke(inputId, on, currentAfv);
@@ -1209,6 +1308,7 @@ public sealed class SimAtem : IAtemSwitch
     public event Action<long, Core.DynamicsUpdate>? DynamicsStateChanged;
 
     public Task<Core.EqState?> GetEqStateAsync(long inputId) => Task.FromResult<Core.EqState?>(null);
+    public Task<Core.DynamicsState?> GetDynamicsStateAsync(long inputId) => Task.FromResult<Core.DynamicsState?>(null);
     public Task SetEqEnabledAsync(long inputId, bool enabled) { EqStateChanged?.Invoke(inputId, enabled, null); return Task.CompletedTask; }
     public Task SetEqBandEnabledAsync(long inputId, int bandIndex, bool enabled) { EqStateChanged?.Invoke(inputId, null, new Core.EqBandUpdate(bandIndex, Enabled: enabled)); return Task.CompletedTask; }
     public Task SetEqBandShapeAsync(long inputId, int bandIndex, int shape) { EqStateChanged?.Invoke(inputId, null, new Core.EqBandUpdate(bandIndex, Shape: shape)); return Task.CompletedTask; }
@@ -1236,6 +1336,7 @@ public sealed class SimAtem : IAtemSwitch
     public Task SetLimiterAttackAsync(long inputId, double attack) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Attack: attack))); return Task.CompletedTask; }
     public Task SetLimiterHoldAsync(long inputId, double hold) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Hold: hold))); return Task.CompletedTask; }
     public Task SetLimiterReleaseAsync(long inputId, double release) { DynamicsStateChanged?.Invoke(inputId, new Core.DynamicsUpdate(Limiter: new Core.LimiterUpdate(Release: release))); return Task.CompletedTask; }
+    public IReadOnlyList<long> GetDiscoveredFairlightInputs() => Enumerable.Range(1, 40).Select(x => (long)x).Concat(new long[] { 2001, 2002, 2003, 2004, 1301, 1401 }).Concat(Enumerable.Range(1501, 32).Select(x => (long)x)).ToList();
     #endregion
 }
 

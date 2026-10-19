@@ -2,9 +2,9 @@
 ; Creates a Windows installer with all dependencies bundled
 
 #define MyAppName "Vidikom"
-#define MyAppVersion "1.0.35"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Vidikom"
-#define MyAppURL "https://Vidikom.com"
+#define MyAppURL "https://vidikom.app"
 #define MyAppExeName "desktop\Vidikom.exe"
 
 [Setup]
@@ -16,6 +16,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
+SetupIconFile=icon.ico
 
 ; Installation Directories
 DefaultDirName={autopf}\{#MyAppName}
@@ -24,7 +25,7 @@ DisableProgramGroupPage=yes
 
 ; Output
 OutputDir=..\installer-output
-OutputBaseFilename=CuePilot-Setup-{#MyAppVersion}
+OutputBaseFilename=Vidikom-Setup-{#MyAppVersion}
 Compression=lzma2/fast
 SolidCompression=yes
 
@@ -81,20 +82,24 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 ; Register ATEM SDK COM DLL
 Filename: "{app}\RegisterATEM.bat"; Parameters: """{app}\"""; Flags: runhidden waituntilterminated
 ; Firewall rules
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot Caddy"" dir=in action=allow program=""{app}\caddy\caddy.exe"" enable=yes"; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot Server"" dir=in action=allow program=""{app}\server\server.exe"" enable=yes"; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot (HTTP)"" dir=in action=allow protocol=TCP localport=80 profile=any"; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""CuePilot (HTTPS)"" dir=in action=allow protocol=TCP localport=8443 profile=any"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VidiComm Caddy"" dir=in action=allow program=""{app}\caddy\caddy.exe"" enable=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VidiComm Server"" dir=in action=allow program=""{app}\server\server.exe"" enable=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VidiComm Desktop (WebRTC)"" dir=in action=allow program=""{app}\{#MyAppExeName}"" enable=yes profile=any edge=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VidiComm (HTTP)"" dir=in action=allow protocol=TCP localport=80 profile=any edge=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VidiComm (HTTPS)"" dir=in action=allow protocol=TCP localport=8443 profile=any edge=yes"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""VidiComm (Desktop API)"" dir=in action=allow protocol=TCP localport=8080 profile=any edge=yes"; Flags: runhidden
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Unregister ATEM SDK COM DLL
 Filename: "{app}\UnregisterATEM.bat"; Parameters: """{app}\"""; Flags: runhidden waituntilterminated
 ; Remove firewall rules
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot Caddy"""; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot Server"""; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot (HTTP)"""; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""CuePilot (HTTPS)"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VidiComm Caddy"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VidiComm Server"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VidiComm Desktop (WebRTC)"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VidiComm (HTTP)"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VidiComm (HTTPS)"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""VidiComm (Desktop API)"""; Flags: runhidden
 
 [Code]
 function InitializeSetup(): Boolean;
@@ -102,9 +107,9 @@ var
   ErrorCode: Integer;
 begin
   Exec('taskkill.exe', '/F /IM Vidikom.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM CuePilot.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM Vidikom.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM CuePilot.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM caddy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Result := True;
 end;
@@ -114,9 +119,9 @@ var
   ErrorCode: Integer;
 begin
   Exec('taskkill.exe', '/F /IM Vidikom.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM CuePilot.Desktop.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM Vidikom.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
-  Exec('taskkill.exe', '/F /IM CuePilot.Server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill.exe', '/F /IM server.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Exec('taskkill.exe', '/F /IM caddy.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
   Result := True;
 end;
@@ -131,6 +136,9 @@ begin
                      False);
   end;
 end;
+
+
+
 
 
 

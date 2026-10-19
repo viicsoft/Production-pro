@@ -6,18 +6,20 @@
  * sticky network banner, and bottom tab navigation.
  */
 
-import React, { useMemo } from 'react';
-import { StyleSheet, View, StatusBar } from 'react-native';
+import React, { useMemo, useEffect, useRef } from 'react';
+import { StyleSheet, View, StatusBar, Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { SettingsProvider } from './src/context/SettingsContext';
+import { SettingsProvider, useSettings } from './src/context/SettingsContext';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { ErrorBoundary } from './src/components/common/ErrorBoundary';
-import { CommsProvider } from './src/context/CommsContext';
+import { CommsProvider, useComms } from './src/context/CommsContext';
 import { TallyProvider, useTally } from './src/context/TallyContext';
 import { ShotSuggestionsProvider } from './src/context/ShotSuggestionsContext';
 import { ColorBalanceProvider } from './src/context/ColorBalanceContext';
 import { NetworkBanner } from './src/components/common/NetworkBanner';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { parseJoinInput } from './src/utils/joinUrlParser';
+import { useKeepAwake } from '@sayem314/react-native-keep-awake';
 
 /**
  * AmbientBorderWrapper:
@@ -29,7 +31,89 @@ import { RootNavigator } from './src/navigation/RootNavigator';
  */
 export const AmbientBorderWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { theme, isOled } = useTheme();
-  const { tallyState } = useTally();
+  const { tallyState, isConnected, reconnect } = useTally();
+  const { settings, updateSettings, isLoaded } = useSettings();
+  const comms = useComms();
+  useKeepAwake();
+
+  const autoConnectedRoomKeyRef = useRef<string>('');
+
+  // 1. Auto-connect voice intercom whenever Tally connects to an authenticated room
+  useEffect(() => {
+    const proc = (globalThis as any).process;
+    const isTest = typeof proc !== 'undefined' && proc.env?.NODE_ENV === 'test';
+    if (isTest) return;
+
+    const cleanPin = (settings.roomPin || '').trim();
+    const roomKey = `${settings.serverIp}:${settings.voicePort}:${settings.roomId}:${cleanPin}`;
+    if (isConnected && settings.roomId && cleanPin && autoConnectedRoomKeyRef.current !== roomKey) {
+      autoConnectedRoomKeyRef.current = roomKey;
+      if (!comms.connected && !comms.connecting && typeof comms.connect === 'function') {
+        comms.connect().catch(() => {});
+      }
+    }
+  }, [isConnected, settings.serverIp, settings.voicePort, settings.roomId, settings.roomPin, comms.connected, comms.connecting, comms.connect]);
+
+  // 2. Top-level Deep Link handler (works even when Settings tab has not been visited)
+  useEffect(() => {
+    const proc = (globalThis as any).process;
+    const isTest = typeof proc !== 'undefined' && proc.env?.NODE_ENV === 'test';
+    if (isTest) return;
+
+    const applyJoinUrl = async (url: string | null | undefined) => {
+      if (!url) return;
+      const parsed = parseJoinInput(url);
+      if (parsed && parsed.roomId) {
+        const nextIp = parsed.serverIp || settings.serverIp;
+        const nextDirPort = parsed.directorPort || settings.directorPort || 8080;
+        const nextVoicePort = parsed.voicePort || parsed.directorPort || settings.voicePort || 8080;
+        const nextRoom = parsed.roomId;
+        const nextPin = parsed.roomPin !== undefined ? parsed.roomPin : settings.roomPin;
+        const nextCloud = parsed.isCloudRelay ?? false;
+
+        await updateSettings({
+          ...parsed,
+          serverIp: nextIp,
+          directorPort: nextDirPort,
+          voicePort: nextVoicePort,
+          roomId: nextRoom,
+          roomPin: nextPin,
+          isCloudRelay: nextCloud,
+        }).catch(() => {});
+
+        if (typeof reconnect === 'function') {
+          (reconnect as any)({
+            serverIp: nextIp,
+            directorPort: nextDirPort,
+            roomId: nextRoom,
+            roomPin: nextPin,
+            isCloudRelay: nextCloud,
+          });
+        }
+        if (nextPin && typeof comms.connect === 'function') {
+          comms.connect({
+            serverIp: nextIp,
+            voicePort: nextVoicePort,
+            roomId: nextRoom,
+            roomPin: nextPin,
+            callsign: settings.callsign,
+            isCloudRelay: nextCloud,
+          }).catch(() => {});
+        }
+      }
+    };
+
+    if (Linking && typeof Linking.getInitialURL === 'function') {
+      Linking.getInitialURL().then(applyJoinUrl).catch(() => {});
+    }
+    let sub: any = null;
+    if (Linking && typeof Linking.addEventListener === 'function') {
+      sub = Linking.addEventListener('url', (ev: { url: string }) => applyJoinUrl(ev?.url));
+    }
+    return () => {
+      if (sub && typeof sub.remove === 'function') sub.remove();
+    };
+  }, []);
 
   const borderColor = useMemo(() => {
     switch (tallyState) {
@@ -71,6 +155,7 @@ export const AmbientBorderWrapper: React.FC<{ children: React.ReactNode }> = ({ 
 };
 
 export const App: React.FC = () => {
+  console.log('VIDIKOM: App component rendered');
   return (
     <SafeAreaProvider>
       <SettingsProvider>

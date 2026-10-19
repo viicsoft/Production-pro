@@ -12,40 +12,48 @@ namespace Desktop
             source.GetEffect(ref dynIid, out IntPtr dynPtr);
             if (dynPtr != IntPtr.Zero)
             {
-                var dyn = (IBMDSwitcherFairlightAudioDynamicsProcessor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(dynPtr);
-                var dynCb = new FairlightDynamicsCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), dyn);
-                dyn.AddCallback(dynCb);
-                _callbacks.Add(new AttachedCallback(dyn, dynCb));
+                try {
+                    var dyn = (IBMDSwitcherFairlightAudioDynamicsProcessor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(dynPtr);
+                    var dynCb = new FairlightDynamicsCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), dyn);
+                    dyn.AddCallback(dynCb);
+                    _callbacks.Add(new AttachedCallback(dyn, dynCb));
 
-                Guid compIid = typeof(IBMDSwitcherFairlightAudioCompressor).GUID;
-                dyn.GetProcessor(ref compIid, out IntPtr compPtr);
-                if (compPtr != IntPtr.Zero)
-                {
-                    var comp = (IBMDSwitcherFairlightAudioCompressor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(compPtr);
-                    var cb = new FairlightCompressorCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), comp);
-                    comp.AddCallback(cb);
-                    _callbacks.Add(new AttachedCallback(comp, cb));
-                }
+                    Guid compIid = typeof(IBMDSwitcherFairlightAudioCompressor).GUID;
+                    dyn.GetProcessor(ref compIid, out IntPtr compPtr);
+                    if (compPtr != IntPtr.Zero)
+                    {
+                        try {
+                            var comp = (IBMDSwitcherFairlightAudioCompressor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(compPtr);
+                            var cb = new FairlightCompressorCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), comp);
+                            comp.AddCallback(cb);
+                            _callbacks.Add(new AttachedCallback(comp, cb));
+                        } finally { System.Runtime.InteropServices.Marshal.Release(compPtr); }
+                    }
 
-                Guid expIid = typeof(IBMDSwitcherFairlightAudioExpander).GUID;
-                dyn.GetProcessor(ref expIid, out IntPtr expPtr);
-                if (expPtr != IntPtr.Zero)
-                {
-                    var exp = (IBMDSwitcherFairlightAudioExpander)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(expPtr);
-                    var cb = new FairlightExpanderCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), exp);
-                    exp.AddCallback(cb);
-                    _callbacks.Add(new AttachedCallback(exp, cb));
-                }
+                    Guid expIid = typeof(IBMDSwitcherFairlightAudioExpander).GUID;
+                    dyn.GetProcessor(ref expIid, out IntPtr expPtr);
+                    if (expPtr != IntPtr.Zero)
+                    {
+                        try {
+                            var exp = (IBMDSwitcherFairlightAudioExpander)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(expPtr);
+                            var cb = new FairlightExpanderCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), exp);
+                            exp.AddCallback(cb);
+                            _callbacks.Add(new AttachedCallback(exp, cb));
+                        } finally { System.Runtime.InteropServices.Marshal.Release(expPtr); }
+                    }
 
-                Guid limIid = typeof(IBMDSwitcherFairlightAudioLimiter).GUID;
-                dyn.GetProcessor(ref limIid, out IntPtr limPtr);
-                if (limPtr != IntPtr.Zero)
-                {
-                    var lim = (IBMDSwitcherFairlightAudioLimiter)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(limPtr);
-                    var cb = new FairlightLimiterCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), lim);
-                    lim.AddCallback(cb);
-                    _callbacks.Add(new AttachedCallback(lim, cb));
-                }
+                    Guid limIid = typeof(IBMDSwitcherFairlightAudioLimiter).GUID;
+                    dyn.GetProcessor(ref limIid, out IntPtr limPtr);
+                    if (limPtr != IntPtr.Zero)
+                    {
+                        try {
+                            var lim = (IBMDSwitcherFairlightAudioLimiter)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(limPtr);
+                            var cb = new FairlightLimiterCb(inputId, (i, up) => DynamicsStateChanged?.Invoke(i, up), lim);
+                            lim.AddCallback(cb);
+                            _callbacks.Add(new AttachedCallback(lim, cb));
+                        } finally { System.Runtime.InteropServices.Marshal.Release(limPtr); }
+                    }
+                } finally { System.Runtime.InteropServices.Marshal.Release(dynPtr); }
             }
         }
 
@@ -139,18 +147,112 @@ namespace Desktop
             }
         }
 
+        public Task<Core.DynamicsState?> GetDynamicsStateAsync(long inputId)
+        {
+            return Task.Run(() => {
+                if (_fairlightSources.TryGetValue(inputId, out var sources))
+                {
+                    foreach (var src in sources)
+                    {
+                        Guid dynIid = typeof(IBMDSwitcherFairlightAudioDynamicsProcessor).GUID;
+                        src.GetEffect(ref dynIid, out IntPtr dynPtr);
+                        if (dynPtr != IntPtr.Zero)
+                        {
+                            var dyn = (IBMDSwitcherFairlightAudioDynamicsProcessor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(dynPtr);
+                            dyn.GetMakeupGain(out double makeupGain);
+
+                            var compState = new Core.CompressorState();
+                            Guid compIid = typeof(IBMDSwitcherFairlightAudioCompressor).GUID;
+                            dyn.GetProcessor(ref compIid, out IntPtr compPtr);
+                            if (compPtr != IntPtr.Zero)
+                            {
+                                var comp = (IBMDSwitcherFairlightAudioCompressor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(compPtr);
+                                comp.GetEnabled(out int compEn);
+                                comp.GetThreshold(out double compThresh);
+                                comp.GetRatio(out double compRatio);
+                                comp.GetAttack(out double compAttack);
+                                comp.GetHold(out double compHold);
+                                comp.GetRelease(out double compRelease);
+                                compState = new Core.CompressorState(
+                                    Enabled: compEn != 0,
+                                    Threshold: compThresh,
+                                    Ratio: compRatio,
+                                    Attack: compAttack,
+                                    Hold: compHold,
+                                    Release: compRelease
+                                );
+                            }
+
+                            var expState = new Core.ExpanderState();
+                            Guid expIid = typeof(IBMDSwitcherFairlightAudioExpander).GUID;
+                            dyn.GetProcessor(ref expIid, out IntPtr expPtr);
+                            if (expPtr != IntPtr.Zero)
+                            {
+                                var exp = (IBMDSwitcherFairlightAudioExpander)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(expPtr);
+                                exp.GetEnabled(out int expEn);
+                                exp.GetGateMode(out int expGate);
+                                exp.GetThreshold(out double expThresh);
+                                exp.GetRange(out double expRange);
+                                exp.GetRatio(out double expRatio);
+                                exp.GetAttack(out double expAttack);
+                                exp.GetHold(out double expHold);
+                                exp.GetRelease(out double expRelease);
+                                expState = new Core.ExpanderState(
+                                    Enabled: expEn != 0,
+                                    GateMode: expGate,
+                                    Threshold: expThresh,
+                                    Range: expRange,
+                                    Ratio: expRatio,
+                                    Attack: expAttack,
+                                    Hold: expHold,
+                                    Release: expRelease
+                                );
+                            }
+
+                            var limState = new Core.LimiterState();
+                            Guid limIid = typeof(IBMDSwitcherFairlightAudioLimiter).GUID;
+                            dyn.GetProcessor(ref limIid, out IntPtr limPtr);
+                            if (limPtr != IntPtr.Zero)
+                            {
+                                var lim = (IBMDSwitcherFairlightAudioLimiter)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(limPtr);
+                                lim.GetEnabled(out int limEn);
+                                lim.GetThreshold(out double limThresh);
+                                lim.GetAttack(out double limAttack);
+                                lim.GetHold(out double limHold);
+                                lim.GetRelease(out double limRelease);
+                                limState = new Core.LimiterState(
+                                    Enabled: limEn != 0,
+                                    Threshold: limThresh,
+                                    Attack: limAttack,
+                                    Hold: limHold,
+                                    Release: limRelease
+                                );
+                            }
+
+                            return (Core.DynamicsState?)new Core.DynamicsState(
+                                MakeupGain: makeupGain,
+                                Compressor: compState,
+                                Expander: expState,
+                                Limiter: limState
+                            );
+                        }
+                    }
+                }
+                return (Core.DynamicsState?)null;
+            });
+        }
+
         private void WithDynamics(long inputId, Action<IBMDSwitcherFairlightAudioDynamicsProcessor> action)
         {
             if (_fairlightSources.TryGetValue(inputId, out var sources)) {
                 foreach (var src in sources) {
-                    src.IsActive(out int active);
-                    if (active != 0) {
-                        Guid iid = typeof(IBMDSwitcherFairlightAudioDynamicsProcessor).GUID;
-                        src.GetEffect(ref iid, out IntPtr ppv);
-                        if (ppv != IntPtr.Zero) {
+                    Guid iid = typeof(IBMDSwitcherFairlightAudioDynamicsProcessor).GUID;
+                    src.GetEffect(ref iid, out IntPtr ppv);
+                    if (ppv != IntPtr.Zero) {
+                        try {
                             var dyn = (IBMDSwitcherFairlightAudioDynamicsProcessor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv);
                             action(dyn);
-                        }
+                        } finally { System.Runtime.InteropServices.Marshal.Release(ppv); }
                     }
                 }
             }
@@ -161,7 +263,10 @@ namespace Desktop
             WithDynamics(inputId, dyn => {
                 Guid iid = typeof(IBMDSwitcherFairlightAudioCompressor).GUID;
                 dyn.GetProcessor(ref iid, out IntPtr ppv);
-                if (ppv != IntPtr.Zero) action((IBMDSwitcherFairlightAudioCompressor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv));
+                if (ppv != IntPtr.Zero) {
+                    try { action((IBMDSwitcherFairlightAudioCompressor)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv)); }
+                    finally { System.Runtime.InteropServices.Marshal.Release(ppv); }
+                }
             });
         }
         private void WithExpander(long inputId, Action<IBMDSwitcherFairlightAudioExpander> action)
@@ -169,7 +274,10 @@ namespace Desktop
             WithDynamics(inputId, dyn => {
                 Guid iid = typeof(IBMDSwitcherFairlightAudioExpander).GUID;
                 dyn.GetProcessor(ref iid, out IntPtr ppv);
-                if (ppv != IntPtr.Zero) action((IBMDSwitcherFairlightAudioExpander)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv));
+                if (ppv != IntPtr.Zero) {
+                    try { action((IBMDSwitcherFairlightAudioExpander)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv)); }
+                    finally { System.Runtime.InteropServices.Marshal.Release(ppv); }
+                }
             });
         }
         private void WithLimiter(long inputId, Action<IBMDSwitcherFairlightAudioLimiter> action)
@@ -177,7 +285,10 @@ namespace Desktop
             WithDynamics(inputId, dyn => {
                 Guid iid = typeof(IBMDSwitcherFairlightAudioLimiter).GUID;
                 dyn.GetProcessor(ref iid, out IntPtr ppv);
-                if (ppv != IntPtr.Zero) action((IBMDSwitcherFairlightAudioLimiter)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv));
+                if (ppv != IntPtr.Zero) {
+                    try { action((IBMDSwitcherFairlightAudioLimiter)System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(ppv)); }
+                    finally { System.Runtime.InteropServices.Marshal.Release(ppv); }
+                }
             });
         }
 

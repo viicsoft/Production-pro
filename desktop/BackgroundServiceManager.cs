@@ -33,12 +33,16 @@ public static class BackgroundServiceManager
             if (File.Exists(caddyExe))
             {
                 // Ensure Caddyfile exists with wildcard port 8443 (proxies to PwaServer port 8080)
-                var caddyfilePath = Path.Combine(caddyDir, "Caddyfile");
-                const string defaultCaddyfile = ":8443 {\n    tls internal\n    reverse_proxy 127.0.0.1:8080\n}\n";
-                if (!File.Exists(caddyfilePath) || File.ReadAllText(caddyfilePath).Contains("5160"))
+                try
                 {
-                    File.WriteAllText(caddyfilePath, defaultCaddyfile);
+                    var caddyfilePath = Path.Combine(caddyDir, "Caddyfile");
+                    const string defaultCaddyfile = ":8443 {\n    tls internal\n    reverse_proxy 127.0.0.1:8080\n}\n";
+                    if (!File.Exists(caddyfilePath) || File.ReadAllText(caddyfilePath).Contains("5160"))
+                    {
+                        File.WriteAllText(caddyfilePath, defaultCaddyfile);
+                    }
                 }
+                catch { }
 
                 if (Process.GetProcessesByName("caddy").Length == 0)
                 {
@@ -75,7 +79,13 @@ public static class BackgroundServiceManager
         }
         catch (Exception ex)
         {
-            try { File.AppendAllText("services.log", $"[StartServices] Error: {ex}\n"); } catch { }
+            try
+            {
+                var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs");
+                if (!Directory.Exists(logDir)) Directory.CreateDirectory(logDir);
+                File.AppendAllText(Path.Combine(logDir, "services.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [StartServices] Error: {ex}\n");
+            }
+            catch { }
         }
     }
 

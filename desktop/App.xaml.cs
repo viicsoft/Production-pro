@@ -14,10 +14,14 @@ namespace desktop;
 public partial class App : Application
 {
     private static System.Threading.Mutex? _singleInstanceMutex;
+    public static bool IsSecondaryLocalInstance { get; private set; }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
+        if (!IsSecondaryLocalInstance)
+        {
+            try { _singleInstanceMutex?.ReleaseMutex(); } catch { }
+        }
         try { _singleInstanceMutex?.Dispose(); } catch { }
 
         try
@@ -27,9 +31,19 @@ public partial class App : Application
         }
         catch { }
 
+        if (!IsSecondaryLocalInstance)
+        {
+            try
+            {
+                BackgroundServiceManager.StopServices();
+            }
+            catch { }
+        }
+
         try
         {
-            BackgroundServiceManager.StopServices();
+            var stopRemoteTask = Task.Run(async () => await Desktop.RemoteSwitcherClient.Instance.DisconnectAsync());
+            stopRemoteTask.Wait(TimeSpan.FromMilliseconds(500));
         }
         catch { }
 
@@ -44,32 +58,43 @@ public partial class App : Application
         Environment.Exit(0);
     }
 
+    [System.Runtime.InteropServices.DllImport("shell32.dll", SetLastError = true)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID([System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPWStr)] string AppID);
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(int wEventId, int uFlags, IntPtr dwItem1, IntPtr dwItem2);
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        try
+        {
+            SetCurrentProcessExplicitAppUserModelID("Vidikom.AtemSoftwareControl.Desktop");
+            SHChangeNotify(0x08000000, 0x0000, IntPtr.Zero, IntPtr.Zero);
+        }
+        catch { }
+
         bool isNewInstance;
         _singleInstanceMutex = new System.Threading.Mutex(true, "Global\\CuePilot-SingleInstance-Mutex", out isNewInstance);
         if (!isNewInstance)
         {
+            IsSecondaryLocalInstance = true;
             try
             {
                 var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [App] Second instance launch attempted while CuePilot is already running. Exiting cleanly.\n");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [App] Secondary local Vidikom instance launched (PID={Environment.ProcessId}).\n");
             }
             catch { }
-            Shutdown(0);
-            return;
         }
 
-        try
-        {
-            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
-        }
-        catch { }
+        // Use default hardware accelerated rendering
 
         base.OnStartup(e);
 
-        // Start background services (caddy, server) silently without opening console windows
-        BackgroundServiceManager.StartServices();
+        // Start background services (caddy, server) silently on primary instance only
+        if (!IsSecondaryLocalInstance)
+        {
+            BackgroundServiceManager.StartServices();
+        }
 
         AppDomain.CurrentDomain.UnhandledException += (s, args) =>
         {
@@ -128,7 +153,13 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            try { System.IO.File.AppendAllText("crash.log", $"[OnStartup-Main] {ex.ToString()}\n"); } catch { }
+            try
+            {
+                var logDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs");
+                if (!System.IO.Directory.Exists(logDir)) System.IO.Directory.CreateDirectory(logDir);
+                System.IO.File.AppendAllText(System.IO.Path.Combine(logDir, $"crash-{DateTime.Now:yyyy-MM-dd}.log"), $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [OnStartup-Main] {ex}\n");
+            }
+            catch { }
             throw;
         }
     }

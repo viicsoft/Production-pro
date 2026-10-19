@@ -1,4 +1,4 @@
-using Desktop;
+﻿using Desktop;
 using Desktop.HardwareAbstraction;
 using Xunit;
 using Core;
@@ -16,6 +16,7 @@ namespace AtemDirector.Tests
         public bool SupportsCapability(AudioCapability capability) => true;
 
         public event Action<string, long, double?, bool?, bool?>? HardwareStateChanged;
+        public event EventHandler<Desktop.HardwareAbstraction.AudioMeterState>? MeterChanged;
         public event Action<string, long, bool?, EqBandUpdate?>? HardwareEqStateChanged;
         public event Action<string, long, DynamicsUpdate>? HardwareDynamicsStateChanged;
 
@@ -224,5 +225,6 @@ namespace AtemDirector.Tests
         }
     }
 }
+
 
 

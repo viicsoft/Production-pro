@@ -12,8 +12,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>icon.ico</ApplicationIcon>
-    <NoWarn>$(NoWarn);CS8625;CS1998;CS8618;CS0618;CS8602;CS0414</NoWarn>
+    <NoWarn>$(NoWarn);CS8625;CS1998;CS8618;CS0618;CS8602;CS0414;CS8622;CS8604;CS0067;CS0169</NoWarn>
     <AssemblyName>Vidikom</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +27,7 @@
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260427" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260302" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="System.Speech" Version="9.0.0" />
     <PackageReference Include="Velopack" Version="0.0.1298" />
   </ItemGroup>
 
@@ -58,4 +61,5 @@
     <InternalsVisibleTo Include="Desktop.Tests" />
   </ItemGroup>
 </Project>
+
 

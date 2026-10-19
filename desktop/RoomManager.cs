@@ -47,16 +47,24 @@ namespace Desktop
                     var json = File.ReadAllText(StateFilePath);
                     _activeRoom = JsonSerializer.Deserialize<RoomState>(json);
                     
-                    if (_activeRoom != null && string.IsNullOrEmpty(_activeRoom.ControlCode))
+                    if (_activeRoom != null)
                     {
-                        _activeRoom.ControlCode = new Random().Next(1000, 9999).ToString();
-                        SaveState();
-                    }
-
-                    // Optional: Check if room is too old (e.g. > 24 hours) and expire it automatically
-                    if (_activeRoom != null && (DateTime.UtcNow - _activeRoom.CreatedAt).TotalHours > 24)
-                    {
-                        EndRoom();
+                        bool changed = false;
+                        if (string.IsNullOrEmpty(_activeRoom.ControlCode))
+                        {
+                            _activeRoom.ControlCode = new Random().Next(1000, 9999).ToString();
+                            changed = true;
+                        }
+                        if (!string.IsNullOrEmpty(_activeRoom.RelayUrl) &&
+                            _activeRoom.RelayUrl.Contains("CuePilot.app", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _activeRoom.RelayUrl = _activeRoom.RelayUrl.Replace("CuePilot.app", "vidikom.app", StringComparison.OrdinalIgnoreCase);
+                            changed = true;
+                        }
+                        if (changed)
+                        {
+                            SaveState();
+                        }
                     }
                 }
             }
@@ -70,13 +78,13 @@ namespace Desktop
         public static void EnsureActiveRoom()
         {
             LoadState();
-            if (_activeRoom == null || string.IsNullOrWhiteSpace(_activeRoom.RoomId) || (DateTime.UtcNow - _activeRoom.CreatedAt).TotalHours > 24)
+            if (_activeRoom == null || string.IsNullOrWhiteSpace(_activeRoom.RoomId))
             {
-                CreateRoom("Live Production", Environment.UserName, NetworkMode.LAN, "");
+                CreateRoom("Live Production", Environment.UserName, NetworkMode.Hybrid, "wss://vidikom.app/ws/room");
             }
         }
 
-        public static void CreateRoom(string productionName, string directorName, NetworkMode networkMode = NetworkMode.Online, string relayUrl = "wss://CuePilot.app/ws/room", string? forcedRoomId = null, string? forcedPin = null)
+        public static void CreateRoom(string productionName, string directorName, NetworkMode networkMode = NetworkMode.Online, string relayUrl = "wss://vidikom.app/ws/room", string? forcedRoomId = null, string? forcedPin = null)
         {
             var rnd = new Random();
             var roomId = forcedRoomId ?? rnd.Next(100000, 999999).ToString();
@@ -149,7 +157,7 @@ namespace Desktop
             var payload = new Dictionary<string, object>
             {
                 { "roomId", _activeRoom.RoomId },
-                { "exp", DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeSeconds() }
+                { "exp", DateTimeOffset.UtcNow.AddDays(30).ToUnixTimeSeconds() }
             };
 
             var secret = Convert.FromBase64String(_activeRoom.HmacSecret);

@@ -26,7 +26,7 @@ namespace Desktop
         public string Id { get; set; } = "crowd";
         public string Name { get; set; } = "Crowd Reaction";
         public string Color { get; set; } = "#FF9800";
-        public string Icon { get; set; } = "👏";
+        public string Icon { get; set; } = "";
         public List<int> Channels { get; set; } = new() { 3, 4 };
         public int? AssignedCameraId { get; set; } = 4;
         public double Level { get; set; } = 0.0;
@@ -93,6 +93,7 @@ namespace Desktop
         public Dictionary<int, string> CustomLabels { get; set; } = new();
         public Dictionary<int, CameraRoleMetadata> CameraRoles { get; set; } = new();
         public Dictionary<int, int> CaptureDeviceIndices { get; set; } = new();
+        public Dictionary<int, string> NdiCameraSources { get; set; } = new();
         public string SelectedTransitionStyle { get; set; } = "Mix";
         public int AutoTransitionRateMs { get; set; } = 1000;
         public WindowRect SuperSourceDock { get; set; } = new();
@@ -115,7 +116,7 @@ namespace Desktop
                 Id = "crowd",
                 Name = "Crowd Reaction",
                 Color = "#FF9800",
-                Icon = "👏",
+                Icon = "",
                 Channels = new List<int> { 3, 4 },
                 AssignedCameraId = 4,
                 Level = 0.0,
@@ -159,6 +160,7 @@ namespace Desktop
                         cfg.CustomLabels ??= new();
                         cfg.CameraRoles ??= new();
                         cfg.CaptureDeviceIndices ??= new();
+                        cfg.NdiCameraSources ??= new();
                         cfg.SuperSourceDock ??= new WindowRect();
                         cfg.PalettesDock ??= new WindowRect();
                         cfg.ActiveBriefing ??= new ProductionBriefing();
@@ -172,7 +174,7 @@ namespace Desktop
                                 Id = "crowd",
                                 Name = "Crowd Reaction",
                                 Color = "#FF9800",
-                                Icon = "👏",
+                                Icon = "",
                                 Channels = new List<int> { 3, 4 },
                                 AssignedCameraId = 4,
                                 Level = 0.0,
@@ -196,7 +198,7 @@ namespace Desktop
                 var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(ConfigFile, json);
             }
-            catch { /* silently fail — not critical */ }
+            catch { /* silently fail - not critical */ }
         }
 
         /// <summary>
@@ -210,3 +212,5 @@ namespace Desktop
         }
     }
 }
+
+

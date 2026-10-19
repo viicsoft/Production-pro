@@ -1,46 +1,49 @@
 /**
  * TallyScreen.tsx
  * 
- * Production Tally Screen for VidikomCrew.
- * 
- * Features:
- * 1. Broadcast Tally indicator with card and fullscreen rig modes.
- * 2. Hardware banner displaying assigned camera ID and callsign.
- * 3. Active Director Cue summary with 16:9 Viewfinder Composition Guide.
- * 4. Director Voice Callout with speech audio and replay trigger.
- * 5. Instant cue acknowledgment and next AI shot trigger.
+ * Production Tally Screen for VidikomCrew matching the new broadcast designs.
  */
 
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  SafeAreaView,
+} from 'react-native';
 import { NavigationContext } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
 import { useTally } from '../context/TallyContext';
-import { useShotSuggestions, buildVoiceCueScript } from '../context/ShotSuggestionsContext';
+import { useComms } from '../context/CommsContext';
+import { useShotSuggestions } from '../context/ShotSuggestionsContext';
 import TallyIndicator from '../components/tally/TallyIndicator';
-import ViewfinderPreview from '../components/suggestions/ViewfinderPreview';
 import JoinRoomModal from '../components/common/JoinRoomModal';
+import Icon from '../components/common/Icon';
 
 export const TallyScreen: React.FC = () => {
-  const navigation = useContext(NavigationContext);
-  const { theme } = useTheme();
+  const navigation = useContext(NavigationContext) as any;
+  const { theme, isOled } = useTheme();
   const { settings } = useSettings();
   const { tallyState } = useTally();
+  const { discoveredLanRoom } = useComms();
   const {
     activeSuggestion,
     activeReminder,
     activeGrade,
     triggerNextAiShot,
     replayDirectorVoice,
-    activeShotDefinition,
     acknowledgeSuggestion,
-    isFavorite,
-    toggleFavorite,
+    countdown,
   } = useShotSuggestions();
 
   const [localImmersive, setLocalImmersive] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [autoSelectDiscovered, setAutoSelectDiscovered] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
   // Sync header and tab bar visibility with full-screen rig immersion mode
   useEffect(() => {
@@ -52,18 +55,34 @@ export const TallyScreen: React.FC = () => {
     }
   }, [localImmersive, navigation]);
 
+  const handlePlayVoice = () => {
+    setIsPlayingAudio(true);
+    if (typeof replayDirectorVoice === 'function') {
+      replayDirectorVoice();
+    }
+    setTimeout(() => setIsPlayingAudio(false), 2500);
+  };
+
+  const handleViewFraming = () => {
+    if (navigation?.navigate) {
+      navigation.navigate('ShotDetails', { shot: activeSuggestion });
+    }
+  };
+
+  const formattedCountdown = countdown !== undefined ? `00:${String(countdown).padStart(2, '0')}` : '00:12';
+
   // Full-screen rig immersion view
   if (localImmersive) {
     return (
       <View
         testID="tally-screen"
-        style={[styles.fullscreenWrapper, { backgroundColor: theme.background }]}
+        style={[styles.fullscreenWrapper, { backgroundColor: isOled ? '#000000' : theme.background }]}
       >
         <TallyIndicator
           mode="fullscreen"
           tallyState={tallyState}
           cameraId={settings.cameraId}
-          callsign={settings.callsign}
+          callsign={settings.callsign || settings.cameraRole || 'Stage Left'}
           activeShotTitle={activeSuggestion?.title}
           onToggleFullscreen={() => setLocalImmersive(false)}
         />
@@ -71,316 +90,414 @@ export const TallyScreen: React.FC = () => {
     );
   }
 
+  const roomName = settings.roomId ? `Studio ${settings.roomId}` : 'Studio A';
+  const camName = `CAM ${String(settings.cameraId || 3).padStart(2, '0')} · ${settings.cameraRole || 'Stage Left'}`;
+  const isConnected = tallyState !== 'DISCONNECTED';
+
   return (
-    <ScrollView
-      testID="tally-screen"
-      style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-    >
-      {/* Director Reminder Banner */}
-      {activeReminder && (
-        <View
-          testID="director-reminder-banner"
-          style={[styles.reminderBanner, { backgroundColor: theme.primary }]}
-        >
-          <Text style={styles.reminderHeader}>DIRECTOR REMINDER</Text>
-          <Text style={styles.reminderBody}>{activeReminder.text}</Text>
-        </View>
-      )}
-
-      {/* Director Performance Grade Card */}
-      {activeGrade && (
-        <View
-          testID="director-grade-card"
-          style={[
-            styles.gradeCard,
-            { backgroundColor: theme.surfaceElevated, borderColor: theme.tallyPreview },
-          ]}
-        >
-          <Text style={[styles.gradeBadge, { color: theme.tallyPreview }]}>
-            GRADE: {activeGrade.grade}
-          </Text>
-          <Text style={[styles.gradeFeedback, { color: theme.textPrimary }]}>
-            {activeGrade.feedback}
-          </Text>
-        </View>
-      )}
-
-      {/* Switcher Disconnected / Pairing Action Card */}
-      {tallyState === 'DISCONNECTED' && (
-        <View
-          testID="disconnected-pairing-card"
-          style={[
-            styles.pairingCard,
-            { backgroundColor: theme.surfaceElevated, borderColor: theme.tallyWarning },
-          ]}
-        >
-          <View style={styles.pairingHeaderRow}>
-            <Text style={[styles.pairingAlertIcon, { color: theme.tallyWarning }]}>⚠️</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.pairingTitle, { color: theme.textPrimary }]}>
-                NOT CONNECTED TO SWITCHER
-              </Text>
-              <Text style={[styles.pairingSubtitle, { color: theme.textSecondary }]}>
-                Target: {settings.serverIp} • Room: {settings.roomId || 'None'}
-              </Text>
-            </View>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: isOled ? '#000000' : '#0B0C0E' }]}>
+      {/* Top Header Bar */}
+      <View style={[styles.topHeader, { borderBottomColor: theme.surfaceBorder }]}>
+        <View style={styles.topHeaderLeft}>
+          <TouchableOpacity style={styles.menuBtn} onPress={() => setShowJoinModal(true)}>
+            <Icon name="hamburger" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.topHeaderTextWrap}>
+            <Text style={styles.topStudioName}>{roomName}</Text>
+            <Text style={styles.topCamName}>{camName}</Text>
           </View>
+        </View>
+
+        <View style={styles.topHeaderRight}>
           <TouchableOpacity
-            testID="btn-open-join-modal"
-            style={[styles.pairingJoinBtn, { backgroundColor: theme.primary }]}
-            onPress={() => setShowJoinModal(true)}
-            activeOpacity={0.8}
+            testID="btn-color-balance-header"
+            accessibilityLabel="Color Balance Matcher"
+            style={[styles.profileBtn, { marginRight: 8, backgroundColor: 'rgba(251, 191, 36, 0.15)', borderColor: '#FBBF24', borderWidth: 1 }]}
+            onPress={() => {
+              if (navigation?.navigate) {
+                navigation.navigate('ColorBalance');
+              }
+            }}
           >
-            <Text style={styles.pairingJoinBtnText}>📷 SCAN QR / JOIN ROOM</Text>
+            <Text style={{ fontSize: 16 }}>🎨</Text>
+          </TouchableOpacity>
+          <View
+            style={[
+              styles.connectionIndicatorDot,
+              { backgroundColor: isConnected ? '#10B981' : theme.tallyWarning },
+            ]}
+          />
+          <TouchableOpacity style={styles.profileBtn} onPress={() => navigation?.navigate('Settings')}>
+            <Icon name="headset" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
-      )}
+      </View>
 
-      {/* Main Tally Indicator Card */}
-      <TallyIndicator
-        mode="card"
-        tallyState={tallyState}
-        cameraId={settings.cameraId}
-        callsign={settings.callsign}
-        activeShotTitle={activeSuggestion?.title}
-        onToggleFullscreen={() => setLocalImmersive(true)}
-      />
-
-      {/* Live AI Director Shot Suggestion & Storyboard Viewfinder */}
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: theme.surface, borderColor: theme.primary, borderWidth: 2 },
-        ]}
+      <ScrollView
+        testID="tally-screen"
+        style={[styles.container, { backgroundColor: isOled ? '#000000' : '#0B0C0E' }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Header & Dynamic Role Badge */}
-        <View style={styles.cardHeaderRow}>
-          <View style={[styles.roleBadge, { backgroundColor: theme.primaryContainer }]}>
-            <View style={[styles.liveDot, { backgroundColor: theme.primary }]} />
-            <Text style={[styles.roleBadgeText, { color: theme.primary }]}>
-              CAM {settings.cameraId} • {(settings.cameraRole || 'Roving Stage').toUpperCase()}
+        {/* Director Reminder Banner */}
+        {activeReminder && (
+          <View
+            testID="director-reminder-banner"
+            style={[styles.reminderBanner, { backgroundColor: theme.primary }]}
+          >
+            <Text style={styles.reminderHeader}>DIRECTOR REMINDER</Text>
+            <Text style={styles.reminderBody}>{activeReminder.text}</Text>
+          </View>
+        )}
+
+        {/* Director Performance Grade Card */}
+        {activeGrade && (
+          <View
+            testID="director-grade-card"
+            style={[
+              styles.gradeCard,
+              { backgroundColor: theme.surfaceElevated, borderColor: theme.tallyPreview },
+            ]}
+          >
+            <Text style={[styles.gradeBadge, { color: theme.tallyPreview }]}>
+              GRADE: {activeGrade.grade}
+            </Text>
+            <Text style={[styles.gradeFeedback, { color: theme.textPrimary }]}>
+              {activeGrade.feedback}
             </Text>
           </View>
+        )}
 
-          {(() => {
-            const isSwitcherCue = activeSuggestion?.category?.toUpperCase().includes('SWITCHER');
-            return (
-              <View
-                style={[
-                  styles.aiTagBadge,
-                  {
-                    backgroundColor: isSwitcherCue
-                      ? 'rgba(34, 197, 94, 0.2)'
-                      : 'rgba(250, 204, 21, 0.15)',
-                  },
-                ]}
+        {/* Switcher Disconnected / Pairing Action Card */}
+        {!isConnected && (
+          <View
+            testID="disconnected-pairing-card"
+            style={[
+              styles.pairingCard,
+              {
+                backgroundColor: theme.surface,
+                borderColor: discoveredLanRoom ? '#10B981' : theme.tallyWarning,
+              },
+            ]}
+          >
+            {discoveredLanRoom ? (
+              <TouchableOpacity
+                testID="tally-discovered-lan-room"
+                activeOpacity={0.85}
+                onPress={() => {
+                  setAutoSelectDiscovered(true);
+                  setShowJoinModal(true);
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                  borderColor: '#10B981',
+                  borderWidth: 1.5,
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 12,
+                }}
               >
-                <Text
-                  style={[
-                    styles.aiTagText,
-                    { color: isSwitcherCue ? '#22C55E' : theme.primary },
-                  ]}
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ color: '#10B981', fontSize: 10, fontWeight: '900', letterSpacing: 0.6, marginBottom: 4 }}>
+                    🟢 DIRECTOR ROOM ON YOUR NETWORK
+                  </Text>
+                  <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginBottom: 2 }}>
+                    🎬 {discoveredLanRoom.productionName} • Room {discoveredLanRoom.roomId}
+                  </Text>
+                  <Text style={{ color: '#9CA3AF', fontSize: 12, fontWeight: '600' }}>
+                    Director: {discoveredLanRoom.directorName} • LAN: {discoveredLanRoom.serverIp}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    backgroundColor: '#10B981',
+                    paddingHorizontal: 10,
+                    paddingVertical: 7,
+                    borderRadius: 8,
+                  }}
                 >
-                  {isSwitcherCue ? '📡 SWITCHER DIRECTED' : '⚡ AI DIRECTOR'}
-                </Text>
+                  <Text style={{ color: '#062019', fontSize: 11, fontWeight: '800' }}>
+                    ENTER PIN →
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.pairingHeaderRow}>
+                <Text style={{ fontSize: 20 }}>⚠️</Text>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.pairingTitle}>NOT CONNECTED TO SWITCHER</Text>
+                  <Text style={styles.pairingSubtitle}>
+                    Target: {settings.serverIp} • Room: {settings.roomId || 'None'}
+                  </Text>
+                </View>
               </View>
-            );
-          })()}
-        </View>
-
-        {/* Active Cue Content */}
-        {activeSuggestion ? (
-          <View style={styles.cueContainer}>
-            <View style={styles.cueTitleRow}>
-              <Text style={[styles.cueTitle, { color: theme.textPrimary, flex: 1 }]}>
-                {activeSuggestion.title}
-              </Text>
-              <TouchableOpacity
-                onPress={() => toggleFavorite(activeSuggestion.id)}
-                style={[
-                  styles.favStarBtn,
-                  {
-                    backgroundColor: isFavorite(activeSuggestion.id)
-                      ? theme.primary
-                      : theme.surfaceElevated,
-                    borderColor: isFavorite(activeSuggestion.id)
-                      ? theme.primary
-                      : 'rgba(255, 255, 255, 0.1)',
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.favStarText,
-                    { color: isFavorite(activeSuggestion.id) ? '#000000' : theme.textSecondary },
-                  ]}
-                >
-                  {isFavorite(activeSuggestion.id) ? '★ Favorite' : '☆ Star Shot'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Visual Framing Storyboard / Reference Media Preview */}
-            {(() => {
-              const media = activeSuggestion.mediaUrl || activeSuggestion.thumbnail;
-              const isVideo = activeSuggestion.mediaType === 'video' ||
-                (activeSuggestion.mediaUrl && /\.(mp4|mov|avi|webm)($|\?)/i.test(activeSuggestion.mediaUrl));
-              const isImage = !isVideo && (
-                Boolean(activeSuggestion.thumbnail?.startsWith('data:image')) ||
-                activeSuggestion.mediaType === 'image' ||
-                Boolean(activeSuggestion.mediaUrl && (activeSuggestion.mediaUrl.startsWith('http') || activeSuggestion.mediaUrl.startsWith('data:image') || activeSuggestion.mediaUrl.startsWith('file:')))
-              );
-
-              if (isVideo && activeSuggestion.mediaUrl) {
-                return (
-                  <View style={[styles.mediaCardContainer, { backgroundColor: '#181818', borderColor: theme.primary }]}>
-                    <Text style={[styles.videoBadge, { color: theme.primary }]}>📹 VIDEO REFERENCE ATTACHED</Text>
-                    <TouchableOpacity
-                      style={[styles.playVideoBtn, { backgroundColor: theme.primary }]}
-                      onPress={() => {
-                        if (activeSuggestion.mediaUrl) Linking.openURL(activeSuggestion.mediaUrl);
-                      }}
-                    >
-                      <Text style={styles.playVideoText}>▶ Play Reference Video</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              }
-
-              if (isImage && media) {
-                return (
-                  <View style={styles.imageCardContainer}>
-                    <Image
-                      source={{ uri: media }}
-                      style={styles.storyboardImage}
-                      resizeMode="cover"
-                    />
-                  </View>
-                );
-              }
-
-              return (
-                <ViewfinderPreview
-                  viewfinderType={activeSuggestion.mediaUrl || activeShotDefinition?.viewfinderType}
-                  focalLength={activeShotDefinition?.focalLength}
-                  movement={activeShotDefinition?.movement}
-                  category={activeSuggestion.category}
-                  height={155}
-                />
-              );
-            })()}
-
-            <Text style={[styles.cueDesc, { color: theme.textSecondary, fontSize: 13, marginTop: 4 }]}>
-              {activeSuggestion.description}
-            </Text>
-
-            {/* Director Verbal Voice Cue Banner */}
-            <View style={[styles.voiceBanner, { backgroundColor: theme.surfaceElevated }]}>
-              <View style={styles.voiceHeaderRow}>
-                <Text style={[styles.voiceHeader, { color: theme.primary }]}>
-                  🎙️ DIRECTOR VOICE CALLOUT
-                </Text>
-                <TouchableOpacity
-                  onPress={replayDirectorVoice}
-                  style={[styles.voicePlayBtn, { backgroundColor: theme.primary }]}
-                >
-                  <Text style={styles.voicePlayBtnText}>🔊 Replay Voice</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={[styles.voiceScript, { color: theme.textPrimary }]}>
-                "{buildVoiceCueScript(settings.cameraId || 1, activeSuggestion, settings.eventType)}"
-              </Text>
-            </View>
-
-            {/* Action Buttons Row */}
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                onPress={triggerNextAiShot}
-                style={[styles.nextShotBtn, { backgroundColor: theme.surfaceElevated, borderColor: theme.primary }]}
-              >
-                <Text style={[styles.nextShotBtnText, { color: theme.primary }]}>
-                  ⚡ Next AI Shot
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => acknowledgeSuggestion(activeSuggestion.id)}
-                style={[
-                  styles.ackBtn,
-                  { backgroundColor: activeSuggestion.acknowledged ? theme.palette.tallyPreview : theme.primary },
-                ]}
-              >
-                <Text style={styles.ackBtnText}>
-                  {activeSuggestion.acknowledged ? '✓ ACKNOWLEDGED' : 'ACKNOWLEDGE CUE'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.emptyStateContainer}>
-            <Text style={[styles.dimText, { color: theme.textMuted, fontSize: 14 }]}>
-              Initializing automated AI shot cues for {settings.eventType} ({settings.cameraRole || 'Roving Stage'})...
-            </Text>
+            )}
             <TouchableOpacity
-              onPress={triggerNextAiShot}
-              style={[styles.generateInitialBtn, { backgroundColor: theme.primary }]}
+              testID="btn-open-join-modal"
+              style={[
+                styles.pairingJoinBtn,
+                { backgroundColor: discoveredLanRoom ? '#10B981' : theme.primary },
+              ]}
+              onPress={() => {
+                setAutoSelectDiscovered(Boolean(discoveredLanRoom));
+                setShowJoinModal(true);
+              }}
+              activeOpacity={0.8}
             >
-              <Text style={styles.generateInitialBtnText}>⚡ Throw AI Shot Now</Text>
+              <Text style={styles.pairingJoinBtnText}>
+                {discoveredLanRoom
+                  ? `🔒 JOIN "${discoveredLanRoom.productionName.toUpperCase()}" (ENTER PIN)`
+                  : 'SCAN QR / JOIN ROOM'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
-      </View>
 
-      {/* Join Production Room Modal */}
+        {/* Hero Tally Indicator Card */}
+        <TallyIndicator
+          mode="card"
+          tallyState={tallyState}
+          cameraId={settings.cameraId}
+          callsign={settings.callsign || settings.cameraRole || 'Stage Left'}
+          activeShotTitle={activeSuggestion?.title}
+          onToggleFullscreen={() => setLocalImmersive(true)}
+        />
+
+        {/* Director Cue Card */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder }]}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardHeaderTitle}>AI Director Cue</Text>
+            <View style={styles.timerBadge}>
+              <Text style={styles.timerBadgeText}>{formattedCountdown}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.cueInstructions}>
+            {activeSuggestion?.description || 'Pan slowly left.\nPrepare drummer close-up.'}
+          </Text>
+
+          {/* Audio Speech Waveform Visualizer */}
+          <View style={styles.waveformContainer}>
+            <View style={styles.waveBarGroup}>
+              {[6, 12, 18, 10, 22, 16, 26, 14, 20, 8, 16, 12, 24, 18, 10, 14, 20, 8].map((h, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.waveBar,
+                    { height: h, backgroundColor: isPlayingAudio ? theme.primary : '#D1D5DB' },
+                  ]}
+                />
+              ))}
+            </View>
+
+            <TouchableOpacity
+              testID="btn-replay-cue"
+              style={[styles.waveformPlayBtn, { backgroundColor: '#21232B' }]}
+              onPress={handlePlayVoice}
+              activeOpacity={0.8}
+            >
+              <Icon name="play" size={14} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Acknowledge CTA Button */}
+          <TouchableOpacity
+            testID="btn-acknowledge"
+            style={[styles.acknowledgeButton, { backgroundColor: theme.primary }]}
+            onPress={() => acknowledgeSuggestion(activeSuggestion?.id || 'cue-1')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.ackBtnContent}>
+              <Text style={styles.ackCheckmark}>✓</Text>
+              <Text style={styles.acknowledgeButtonText}>ACKNOWLEDGE</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Next Shot Card */}
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder }]}>
+          <Text style={styles.cardHeaderTitle}>Next Shot</Text>
+
+          <View style={styles.nextShotPreviewRow}>
+            <Image
+              source={{
+                uri: activeSuggestion?.thumbnail ||
+                  'https://images.unsplash.com/photo-1519892300165-cb5542fb47c7?w=150&auto=format&fit=crop&q=80',
+              }}
+              style={styles.nextShotThumb}
+            />
+            <View style={styles.nextShotTextWrap}>
+              <View style={styles.nextShotTitleRow}>
+                <Text style={styles.nextShotTitle}>
+                  {activeSuggestion?.title || 'Drummer Close-Up'}
+                </Text>
+                <Text style={styles.nextShotTimer}>00:08</Text>
+              </View>
+              <Text style={styles.nextShotSubtext}>Tight CU · Slow Push</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.framingRefBtn, { backgroundColor: '#21232B', borderColor: theme.surfaceBorder }]}
+            onPress={handleViewFraming}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.framingRefBtnText}>View Framing Reference  →</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      {/* Join Room Modal */}
       <JoinRoomModal
         visible={showJoinModal}
-        onClose={() => setShowJoinModal(false)}
+        onClose={() => {
+          setShowJoinModal(false);
+          setAutoSelectDiscovered(false);
+        }}
+        autoSelectDiscovered={autoSelectDiscovered}
       />
-    </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  fullscreenWrapper: { flex: 1 },
-  content: { padding: 16, paddingBottom: 70 },
+  safeArea: {
+    flex: 1,
+  },
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  topHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  menuBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E2026',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  topHeaderTextWrap: {
+    justifyContent: 'center',
+  },
+  topStudioName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  topCamName: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 1,
+  },
+  topHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  connectionIndicatorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 12,
+  },
+  profileBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E2026',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  container: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 36,
+  },
+  fullscreenWrapper: {
+    flex: 1,
+  },
   reminderBanner: {
     padding: 12,
-    borderRadius: 24,
-    marginBottom: 16,
+    borderRadius: 12,
+    marginBottom: 12,
   },
   reminderHeader: {
-    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: 2,
+    fontWeight: '800',
+    color: '#0B0C0E',
+    letterSpacing: 0.5,
   },
   reminderBody: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
+    color: '#0B0C0E',
     fontWeight: '600',
+    marginTop: 2,
   },
   gradeCard: {
     padding: 12,
-    borderRadius: 24,
-    borderWidth: 0,
-    marginBottom: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
   },
   gradeBadge: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: 2,
+    fontSize: 12,
+    fontWeight: '800',
   },
   gradeFeedback: {
-    fontSize: 14,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  pairingCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+  },
+  pairingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pairingTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pairingSubtitle: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  pairingJoinBtn: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  pairingJoinBtnText: {
+    color: '#0B0C0E',
+    fontSize: 12,
+    fontWeight: '800',
   },
   card: {
-    padding: 16,
-    borderRadius: 24,
-    marginTop: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 16,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -388,218 +505,128 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  roleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  cardHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#D1D5DB',
+  },
+  timerBadge: {
+    backgroundColor: '#262830',
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 12,
   },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
+  timerBadgeText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
-  roleBadgeText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 0.8,
-  },
-  aiTagBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  aiTagText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.8,
-  },
-  cueContainer: {
-    marginTop: 6,
-  },
-  cueTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-    gap: 8,
-  },
-  cueTitle: {
+  cueInstructions: {
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    lineHeight: 22,
+    marginBottom: 14,
   },
-  favStarBtn: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  favStarText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  cueDesc: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  voiceBanner: {
-    padding: 12,
-    borderRadius: 16,
-    marginTop: 10,
-  },
-  voiceHeaderRow: {
+  waveformContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  voiceHeader: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.8,
-  },
-  voicePlayBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  voicePlayBtnText: {
-    color: '#000000',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  voiceScript: {
-    fontSize: 13,
-    fontStyle: 'italic',
-    lineHeight: 18,
-    marginTop: 2,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginTop: 12,
-  },
-  nextShotBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  nextShotBtnText: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  ackBtn: {
-    flex: 1.2,
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ackBtnText: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  emptyStateContainer: {
-    minHeight: 140,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  dimText: {
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  generateInitialBtn: {
-    marginTop: 12,
-    paddingHorizontal: 20,
+    backgroundColor: '#0F1014',
+    borderRadius: 14,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 16,
-  },
-  generateInitialBtnText: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  pairingCard: {
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1.5,
     marginBottom: 16,
   },
-  pairingHeaderRow: {
+  waveBarGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    gap: 3,
+    flex: 1,
   },
-  pairingAlertIcon: {
-    fontSize: 24,
-    marginRight: 10,
+  waveBar: {
+    width: 3,
+    borderRadius: 1.5,
   },
-  pairingTitle: {
+  waveformPlayBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
+  acknowledgeButton: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ackBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ackCheckmark: {
+    color: '#0B0C0E',
+    fontSize: 16,
+    fontWeight: '900',
+    marginRight: 6,
+  },
+  acknowledgeButtonText: {
+    color: '#0B0C0E',
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  pairingSubtitle: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  pairingJoinBtn: {
-    paddingVertical: 12,
-    borderRadius: 10,
+  nextShotPreviewRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: 12,
+    marginBottom: 16,
   },
-  pairingJoinBtnText: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  nextShotThumb: {
+    width: 68,
+    height: 68,
+    borderRadius: 12,
+    backgroundColor: '#2A2D35',
   },
-  mediaCardContainer: {
-    height: 155,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    justifyContent: 'center',
+  nextShotTextWrap: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  nextShotTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    marginBottom: 8,
   },
-  videoBadge: {
+  nextShotTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  nextShotTimer: {
     fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    marginBottom: 12,
+    color: '#9CA3AF',
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
-  playVideoBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+  nextShotSubtext: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 3,
   },
-  playVideoText: {
-    color: '#000000',
+  framingRefBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  framingRefBtnText: {
+    color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: 'bold',
-  },
-  imageCardContainer: {
-    height: 155,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#000000',
-    marginBottom: 8,
-  },
-  storyboardImage: {
-    width: '100%',
-    height: '100%',
+    fontWeight: '600',
   },
 });
 

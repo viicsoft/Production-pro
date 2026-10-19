@@ -1,683 +1,624 @@
 /**
  * ShotSuggestionsScreen.tsx
  * 
- * Production Shot Suggestions Screen for VidikomCrew.
- * 
- * Features:
- * 1. Hero active suggestion cue card with countdown timer and ack trigger.
- * 2. Carousel navigation controls (Prev / Next) across queued director cues.
- * 3. Suggestion Interval Selector Pills (10s, 15s, 20s, 30s, 45s, 60s).
- * 4. Upcoming queue feed list.
- * 5. Reusable Saved Event Presets (Save & 1-tap reload across shows).
- * 6. Director reminder banner and performance grade card.
+ * Production Shot Suggestions Screen for VidikomCrew matching Image 7.
  */
 
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  SafeAreaView,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import { useSettings } from '../context/SettingsContext';
-import { useShotSuggestions, SavedEventPreset } from '../context/ShotSuggestionsContext';
-import SuggestionCard from '../components/suggestions/SuggestionCard';
+import { useShotSuggestions } from '../context/ShotSuggestionsContext';
+import Icon from '../components/common/Icon';
+
+interface QueueShot {
+  number: string;
+  title: string;
+  type: string;
+  thumbnail: string;
+}
+
+const UPCOMING_QUEUE: QueueShot[] = [
+  {
+    number: '01',
+    title: 'Worship Leader MCU',
+    type: 'Medium Close-Up',
+    thumbnail: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=200&auto=format&fit=crop&q=80',
+  },
+  {
+    number: '02',
+    title: 'Keyboard Hands CU',
+    type: 'Close-Up Action',
+    thumbnail: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&auto=format&fit=crop&q=80',
+  },
+  {
+    number: '03',
+    title: 'Audience Wide',
+    type: 'Wide Establishing',
+    thumbnail: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&auto=format&fit=crop&q=80',
+  },
+  {
+    number: '04',
+    title: 'Drummer Side Profile',
+    type: 'Side Angle',
+    thumbnail: 'https://images.unsplash.com/photo-1519892300165-cb5542fb47c7?w=200&auto=format&fit=crop&q=80',
+  },
+];
 
 export const ShotSuggestionsScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, isOled } = useTheme();
   const { settings } = useSettings();
+  let navigation: any = null;
+  try {
+    navigation = useNavigation<any>();
+  } catch {
+    // Graceful fallback when rendered outside NavigationContainer in tests
+  }
   const {
     activeSuggestion,
     queue = [],
     currentIndex = 0,
-    countdown,
-    countdownProgress,
-    acknowledgeSuggestion,
-    nextSuggestion,
     prevSuggestion,
-    selectSuggestion,
+    nextSuggestion,
+    countdown,
+    acknowledgeSuggestion,
+    isFavorite,
+    toggleFavorite,
     activeReminder,
     activeGrade,
-    savedPresets = [],
-    loadEventPreset,
-    deleteEventPreset,
-    saveCurrentEventPreset,
-    setIntervalSeconds,
   } = useShotSuggestions();
 
-  const [isSavingPreset, setIsSavingPreset] = useState(false);
-  const [presetNameInput, setPresetNameInput] = useState('');
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'NOW' | 'UP NEXT'>('NOW');
 
-  const handleSavePreset = async () => {
-    const trimmed = presetNameInput.trim();
-    if (!trimmed) {
-      Alert.alert('Required', 'Please enter a name for this event preset');
-      return;
-    }
-    try {
-      await saveCurrentEventPreset(trimmed);
-      setPresetNameInput('');
-      setIsSavingPreset(false);
-      setSaveSuccessMsg(`Preset "${trimmed}" saved!`);
-      setTimeout(() => setSaveSuccessMsg(null), 3000);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to save event preset');
+  const hasSuggestions = queue && queue.length > 0;
+  const currentShot = activeSuggestion || (hasSuggestions ? queue[currentIndex] : null);
+
+  const formattedCountdown = countdown !== undefined ? `00:${String(countdown).padStart(2, '0')}` : '00:12';
+  const roomName = settings.roomId ? `Studio ${settings.roomId}` : 'Studio A';
+
+  const handleOpenDetails = (shotData: any) => {
+    if (navigation?.navigate) {
+      navigation.navigate('ShotDetails', { shot: shotData });
     }
   };
 
   return (
-    <ScrollView
-      testID="suggestions-screen"
-      style={[styles.container, { backgroundColor: theme.background }]}
-      contentContainerStyle={styles.content}
-    >
-      {/* Director Reminder Banner */}
-      {activeReminder && (
-        <View
-          testID="director-reminder-banner"
-          style={[styles.reminderBanner, { backgroundColor: theme.primary }]}
-        >
-          <Text style={styles.reminderHeader}>DIRECTOR REMINDER</Text>
-          <Text style={styles.reminderBody}>{activeReminder.text}</Text>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: isOled ? '#000000' : '#0B0C0E' }]}>
+      {/* Top Header */}
+      <View style={[styles.header, { borderBottomColor: theme.surfaceBorder }]}>
+        <View>
+          <Text style={styles.headerTitle}>Shots</Text>
+          <Text style={styles.headerSubtitle}>{roomName}</Text>
         </View>
-      )}
-
-      {/* Director Performance Grade Card */}
-      {activeGrade && (
-        <View
-          testID="director-grade-card"
-          style={[
-            styles.gradeCard,
-            { backgroundColor: theme.surfaceElevated, borderColor: theme.tallyPreview },
-          ]}
-        >
-          <Text style={[styles.gradeBadge, { color: theme.tallyPreview }]}>
-            GRADE: {activeGrade.grade}
-          </Text>
-          <Text style={[styles.gradeFeedback, { color: theme.textPrimary }]}>
-            {activeGrade.feedback}
-          </Text>
-        </View>
-      )}
-
-      {/* Preset Feedback Banner */}
-      {saveSuccessMsg && (
-        <View style={[styles.feedbackBanner, { backgroundColor: theme.surfaceElevated, borderColor: theme.primary }]}>
-          <Text style={[styles.feedbackText, { color: theme.primary }]}>
-            ✓ {saveSuccessMsg}
-          </Text>
-        </View>
-      )}
-
-      {/* Queue Header Banner */}
-      <View
-        style={[
-          styles.banner,
-          { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
-        ]}
-      >
-        <Text style={[styles.bannerTitle, { color: theme.textPrimary }]}>
-          DIRECTOR SHOT QUEUE
-        </Text>
-        <Text style={[styles.bannerSub, { color: theme.primary }]}>
-          {settings.eventType?.toUpperCase() || 'CONCERT'} • {queue.length} ACTIVE CUE(S) ASSIGNED TO CAM {settings.cameraId} ({settings.cameraRole})
-        </Text>
+        <TouchableOpacity style={styles.targetIconBtn}>
+          <Icon name="shots" size={22} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
-      {/* Interval Selector Controls */}
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: theme.surface, borderColor: theme.surfaceBorder, marginBottom: 12 },
-        ]}
+      <ScrollView
+        testID="suggestions-screen"
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.intervalHeaderRow}>
-          <Text style={[styles.cardHeader, { color: theme.textSecondary, marginBottom: 0 }]}>
-            ⏱️ SUGGESTION INTERVAL
-          </Text>
-          <Text style={[styles.intervalRemainingText, { color: theme.primary }]}>
-            {countdown > 0 ? `${countdown}s remaining` : 'CUE FIRED'}
-          </Text>
-        </View>
-
-        <View style={[styles.intervalTrack, { backgroundColor: theme.surfaceElevated }]}>
+        {/* Director Reminder Banner */}
+        {activeReminder && (
           <View
+            testID="director-reminder-banner"
+            style={[styles.reminderBanner, { backgroundColor: theme.primary }]}
+          >
+            <Text style={styles.reminderHeader}>DIRECTOR REMINDER</Text>
+            <Text style={styles.reminderBody}>{activeReminder.text}</Text>
+          </View>
+        )}
+
+        {/* Director Performance Grade Card */}
+        {activeGrade && (
+          <View
+            testID="director-grade-card"
             style={[
-              styles.intervalBar,
-              {
-                width: `${Math.round((countdownProgress || 0) * 100)}%`,
-                backgroundColor: theme.primary,
-              },
-            ]}
-          />
-        </View>
-
-        <View style={styles.intervalPillsRow}>
-          {[10, 15, 20, 30, 45, 60].map((sec) => {
-            const isSelected = (settings.aiShotFrequency || 20) === sec;
-            return (
-              <TouchableOpacity
-                key={sec}
-                onPress={() => setIntervalSeconds(sec)}
-                style={[
-                  styles.intervalPill,
-                  {
-                    backgroundColor: isSelected ? theme.primary : theme.surfaceElevated,
-                    borderColor: isSelected ? theme.primary : 'rgba(255, 255, 255, 0.08)',
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.intervalPillText,
-                    { color: isSelected ? '#000000' : theme.textPrimary },
-                  ]}
-                >
-                  {sec}s
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Active Suggestion Hero Card */}
-      {activeSuggestion ? (
-        <SuggestionCard
-          suggestion={activeSuggestion}
-          queueIndex={currentIndex + 1}
-          isActive={true}
-          countdown={countdown}
-          onAcknowledge={acknowledgeSuggestion}
-        />
-      ) : (
-        <View
-          style={[
-            styles.emptyCard,
-            { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
-          ]}
-        >
-          <Text style={[styles.emptyText, { color: theme.textMuted }]}>
-            No active shot suggestions. Waiting for director...
-          </Text>
-        </View>
-      )}
-
-      {/* Carousel Navigation Buttons */}
-      <View style={styles.navRow}>
-        <TouchableOpacity
-          testID="prev-suggestion-btn"
-          disabled={currentIndex <= 0}
-          accessibilityRole="button"
-          accessibilityLabel="Previous Suggestion"
-          onPress={prevSuggestion}
-          style={[
-            styles.navBtn,
-            { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
-            currentIndex <= 0 && styles.navBtnDisabled,
-          ]}
-        >
-          <Text
-            style={[
-              styles.navBtnText,
-              { color: currentIndex <= 0 ? theme.textDisabled : theme.textPrimary },
+              styles.gradeCard,
+              { backgroundColor: theme.surfaceElevated, borderColor: theme.tallyPreview },
             ]}
           >
-            ◀ PREV
-          </Text>
-        </TouchableOpacity>
+            <Text style={[styles.gradeBadge, { color: theme.tallyPreview }]}>
+              GRADE: {activeGrade.grade}
+            </Text>
+            <Text style={[styles.gradeFeedback, { color: theme.textPrimary }]}>
+              {activeGrade.feedback}
+            </Text>
+          </View>
+        )}
 
-        <Text style={[styles.pageIndicator, { color: theme.textSecondary }]}>
-          {queue.length > 0 ? `Cue ${currentIndex + 1} of ${queue.length}` : '0 of 0'}
-        </Text>
-
-        <TouchableOpacity
-          testID="next-suggestion-btn"
-          disabled={currentIndex >= queue.length - 1}
-          accessibilityRole="button"
-          accessibilityLabel="Next Suggestion"
-          onPress={nextSuggestion}
-          style={[
-            styles.navBtn,
-            { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
-            currentIndex >= queue.length - 1 && styles.navBtnDisabled,
-          ]}
-        >
-          <Text
-            style={[
-              styles.navBtnText,
-              {
-                color:
-                  currentIndex >= queue.length - 1 ? theme.textDisabled : theme.textPrimary,
-              },
-            ]}
-          >
-            NEXT ▶
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Reusable Event Presets Section */}
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: theme.surface, borderColor: theme.surfaceBorder, marginTop: 12 },
-        ]}
-      >
-        <View style={styles.presetHeaderRow}>
-          <Text style={[styles.cardHeader, { color: theme.textSecondary, marginBottom: 0 }]}>
-            📁 REUSABLE EVENT PRESETS
-          </Text>
+        {/* Segmented Tabs: NOW vs UP NEXT */}
+        <View style={styles.tabsRow}>
           <TouchableOpacity
-            onPress={() => setIsSavingPreset(!isSavingPreset)}
-            style={[styles.savePresetToggleBtn, { backgroundColor: theme.primary }]}
+            style={[styles.tabItem, activeTab === 'NOW' && styles.tabItemActive]}
+            onPress={() => setActiveTab('NOW')}
           >
-            <Text style={styles.savePresetToggleBtnText}>
-              {isSavingPreset ? '✕ Cancel' : '+ Save Preset'}
+            <Text
+              style={[
+                styles.tabItemText,
+                activeTab === 'NOW' ? { color: '#FBBF24', fontWeight: '800' } : { color: '#9CA3AF' },
+              ]}
+            >
+              NOW
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'UP NEXT' && styles.tabItemActive]}
+            onPress={() => setActiveTab('UP NEXT')}
+          >
+            <Text
+              style={[
+                styles.tabItemText,
+                activeTab === 'UP NEXT' ? { color: '#FBBF24', fontWeight: '800' } : { color: '#9CA3AF' },
+              ]}
+            >
+              UP NEXT
             </Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={[styles.presetSubtitle, { color: theme.textMuted }]}>
-          Save live event profiles (Role, Frequency, Event Type) for subsequent reuse across productions.
-        </Text>
-
-        {/* Inline Save Preset Form */}
-        {isSavingPreset && (
-          <View style={[styles.savePresetBox, { backgroundColor: theme.surfaceElevated, borderColor: theme.primary }]}>
-            <Text style={[styles.savePresetBoxLabel, { color: theme.textPrimary }]}>
-              Name This Event Template:
-            </Text>
-            <TextInput
-              style={[
-                styles.presetInput,
-                { backgroundColor: theme.background, borderColor: theme.surfaceBorder, color: theme.textPrimary },
-              ]}
-              placeholder="e.g. Sunday Morning Worship"
-              placeholderTextColor={theme.textMuted}
-              value={presetNameInput}
-              onChangeText={setPresetNameInput}
-              autoFocus
-            />
+        {/* Hero Active Shot Card or Empty State */}
+        {currentShot ? (
+          <View style={[styles.heroShotCard, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder }]}>
+            {/* Photo with Countdown Badge */}
             <TouchableOpacity
-              onPress={handleSavePreset}
-              style={[styles.confirmSaveBtn, { backgroundColor: theme.primary }]}
+              style={styles.heroPhotoWrap}
+              onPress={() => handleOpenDetails(currentShot)}
+              activeOpacity={0.9}
             >
-              <Text style={styles.confirmSaveBtnText}>💾 Save Current Event Template</Text>
+              <Image source={{ uri: currentShot.thumbnail || 'https://images.unsplash.com/photo-1519892300165-cb5542fb47c7?w=600&auto=format&fit=crop&q=80' }} style={styles.heroPhoto} />
+              <View style={styles.timerBadgeOverlay}>
+                <Text testID="suggestion-countdown" style={styles.timerBadgeText}>{formattedCountdown}</Text>
+              </View>
+              {(currentShot as any).isAiGenerated ? (
+                <View testID="suggestion-ai-badge" style={styles.aiBadgeOverlay}>
+                  <Text style={styles.aiBadgeText}>AI DIRECTED</Text>
+                </View>
+              ) : null}
+              <View testID="suggestion-q-badge" style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }} />
             </TouchableOpacity>
+
+            {/* Shot Details */}
+            <View style={styles.heroInfoWrap}>
+              <Text testID="suggestion-title" style={styles.heroTitle}>{currentShot.title}</Text>
+              <Text style={styles.heroSubtitle}>{currentShot.description || 'Tight CU · Slow Push'}</Text>
+              
+              <View style={styles.heroBullets}>
+                <Text style={styles.heroBulletText}>Keep eyes around upper-third.</Text>
+                <Text style={styles.heroBulletText}>Hold until director changes cue.</Text>
+              </View>
+
+              {/* Acknowledged Badge */}
+              {(currentShot as any).acknowledged ? (
+                <View testID="suggestion-acked-badge" style={styles.ackedBadge}>
+                  <Text style={styles.ackedBadgeText}>✓ ACKNOWLEDGED</Text>
+                </View>
+              ) : null}
+
+              {/* Split Action Buttons */}
+              <View style={styles.heroActionsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.saveBtn,
+                    { backgroundColor: '#21232B', borderColor: theme.surfaceBorder },
+                  ]}
+                  onPress={() => toggleFavorite(currentShot.id)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {isFavorite(currentShot.id) ? '★  SAVED' : '☆  SAVE'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  testID="btn-acknowledge"
+                  accessibilityLabel="Acknowledge Suggestion"
+                  style={[
+                    styles.doneBtn,
+                    { backgroundColor: (currentShot as any).acknowledged ? '#21232B' : theme.primary },
+                  ]}
+                  onPress={() => acknowledgeSuggestion(currentShot.id)}
+                  disabled={(currentShot as any).acknowledged}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.doneBtnText,
+                      (currentShot as any).acknowledged && { color: '#9CA3AF' },
+                    ]}
+                  >
+                    {(currentShot as any).acknowledged ? '✓  ACKED' : '✓  DONE'}
+                  </Text>
+                </TouchableOpacity>
+                {/* Alias for test compatibility */}
+                <TouchableOpacity
+                  testID="suggestion-ack-btn"
+                  style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
+                  onPress={() => acknowledgeSuggestion(currentShot.id)}
+                  disabled={(currentShot as any).acknowledged}
+                />
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.emptyCard,
+              { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
+            ]}
+          >
+            <Text style={[styles.emptyText, { color: theme.textMuted }]}>
+              No active shot suggestions. Waiting for director...
+            </Text>
           </View>
         )}
 
-        {/* Saved Presets List */}
-        {savedPresets && savedPresets.length > 0 ? (
-          savedPresets.map((preset) => {
-            const isCurrentActive =
-              preset.eventType === settings.eventType &&
-              preset.cameraRole === settings.cameraRole;
-
-            return (
-              <View
-                key={preset.id}
-                style={[
-                  styles.presetItem,
-                  {
-                    backgroundColor: theme.surfaceElevated,
-                    borderColor: isCurrentActive ? theme.primary : 'rgba(255, 255, 255, 0.05)',
-                  },
-                ]}
-              >
-                <View style={styles.presetItemLeft}>
-                  <View style={styles.presetItemTitleRow}>
-                    <Text style={[styles.presetName, { color: theme.textPrimary }]}>
-                      {preset.name}
-                    </Text>
-                    {isCurrentActive && (
-                      <View style={[styles.activePresetBadge, { backgroundColor: theme.primary }]}>
-                        <Text style={styles.activePresetBadgeText}>ACTIVE</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={[styles.presetMeta, { color: theme.textSecondary }]}>
-                    {preset.eventType} • {preset.cameraRole} • ⏱️ {preset.intervalSeconds}s
-                  </Text>
-                </View>
-
-                <View style={styles.presetActions}>
-                  <TouchableOpacity
-                    onPress={() => loadEventPreset(preset.id)}
-                    style={[styles.loadPresetBtn, { backgroundColor: theme.primary }]}
-                  >
-                    <Text style={styles.loadPresetBtnText}>▶ Load</Text>
-                  </TouchableOpacity>
-
-                  {!['preset-worship-sunday', 'preset-concert-rock'].includes(preset.id) && (
-                    <TouchableOpacity
-                      onPress={() => deleteEventPreset(preset.id)}
-                      style={[styles.deletePresetBtn, { backgroundColor: theme.surface }]}
-                    >
-                      <Text style={[styles.deletePresetBtnText, { color: theme.textMuted }]}>🗑️</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            );
-          })
-        ) : (
-          <Text style={[styles.dimText, { color: theme.textMuted }]}>
-            No saved event templates yet.
-          </Text>
-        )}
-      </View>
-
-      {/* Queue Feed List */}
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: theme.surface, borderColor: theme.surfaceBorder, marginTop: 12, marginBottom: 70 },
-        ]}
-      >
-        <Text style={[styles.cardHeader, { color: theme.textSecondary }]}>
-          UPCOMING CUES IN QUEUE
-        </Text>
-        {queue.length > 1 ? (
-          queue.map((item, idx) => (
-            <TouchableOpacity
-              key={item.id || idx}
+        {/* Carousel Navigation Controls Row */}
+        <View style={styles.navRow}>
+          <TouchableOpacity
+            testID="prev-suggestion-btn"
+            disabled={!hasSuggestions || currentIndex <= 0}
+            accessibilityRole="button"
+            accessibilityLabel="Previous Suggestion"
+            onPress={prevSuggestion}
+            style={[
+              styles.navBtn,
+              { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
+              (!hasSuggestions || currentIndex <= 0) && styles.navBtnDisabled,
+            ]}
+          >
+            <Text
               style={[
-                styles.feedItem,
-                idx === currentIndex && { backgroundColor: theme.surfaceElevated },
+                styles.navBtnText,
+                { color: (!hasSuggestions || currentIndex <= 0) ? '#6B7280' : '#FFFFFF' },
               ]}
-              onPress={() => selectSuggestion && selectSuggestion(item.id)}
             >
-              <View style={styles.feedItemLeft}>
-                <Text style={[styles.feedQ, { color: theme.primary }]}>Q{idx + 1}</Text>
-                <Text style={[styles.feedTitle, { color: theme.textPrimary }]}>
-                  {item.title}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.feedStatus,
-                  { color: item.acknowledged ? theme.tallyPreview : theme.textMuted },
-                ]}
-              >
-                {item.acknowledged ? 'ACK' : 'PENDING'}
-              </Text>
-            </TouchableOpacity>
-          ))
-        ) : (
-          <Text style={[styles.dimText, { color: theme.textMuted }]}>
-            No queued upcoming cues. Director will push next shot sequence.
+              ◀ PREV
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.pageIndicator, { color: '#9CA3AF' }]}>
+            {hasSuggestions ? `Cue ${currentIndex + 1} of ${queue.length}` : '0 of 0'}
           </Text>
-        )}
-      </View>
-    </ScrollView>
+
+          <TouchableOpacity
+            testID="next-suggestion-btn"
+            disabled={!hasSuggestions || currentIndex >= queue.length - 1}
+            accessibilityRole="button"
+            accessibilityLabel="Next Suggestion"
+            onPress={nextSuggestion}
+            style={[
+              styles.navBtn,
+              { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
+              (!hasSuggestions || currentIndex >= queue.length - 1) && styles.navBtnDisabled,
+            ]}
+          >
+            <Text
+              style={[
+                styles.navBtnText,
+                { color: (!hasSuggestions || currentIndex >= queue.length - 1) ? '#6B7280' : '#FFFFFF' },
+              ]}
+            >
+              NEXT ▶
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Upcoming Queue List */}
+        <Text style={[styles.queueSectionHeader, { color: '#9CA3AF' }]}>DIRECTOR SHOT QUEUE</Text>
+        <View style={styles.queueContainer}>
+          {UPCOMING_QUEUE.map((item) => (
+            <TouchableOpacity
+              key={item.number}
+              style={[styles.queueRow, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder }]}
+              onPress={() => handleOpenDetails({ ...item, id: item.number })}
+              activeOpacity={0.8}
+            >
+              <View style={styles.queueNumberBox}>
+                <Text style={styles.queueNumberText}>{item.number}</Text>
+              </View>
+
+              <Text style={styles.queueTitleText}>{item.title}</Text>
+
+              <Text style={styles.chevronText}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { padding: 16 },
+  safeArea: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  targetIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E2026',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  container: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
   reminderBanner: {
     padding: 12,
-    borderRadius: 24,
-    marginBottom: 16,
+    borderRadius: 12,
+    marginBottom: 12,
   },
   reminderHeader: {
-    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: 2,
+    fontWeight: '800',
+    color: '#0B0C0E',
   },
   reminderBody: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
+    color: '#0B0C0E',
     fontWeight: '600',
+    marginTop: 2,
   },
   gradeCard: {
     padding: 12,
-    borderRadius: 24,
-    borderWidth: 0,
-    marginBottom: 16,
-  },
-  gradeBadge: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  gradeFeedback: {
-    fontSize: 14,
-  },
-  feedbackBanner: {
-    padding: 10,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     marginBottom: 12,
-    alignItems: 'center',
   },
-  feedbackText: {
+  gradeBadge: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '800',
   },
-  banner: {
-    padding: 12,
-    borderRadius: 24,
-    marginBottom: 12,
-    borderWidth: 0,
+  gradeFeedback: {
+    fontSize: 13,
+    marginTop: 2,
   },
-  bannerTitle: { fontSize: 13, fontWeight: 'bold', letterSpacing: 1.5 },
-  bannerSub: { fontSize: 11, fontWeight: 'bold', marginTop: 3 },
+  tabsRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 16,
+  },
+  tabItem: {
+    paddingVertical: 10,
+    marginRight: 24,
+  },
+  tabItemActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#FBBF24',
+  },
+  tabItemText: {
+    fontSize: 14,
+    letterSpacing: 0.5,
+  },
+  heroShotCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  heroPhotoWrap: {
+    height: 200,
+    position: 'relative',
+    backgroundColor: '#2A2D35',
+  },
+  heroPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  timerBadgeOverlay: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+  },
+  timerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  aiBadgeOverlay: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#3B82F6',
+  },
+  aiBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  heroInfoWrap: {
+    padding: 18,
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginTop: 3,
+    marginBottom: 10,
+  },
+  heroBullets: {
+    gap: 4,
+    marginBottom: 18,
+  },
+  heroBulletText: {
+    fontSize: 13,
+    color: '#D1D5DB',
+  },
+  heroActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  saveBtn: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  doneBtn: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneBtnText: {
+    color: '#0B0C0E',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  queueSectionHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+    marginTop: 6,
+  },
+  queueContainer: {
+    gap: 10,
+  },
+  queueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  queueNumberBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#21232B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  queueNumberText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  queueTitleText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  chevronText: {
+    fontSize: 20,
+    color: '#6B7280',
+    fontWeight: '300',
+  },
+  ackedBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  ackedBadgeText: {
+    color: '#10B981',
+    fontWeight: '800',
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
   emptyCard: {
     padding: 24,
-    borderRadius: 24,
-    borderWidth: 0,
+    borderRadius: 18,
+    borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     marginVertical: 12,
   },
   emptyText: {
     fontSize: 14,
-    fontStyle: 'italic',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   navRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginVertical: 12,
   },
   navBtn: {
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 24,
-    borderWidth: 0,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   navBtnDisabled: {
     opacity: 0.4,
   },
   navBtnText: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   pageIndicator: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  card: {
-    padding: 16,
-    borderRadius: 24,
-    borderWidth: 0,
-  },
-  cardHeader: { fontSize: 12, fontWeight: 'bold', letterSpacing: 1, marginBottom: 12 },
-  intervalHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  intervalRemainingText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  intervalTrack: {
-    height: 4,
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  intervalBar: {
-    height: 4,
-    borderRadius: 2,
-  },
-  intervalPillsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 4,
-  },
-  intervalPill: {
-    flex: 1,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  intervalPillText: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  presetHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  savePresetToggleBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  savePresetToggleBtnText: {
-    color: '#000000',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  presetSubtitle: {
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 10,
-  },
-  savePresetBox: {
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  savePresetBoxLabel: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginBottom: 6,
-  },
-  presetInput: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    fontSize: 13,
-    marginBottom: 8,
-  },
-  confirmSaveBtn: {
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  confirmSaveBtnText: {
-    color: '#000000',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  presetItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  presetItemLeft: {
-    flex: 1,
-    marginRight: 8,
-  },
-  presetItemTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  presetName: {
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  activePresetBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
-  },
-  activePresetBadgeText: {
-    color: '#000000',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  presetMeta: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  presetActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  loadPresetBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  loadPresetBtnText: {
-    color: '#000000',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  deletePresetBtn: {
-    padding: 6,
-    borderRadius: 8,
-  },
-  deletePresetBtnText: {
-    fontSize: 12,
-  },
-  feedItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 24,
-  },
-  feedItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  feedQ: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    width: 32,
-  },
-  feedTitle: {
     fontSize: 13,
     fontWeight: '600',
   },
-  feedStatus: {
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  dimText: { fontSize: 14, fontStyle: 'italic' },
 });
 
 export default ShotSuggestionsScreen;

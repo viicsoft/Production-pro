@@ -196,6 +196,7 @@ namespace AtemDirector.Tests
             public double LastVolume { get; private set; }
 
             public event Action<string, long, double?, bool?, bool?>? HardwareStateChanged;
+        public event EventHandler<Desktop.HardwareAbstraction.AudioMeterState>? MeterChanged;
             public event Action<string, long, bool?, EqBandUpdate?>? HardwareEqStateChanged;
 
             public bool SupportsCapability(AudioCapability capability) => true;
@@ -233,3 +234,4 @@ namespace AtemDirector.Tests
         }
     }
 }
+

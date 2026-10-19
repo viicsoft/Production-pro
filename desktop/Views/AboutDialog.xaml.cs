@@ -67,7 +67,7 @@ public partial class AboutDialog : Window
     public static string GetSystemDiagnosticsReport()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("# CuePilot Atem Software Control — Diagnostics Report");
+        sb.AppendLine("# CuePilot Atem Software Control - Diagnostics Report");
         sb.AppendLine($"Timestamp: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         sb.AppendLine($"Runtime Framework: {RuntimeInformation.FrameworkDescription} (.NET)");
         sb.AppendLine($"Operating System: {RuntimeInformation.OSDescription} ({Environment.OSVersion.Platform})");
@@ -225,7 +225,7 @@ public partial class AboutDialog : Window
         {
             var searchDirs = new List<string>
             {
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vidikom", "logs"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs"),
                 Environment.CurrentDirectory
             };
@@ -296,3 +296,5 @@ public partial class AboutDialog : Window
         Close();
     }
 }
+
+

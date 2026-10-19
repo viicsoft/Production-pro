@@ -8,6 +8,7 @@ export interface ForegroundServiceBridge {
   stopService(): Promise<boolean>;
   updateNotification(title: string, message: string): Promise<boolean>;
   isServiceRunning(): Promise<boolean>;
+  discoverLanDirector?(hintIp?: string): Promise<any | null>;
 }
 
 /**
@@ -73,7 +74,9 @@ class ForegroundServiceWrapper implements ForegroundServiceBridge {
   ): Promise<boolean> {
     const module = this.nativeModule;
     if (!module) {
-      console.warn('[ForegroundService] IntercomService native module is not available');
+      if (Platform.OS === 'android') {
+        console.warn('[ForegroundService] IntercomService native module is not available');
+      }
       return false;
     }
 
@@ -94,7 +97,9 @@ class ForegroundServiceWrapper implements ForegroundServiceBridge {
   async updateNotification(title: string, message: string): Promise<boolean> {
     const module = this.nativeModule;
     if (!module) {
-      console.warn('[ForegroundService] IntercomService native module is not available');
+      if (Platform.OS === 'android') {
+        console.warn('[ForegroundService] IntercomService native module is not available');
+      }
       return false;
     }
 
@@ -113,7 +118,9 @@ class ForegroundServiceWrapper implements ForegroundServiceBridge {
   async stopService(): Promise<boolean> {
     const module = this.nativeModule;
     if (!module) {
-      console.warn('[ForegroundService] IntercomService native module is not available');
+      if (Platform.OS === 'android') {
+        console.warn('[ForegroundService] IntercomService native module is not available');
+      }
       return false;
     }
 
@@ -169,6 +176,65 @@ class ForegroundServiceWrapper implements ForegroundServiceBridge {
       console.error('[ForegroundService] Failed to set speakerphone:', error);
       return false;
     }
+  }
+
+  /**
+   * Discovers an active Vidikom Desktop Director on the local network using
+   * UDP broadcast beacon + native parallel /24 subnet HTTP probe (or HTTP fallback on iOS).
+   */
+  async discoverLanDirector(hintIp?: string): Promise<any | null> {
+    const module = this.nativeModule;
+    if (module && typeof module.discoverLanDirector === 'function') {
+      try {
+        const result = await module.discoverLanDirector(hintIp || '');
+        if (result) return result;
+      } catch (error) {
+        console.warn('[ForegroundService] LAN discovery failed:', error);
+      }
+    }
+
+    const proc = (globalThis as any).process;
+    const isTest = typeof proc !== 'undefined' && proc.env?.NODE_ENV === 'test';
+    if (isTest) {
+      return null;
+    }
+
+    // Fallback HTTP/HTTPS probe for iOS / Expo Go (checks Switcher tunnel & LAN IP)
+    const candidates = [
+      { host: 'vidikom-switcher-8080.exp.direct', url: 'https://vidikom-switcher-8080.exp.direct/api/room/active', port: 8080 },
+      { host: '192.168.1.3', url: 'http://192.168.1.3:8080/api/room/active', port: 8080 },
+    ];
+    if (hintIp && hintIp !== '192.168.1.3' && hintIp !== 'vidikom-switcher-8080.exp.direct' && hintIp !== '192.168.1.100') {
+      const cleanHint = hintIp.replace(/^(https?:\/\/|wss?:\/\/)/i, '').replace(/\/+$/, '');
+      const isTunnel = cleanHint.endsWith('.exp.direct');
+      candidates.unshift({
+        host: cleanHint,
+        url: `${isTunnel ? 'https' : 'http'}://${cleanHint}${isTunnel ? '' : ':8080'}/api/room/active`,
+        port: 8080,
+      });
+    }
+
+    for (const c of candidates) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(c.url, { signal: controller.signal });
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.active && data.roomId) {
+            return {
+              ...data,
+              serverIp: c.host,
+              directorPort: c.port,
+              voicePort: c.port,
+            };
+          }
+        }
+      } catch {}
+    }
+
+    return null;
   }
 
   /**

@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.FileProviders;
 using Core;
 using Jose;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
 
@@ -21,7 +23,9 @@ namespace Desktop
     {
         private WebApplication? _app;
         private readonly ConcurrentDictionary<Guid, WebSocket> _clients = new();
+        private static readonly ConditionalWeakTable<WebSocket, SemaphoreSlim> _sendLocks = new();
         private WebSocket? _directorIntercomWs;
+        private volatile string? _lastTallyJson;
         
         // Track local and remote cameras
         private readonly ConcurrentDictionary<Guid, string> _clientCameras = new();
@@ -34,26 +38,312 @@ namespace Desktop
 
         public static PwaServer Instance { get; } = new PwaServer();
 
+        public Guid ServerInstanceId { get; } = Guid.NewGuid();
+        public int ActivePort { get; private set; } = 8080;
         public string PinCode { get; private set; } = "0000";
 
         public Func<IEnumerable<object>>? GetActiveInputs { get; set; }
         public Action<string, long>? OnControlSwitch { get; set; }
+        public Func<string, long, double?, bool?, string?, Task>? OnExtendedSwitchCommand { get; set; }
+        public Func<string>? GetTransitionStyle { get; set; }
+        public Func<int>? GetTransitionRateMs { get; set; }
+        public Func<double>? GetTransitionPosition { get; set; }
         public Action<long, double?, bool?, bool?>? OnAudioControl { get; set; }
         public Action<string, bool>? OnAudioGroupTrigger { get; set; }
         public Action<string>? OnAudioGroupConfig { get; set; }
         public Func<Task<object>>? GetAudioStateAsync { get; set; }
 
+        public string GetCurrentLanIp() => GetLocalIpAddress();
+
+        private CancellationTokenSource? _udpBeaconCts;
+        public const int LanDiscoveryUdpPort = 41234;
+
         private PwaServer() { }
+
+        private static async Task SafeSendAsync(WebSocket? ws, ArraySegment<byte> payload, CancellationToken ct = default)
+        {
+            if (ws == null || ws.State != WebSocketState.Open) return;
+            var sem = _sendLocks.GetValue(ws, _ => new SemaphoreSlim(1, 1));
+            bool acquired = false;
+            try
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
+                await sem.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+                acquired = true;
+                if (ws.State == WebSocketState.Open)
+                {
+                    await ws.SendAsync(payload, WebSocketMessageType.Text, true, timeoutCts.Token).ConfigureAwait(false);
+                }
+            }
+            catch
+            {
+                // Ignore closed/aborted/timed-out socket
+            }
+            finally
+            {
+                if (acquired)
+                {
+                    try { sem.Release(); } catch { }
+                }
+            }
+        }
+
+        private static Task SafeSendTextAsync(WebSocket? ws, string json, CancellationToken ct = default)
+        {
+            if (ws == null || ws.State != WebSocketState.Open) return Task.CompletedTask;
+            var bytes = Encoding.UTF8.GetBytes(json);
+            return SafeSendAsync(ws, new ArraySegment<byte>(bytes), ct);
+        }
+
+        private static async Task<(WebSocketMessageType MessageType, string Text)> ReceiveFullTextAsync(WebSocket ws, byte[] buffer, CancellationToken ct)
+        {
+            var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                return (WebSocketMessageType.Close, string.Empty);
+            }
+            if (result.EndOfMessage)
+            {
+                return (result.MessageType, Encoding.UTF8.GetString(buffer, 0, result.Count));
+            }
+
+            using var ms = new System.IO.MemoryStream();
+            ms.Write(buffer, 0, result.Count);
+            while (!result.EndOfMessage)
+            {
+                result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct).ConfigureAwait(false);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    return (WebSocketMessageType.Close, string.Empty);
+                }
+                ms.Write(buffer, 0, result.Count);
+            }
+            return (result.MessageType, Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length));
+        }
+
+        private static bool IsLanIpAddress(System.Net.IPAddress? ip)
+        {
+            if (ip == null) return false;
+            if (System.Net.IPAddress.IsLoopback(ip)) return true;
+            if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                var bytes = ip.GetAddressBytes();
+                // 10.x.x.x, 127.x.x.x, 192.168.x.x, 169.254.x.x, 172.16.x.x - 172.31.x.x
+                if (bytes[0] == 10 || bytes[0] == 127) return true;
+                if (bytes[0] == 192 && bytes[1] == 168) return true;
+                if (bytes[0] == 169 && bytes[1] == 254) return true;
+                if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
+            }
+            return false;
+        }
+
+        private static bool IsLanConnection(HttpContext context)
+        {
+            return IsLanIpAddress(context.Connection.RemoteIpAddress) || IsLanIpAddress(context.Connection.LocalIpAddress);
+        }
+
+        private string ResolveLanIpForContext(HttpContext? context = null)
+        {
+            try
+            {
+                var localAddr = context?.Connection.LocalIpAddress;
+                if (localAddr != null)
+                {
+                    if (localAddr.IsIPv4MappedToIPv6) localAddr = localAddr.MapToIPv4();
+                    if (localAddr.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+                        !System.Net.IPAddress.IsLoopback(localAddr))
+                    {
+                        var str = localAddr.ToString();
+                        if (!str.StartsWith("127.") && !str.StartsWith("169.254."))
+                        {
+                            return str;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return GetLocalIpAddress();
+        }
+
+        private void StartLanUdpBeacon(int port)
+        {
+            try
+            {
+                _udpBeaconCts?.Cancel();
+                _udpBeaconCts = new CancellationTokenSource();
+                var token = _udpBeaconCts.Token;
+
+                _ = Task.Run(async () =>
+                {
+                    using var udp = new System.Net.Sockets.UdpClient();
+                    try
+                    {
+                        udp.Client.SetSocketOption(System.Net.Sockets.SocketOptionLevel.Socket, System.Net.Sockets.SocketOptionName.ReuseAddress, true);
+                        udp.Client.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Any, LanDiscoveryUdpPort));
+                        udp.EnableBroadcast = true;
+                    }
+                    catch
+                    {
+                        return;
+                    }
+
+                    // Listener task for immediate DISCOVER_VIDIKOM and DISCOVER_VIDIKOM_PIN:<pin> unicast replies
+                    _ = Task.Run(async () =>
+                    {
+                        while (!token.IsCancellationRequested)
+                        {
+                            try
+                            {
+                                var recv = await udp.ReceiveAsync(token);
+                                var msg = Encoding.UTF8.GetString(recv.Buffer).Trim();
+                                if (msg.StartsWith("DISCOVER_VIDIKOM_PIN:", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    var reqPin = msg.Substring("DISCOVER_VIDIKOM_PIN:".Length).Trim();
+                                    var activeRoom = RoomManager.ActiveRoom;
+                                    if (activeRoom != null && !string.IsNullOrEmpty(reqPin) && (
+                                        string.Equals(activeRoom.Pin?.Trim(), reqPin, StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(activeRoom.ControlCode?.Trim(), reqPin, StringComparison.OrdinalIgnoreCase) ||
+                                        string.Equals(PinCode, reqPin, StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        var payloadBytes = BuildLanBeaconBytes(port, pinMatched: true);
+                                        if (payloadBytes != null)
+                                        {
+                                            await udp.SendAsync(payloadBytes, payloadBytes.Length, recv.RemoteEndPoint);
+                                        }
+                                    }
+                                }
+                                else if (msg.Contains("DISCOVER_VIDIKOM", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    var payloadBytes = BuildLanBeaconBytes(port, pinMatched: false);
+                                    if (payloadBytes != null)
+                                    {
+                                        await udp.SendAsync(payloadBytes, payloadBytes.Length, recv.RemoteEndPoint);
+                                    }
+                                }
+                            }
+                            catch (OperationCanceledException) { break; }
+                            catch { await Task.Delay(200, token); }
+                        }
+                    }, token);
+
+                    // Periodic broadcast task every 2 seconds across all active LAN subnets
+                    while (!token.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            var payloadBytes = BuildLanBeaconBytes(port);
+                            if (payloadBytes != null)
+                            {
+                                try
+                                {
+                                    await udp.SendAsync(payloadBytes, payloadBytes.Length, new System.Net.IPEndPoint(System.Net.IPAddress.Broadcast, LanDiscoveryUdpPort));
+                                }
+                                catch { }
+
+                                var lanIp = GetLocalIpAddress();
+                                var parts = lanIp.Split('.');
+                                if (parts.Length == 4 && parts[0] != "127")
+                                {
+                                    if (System.Net.IPAddress.TryParse($"{parts[0]}.{parts[1]}.{parts[2]}.255", out var subnetBcast))
+                                    {
+                                        try
+                                        {
+                                            await udp.SendAsync(payloadBytes, payloadBytes.Length, new System.Net.IPEndPoint(subnetBcast, LanDiscoveryUdpPort));
+                                        }
+                                        catch { }
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+
+                        try { await Task.Delay(2000, token); } catch { break; }
+                    }
+                }, token);
+            }
+            catch { }
+        }
+
+        private byte[]? BuildLanBeaconBytes(int port, bool pinMatched = false)
+        {
+            try
+            {
+                if (RoomManager.ActiveRoom == null) RoomManager.EnsureActiveRoom();
+                var activeRoom = RoomManager.ActiveRoom;
+                if (activeRoom == null) return null;
+                var lanIp = GetLocalIpAddress();
+                var json = JsonSerializer.Serialize(new
+                {
+                    service = "vidikom-intercom",
+                    active = true,
+                    instanceId = ServerInstanceId.ToString(),
+                    pinMatched,
+                    roomId = activeRoom.RoomId,
+                    requiresPin = !string.IsNullOrEmpty(activeRoom.Pin),
+                    productionName = activeRoom.ProductionName,
+                    directorName = activeRoom.DirectorName,
+                    networkMode = "LAN",
+                    isCloudRelay = false,
+                    serverIp = lanIp,
+                    directorPort = port,
+                    voicePort = port,
+                    voiceServer = $"{lanIp}:{port}"
+                });
+                return Encoding.UTF8.GetBytes(json);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsPortAvailable(int testPort)
+        {
+            try
+            {
+                var props = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties();
+                if (props.GetActiveTcpListeners().Any(ep => ep.Port == testPort))
+                    return false;
+
+                using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, testPort);
+                listener.Server.ExclusiveAddressUse = true;
+                listener.Start();
+                listener.Stop();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         public async Task StartAsync(int port = 8080)
         {
             PinCode = new Random().Next(1000, 9999).ToString();
+            if (!IsPortAvailable(port))
+            {
+                for (int candidate = 8081; candidate <= 8095; candidate++)
+                {
+                    if (IsPortAvailable(candidate))
+                    {
+                        port = candidate;
+                        break;
+                    }
+                }
+            }
+            ActivePort = port;
+
             var builder = WebApplication.CreateBuilder();
             builder.Environment.WebRootPath = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
             builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
             _app = builder.Build();
 
-            _app.UseWebSockets();
+            _app.UseWebSockets(new WebSocketOptions
+            {
+                KeepAliveInterval = TimeSpan.FromSeconds(10)
+            });
             
             var wwwroot = System.IO.Path.Combine(AppContext.BaseDirectory, "wwwroot");
             if (System.IO.Directory.Exists(wwwroot))
@@ -87,7 +377,7 @@ namespace Desktop
                 
                 var payload = new Dictionary<string, object>()
                 {
-                    { "exp", DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeSeconds() },
+                    { "exp", DateTimeOffset.UtcNow.AddDays(30).ToUnixTimeSeconds() },
                     { "iss", "devkey" },
                     { "nbf", DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds() },
                     { "sub", identity },
@@ -104,32 +394,57 @@ namespace Desktop
                 return Results.Ok(new { token });
             });
 
-            _app.MapGet("/api/room/active", () =>
+            _app.MapGet("/api/room/active", (HttpContext context) =>
             {
+                if (RoomManager.ActiveRoom == null)
+                {
+                    RoomManager.EnsureActiveRoom();
+                }
                 var activeRoom = RoomManager.ActiveRoom;
                 if (activeRoom != null)
                 {
-                    var isCloud = activeRoom.NetworkMode == NetworkMode.Online;
-                    var isHybrid = activeRoom.NetworkMode == NetworkMode.Hybrid;
+                    var lanIp = ResolveLanIpForContext(context);
+                    var isLanCaller = IsLanConnection(context);
+                    var isCloud = !isLanCaller && activeRoom.NetworkMode == NetworkMode.Online;
+                    var isHybrid = !isLanCaller && activeRoom.NetworkMode == NetworkMode.Hybrid;
+
                     return Results.Ok(new
                     {
                         active = true,
+                        instanceId = ServerInstanceId.ToString(),
                         roomId = activeRoom.RoomId,
-                        pin = activeRoom.Pin,
+                        requiresPin = !string.IsNullOrEmpty(activeRoom.Pin),
                         productionName = activeRoom.ProductionName,
                         directorName = activeRoom.DirectorName,
-                        networkMode = activeRoom.NetworkMode.ToString(),
+                        networkMode = isLanCaller ? "LAN" : activeRoom.NetworkMode.ToString(),
                         isCloudRelay = isCloud || isHybrid,
-                        voiceServer = (isCloud || isHybrid) ? "CuePilot.app" : "127.0.0.1:8080",
-                        serverIp = isCloud ? "CuePilot.app" : null,
+                        directorPort = port,
+                        voicePort = port,
+                        voiceServer = (isCloud || isHybrid) ? "vidikom.app" : $"{lanIp}:{port}",
+                        serverIp = isCloud ? "vidikom.app" : lanIp,
                         relayUrl = activeRoom.RelayUrl
                     });
                 }
                 return Results.Json(new { active = false, message = "No active production room." }, statusCode: 404);
             });
 
-            _app.MapGet("/api/room/validate", (string roomId, string pin) =>
+            _app.MapGet("/api/relay-room/{roomId}", (string roomId) =>
             {
+                var activeRoom = RoomManager.ActiveRoom;
+                var cleanRoomId = roomId?.Replace(" ", "").Trim();
+                if (activeRoom != null && string.Equals(activeRoom.RoomId?.Replace(" ", "").Trim(), cleanRoomId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.Ok(new { exists = true, productionName = activeRoom.ProductionName });
+                }
+                return Results.Ok(new { exists = false });
+            });
+
+            _app.MapGet("/api/room/validate", (HttpContext context, string roomId, string pin) =>
+            {
+                if (RoomManager.ActiveRoom == null)
+                {
+                    RoomManager.EnsureActiveRoom();
+                }
                 var activeRoom = RoomManager.ActiveRoom;
                 var cleanRoomId = roomId?.Replace(" ", "").Trim();
                 var cleanPin = pin?.Trim();
@@ -137,13 +452,65 @@ namespace Desktop
                 {
                     var expectedRoomId = activeRoom.RoomId?.Replace(" ", "").Trim();
                     var expectedPin = activeRoom.Pin?.Trim();
-                    if (string.Equals(expectedRoomId, cleanRoomId, StringComparison.OrdinalIgnoreCase) &&
-                        string.Equals(expectedPin, cleanPin, StringComparison.OrdinalIgnoreCase))
+                    var expectedControlCode = activeRoom.ControlCode?.Trim();
+                    bool roomMatch = string.IsNullOrEmpty(cleanRoomId) || string.Equals(expectedRoomId, cleanRoomId, StringComparison.OrdinalIgnoreCase);
+                    bool pinMatch = string.Equals(expectedPin, cleanPin, StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(expectedControlCode, cleanPin, StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(PinCode, cleanPin, StringComparison.OrdinalIgnoreCase);
+                    if (roomMatch && pinMatch)
                     {
-                        return Results.Ok(new { valid = true, productionName = activeRoom.ProductionName, directorName = activeRoom.DirectorName });
+                        var lanIp = ResolveLanIpForContext(context);
+                        return Results.Ok(new
+                        {
+                            valid = true,
+                            instanceId = ServerInstanceId.ToString(),
+                            roomId = activeRoom.RoomId,
+                            productionName = activeRoom.ProductionName,
+                            directorName = activeRoom.DirectorName,
+                            lanIp = lanIp,
+                            directorPort = port
+                        });
                     }
                 }
                 return Results.Json(new { valid = false, message = "Invalid Room Code or PIN." }, statusCode: 401);
+            });
+
+            _app.MapGet("/api/room/find-by-pin", (HttpContext context, string pin, string? roomId) =>
+            {
+                if (RoomManager.ActiveRoom == null)
+                {
+                    RoomManager.EnsureActiveRoom();
+                }
+                var activeRoom = RoomManager.ActiveRoom;
+                var cleanPin = pin?.Trim();
+                var cleanRoomId = roomId?.Replace(" ", "").Trim();
+                if (activeRoom != null && !string.IsNullOrEmpty(cleanPin))
+                {
+                    var expectedRoomId = activeRoom.RoomId?.Replace(" ", "").Trim();
+                    var expectedPin = activeRoom.Pin?.Trim();
+                    var expectedControlCode = activeRoom.ControlCode?.Trim();
+                    bool roomMatches = string.IsNullOrEmpty(cleanRoomId) || string.Equals(expectedRoomId, cleanRoomId, StringComparison.OrdinalIgnoreCase);
+                    bool pinMatches = string.Equals(expectedPin, cleanPin, StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(expectedControlCode, cleanPin, StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(PinCode, cleanPin, StringComparison.OrdinalIgnoreCase);
+                    if (roomMatches && pinMatches)
+                    {
+                        var lanIp = ResolveLanIpForContext(context);
+                        return Results.Ok(new
+                        {
+                            found = true,
+                            instanceId = ServerInstanceId.ToString(),
+                            roomId = activeRoom.RoomId,
+                            pin = activeRoom.Pin,
+                            productionName = activeRoom.ProductionName,
+                            directorName = activeRoom.DirectorName,
+                            lanIp = lanIp,
+                            directorPort = port,
+                            relayUrl = activeRoom.RelayUrl
+                        });
+                    }
+                }
+                return Results.Json(new { found = false, message = "No matching room for PIN." }, statusCode: 404);
             });
 
             _app.MapGet("/api/inputs", () =>
@@ -159,36 +526,45 @@ namespace Desktop
                     var roomId = context.Request.Query["roomId"].ToString().Replace(" ", "").Trim();
                     var pin = context.Request.Query["pin"].ToString().Trim();
                     var activeRoom = RoomManager.ActiveRoom;
+                    var isLoopback = context.Connection.RemoteIpAddress != null && System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
+                    var isLan = IsLanConnection(context);
                     
-                    if (activeRoom != null)
+                    if (!isLoopback && !isLan)
                     {
-                        var expectedRoomId = activeRoom.RoomId?.Replace(" ", "").Trim();
-                        var expectedPin = activeRoom.Pin?.Trim();
-                        if (!string.Equals(expectedRoomId, roomId, StringComparison.OrdinalIgnoreCase) ||
-                            !string.Equals(expectedPin, pin, StringComparison.OrdinalIgnoreCase))
+                        if (activeRoom != null)
+                        {
+                            var expectedRoomId = activeRoom.RoomId?.Replace(" ", "").Trim();
+                            var expectedPin = activeRoom.Pin?.Trim();
+                            if (!string.Equals(expectedRoomId, roomId, StringComparison.OrdinalIgnoreCase) ||
+                                (!string.IsNullOrEmpty(expectedPin) && !string.Equals(expectedPin, pin, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                context.Response.StatusCode = 401;
+                                return;
+                            }
+                        }
+                        else if (roomId != "intercom")
                         {
                             context.Response.StatusCode = 401;
                             return;
                         }
-                    }
-                    else if (!string.IsNullOrEmpty(roomId) && roomId != "intercom")
-                    {
-                        context.Response.StatusCode = 401;
-                        return;
                     }
 
                     using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
                     var clientId = Guid.NewGuid();
                     _clients.TryAdd(clientId, webSocket);
                     
-                    // Send inputs on connect
+                    // Send inputs and cached tally state immediately on connect for zero-latency initialization
                     try
                     {
                         if (GetActiveInputs != null)
                         {
                             var inputsPayload = new { type = "inputs", inputs = GetActiveInputs() };
-                            var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(inputsPayload));
-                            await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                            await SafeSendTextAsync(webSocket, JsonSerializer.Serialize(inputsPayload), context.RequestAborted);
+                        }
+                        var cachedTally = _lastTallyJson;
+                        if (!string.IsNullOrEmpty(cachedTally))
+                        {
+                            await SafeSendTextAsync(webSocket, cachedTally, context.RequestAborted);
                         }
                     }
                     catch { }
@@ -199,12 +575,16 @@ namespace Desktop
                     }
                     finally
                     {
+                        _clients.TryRemove(clientId, out _);
                         if (_clientCameras.TryRemove(clientId, out var cam) && !string.IsNullOrEmpty(cam))
                         {
-                            var leaveJson = JsonSerializer.Serialize(new { type = "intercom-leave", cam });
-                            ForwardToDirectorIntercom(leaveJson);
+                            bool stillActive = _clientCameras.Values.Any(v => string.Equals(v, cam, StringComparison.OrdinalIgnoreCase));
+                            if (!stillActive)
+                            {
+                                var leaveJson = JsonSerializer.Serialize(new { type = "intercom-leave", cam });
+                                ForwardToDirectorIntercom(leaveJson);
+                            }
                         }
-                        _clients.TryRemove(clientId, out _);
                         NotifyConnectedCameras();
                     }
                 }
@@ -246,6 +626,7 @@ namespace Desktop
             try
             {
                 await _app.StartAsync();
+                StartLanUdpBeacon(port);
                 try
                 {
                     var logPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CuePilot", "logs", $"app-{DateTime.Now:yyyy-MM-dd}.log");
@@ -278,15 +659,40 @@ namespace Desktop
                 return;
             }
 
+            var reqRoomId = context.Request.Query["roomId"].ToString().Replace(" ", "").Trim();
+            var reqPin = context.Request.Query["pin"].ToString().Trim();
+            var activeRoom = RoomManager.ActiveRoom;
+            var isLan = IsLanConnection(context);
+            var isLoopback = context.Connection.RemoteIpAddress != null && System.Net.IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
+
+            if (!isLoopback && !isLan)
+            {
+                if (activeRoom != null)
+                {
+                    var expectedRoomId = activeRoom.RoomId?.Replace(" ", "").Trim();
+                    var expectedPin = activeRoom.Pin?.Trim();
+                    if (!string.Equals(expectedRoomId, reqRoomId, StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrEmpty(expectedPin) && !string.Equals(expectedPin, reqPin, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        context.Response.StatusCode = 401;
+                        return;
+                    }
+                }
+                else if (reqRoomId != "intercom")
+                {
+                    context.Response.StatusCode = 401;
+                    return;
+                }
+            }
+
             using var ws = await context.WebSockets.AcceptWebSocketAsync();
-            var buffer = new byte[16 * 1024];
+            var buffer = new byte[64 * 1024];
             VoiceClient? me = null;
 
             try
             {
-                var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
-                if (result.MessageType == WebSocketMessageType.Close) return;
-                var firstText = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                var (firstMsgType, firstText) = await ReceiveFullTextAsync(ws, buffer, context.RequestAborted);
+                if (firstMsgType == WebSocketMessageType.Close || string.IsNullOrWhiteSpace(firstText)) return;
 
                 using (var firstDoc = JsonDocument.Parse(firstText))
                 {
@@ -302,6 +708,11 @@ namespace Desktop
                     var rawRoomId = root.TryGetProperty("roomId", out var rElem) ? rElem.GetString() ?? "intercom" : "intercom";
                     var roomId = rawRoomId.Replace(" ", "").Trim();
                     if (string.IsNullOrEmpty(roomId)) roomId = "intercom";
+                    // On LAN, always canonicalize into the active desktop room so Director and all local crew phones join the exact same voice mesh room
+                    if (isLan && RoomManager.ActiveRoom != null && !string.IsNullOrWhiteSpace(RoomManager.ActiveRoom.RoomId))
+                    {
+                        roomId = RoomManager.ActiveRoom.RoomId.Replace(" ", "").Trim();
+                    }
                     var alias = root.TryGetProperty("alias", out var aElem) ? aElem.GetString() ?? Guid.NewGuid().ToString("N") : Guid.NewGuid().ToString("N");
                     var role = root.TryGetProperty("role", out var roElem) ? roElem.GetString() ?? "camera" : "camera";
 
@@ -309,11 +720,24 @@ namespace Desktop
                     _voiceClientInfo[ws] = me;
 
                     var room = _voiceRooms.GetOrAdd(roomId, _ => new ConcurrentDictionary<string, WebSocket>());
+                    if (room.TryGetValue(alias, out var existingWs) && existingWs != ws)
+                    {
+                        _voiceClientInfo.TryRemove(existingWs, out _);
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                if (existingWs.State == WebSocketState.Open)
+                                    await existingWs.CloseAsync(WebSocketCloseStatus.NormalClosure, "Replaced by new session", CancellationToken.None);
+                            }
+                            catch { }
+                        });
+                    }
                     room[alias] = ws;
 
                     // 1) Send existing peers to newly joined client
                     var peers = room
-                        .Where(kvp => kvp.Key != alias)
+                        .Where(kvp => kvp.Key != alias && kvp.Value.State == WebSocketState.Open)
                         .Select(kvp =>
                         {
                             if (_voiceClientInfo.TryGetValue(kvp.Value, out var info))
@@ -323,17 +747,17 @@ namespace Desktop
                         .ToList();
 
                     var peersJson = JsonSerializer.Serialize(new { type = "peers", peers });
-                    await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(peersJson)), WebSocketMessageType.Text, true, context.RequestAborted);
+                    await SafeSendTextAsync(ws, peersJson, context.RequestAborted);
 
                     // 2) Notify others that me joined
                     var joinedJson = JsonSerializer.Serialize(new { type = "peer-joined", alias, role });
-                    var joinedBytes = Encoding.UTF8.GetBytes(joinedJson);
+                    var joinedBytes = new ArraySegment<byte>(Encoding.UTF8.GetBytes(joinedJson));
                     foreach (var kv in room)
                     {
                         if (kv.Key == alias) continue;
                         if (kv.Value.State == WebSocketState.Open)
                         {
-                            _ = kv.Value.SendAsync(new ArraySegment<byte>(joinedBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                            _ = SafeSendAsync(kv.Value, joinedBytes);
                         }
                     }
                 }
@@ -341,33 +765,45 @@ namespace Desktop
                 // Signaling loop
                 while (ws.State == WebSocketState.Open && !context.RequestAborted.IsCancellationRequested)
                 {
-                    var res = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), context.RequestAborted);
-                    if (res.MessageType == WebSocketMessageType.Close) break;
+                    var (msgType, msgText) = await ReceiveFullTextAsync(ws, buffer, context.RequestAborted);
+                    if (msgType == WebSocketMessageType.Close) break;
+                    if (string.IsNullOrWhiteSpace(msgText)) continue;
 
-                    var msgText = Encoding.UTF8.GetString(buffer, 0, res.Count);
                     using var doc = JsonDocument.Parse(msgText);
                     var root = doc.RootElement;
-                    if (root.TryGetProperty("type", out var typeProp) &&
-                        string.Equals(typeProp.GetString(), "signal", StringComparison.OrdinalIgnoreCase))
+                    if (root.TryGetProperty("type", out var typeProp))
                     {
-                        if (me == null) continue;
-                        var toAlias = root.TryGetProperty("to", out var toElem) ? toElem.GetString() : null;
-                        if (string.IsNullOrWhiteSpace(toAlias)) continue;
-
-                        if (_voiceRooms.TryGetValue(me.RoomId, out var room) &&
-                            room.TryGetValue(toAlias, out var targetWs) &&
-                            targetWs.State == WebSocketState.Open)
+                        var cmdType = typeProp.GetString();
+                        if (string.Equals(cmdType, "ping", StringComparison.OrdinalIgnoreCase))
                         {
-                            var data = root.GetProperty("data");
-                            var forward = JsonSerializer.Serialize(new
+                            var pingId = root.TryGetProperty("id", out var idElem) ? idElem.ToString() : null;
+                            var pongJson = pingId != null
+                                ? JsonSerializer.Serialize(new { type = "pong", id = pingId })
+                                : "{\"type\":\"pong\"}";
+                            _ = SafeSendTextAsync(ws, pongJson);
+                            continue;
+                        }
+                        if (string.Equals(cmdType, "signal", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (me == null) continue;
+                            var toAlias = root.TryGetProperty("to", out var toElem) ? toElem.GetString() : null;
+                            if (string.IsNullOrWhiteSpace(toAlias)) continue;
+
+                            if (_voiceRooms.TryGetValue(me.RoomId, out var room) &&
+                                room.TryGetValue(toAlias, out var targetWs) &&
+                                targetWs.State == WebSocketState.Open)
                             {
-                                type = "signal",
-                                roomId = me.RoomId,
-                                from = me.Alias,
-                                to = toAlias,
-                                data
-                            });
-                            _ = targetWs.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(forward)), WebSocketMessageType.Text, true, CancellationToken.None);
+                                var data = root.GetProperty("data");
+                                var forward = JsonSerializer.Serialize(new
+                                {
+                                    type = "signal",
+                                    roomId = me.RoomId,
+                                    from = me.Alias,
+                                    to = toAlias,
+                                    data
+                                });
+                                _ = SafeSendTextAsync(targetWs, forward);
+                            }
                         }
                     }
                 }
@@ -387,12 +823,12 @@ namespace Desktop
                         {
                             room.TryRemove(me.Alias, out _);
                             var leftJson = JsonSerializer.Serialize(new { type = "peer-left", alias = me.Alias });
-                            var leftBytes = Encoding.UTF8.GetBytes(leftJson);
+                            var leftBytes = new ArraySegment<byte>(Encoding.UTF8.GetBytes(leftJson));
                             foreach (var kv in room)
                             {
                                 if (kv.Value.State == WebSocketState.Open)
                                 {
-                                    _ = kv.Value.SendAsync(new ArraySegment<byte>(leftBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                                    _ = SafeSendAsync(kv.Value, leftBytes);
                                 }
                             }
                             if (room.IsEmpty) _voiceRooms.TryRemove(me.RoomId, out _);
@@ -422,8 +858,7 @@ namespace Desktop
             var targetWs = GetClientByCamera(cam);
             if (targetWs != null)
             {
-                var bytes = Encoding.UTF8.GetBytes(json);
-                _ = targetWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                _ = SafeSendTextAsync(targetWs, json);
             }
             else
             {
@@ -434,16 +869,16 @@ namespace Desktop
         private async Task HandleWebSocketLoop(Guid clientId, WebSocket webSocket)
         {
             var buffer = new byte[1024 * 64];
+            bool isControlAuthenticated = false;
             while (webSocket.State == WebSocketState.Open)
             {
-                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-                if (result.MessageType == WebSocketMessageType.Close)
+                var (msgType, json) = await ReceiveFullTextAsync(webSocket, buffer, CancellationToken.None);
+                if (msgType == WebSocketMessageType.Close)
                 {
-                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                    try { await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None); } catch { }
                     break;
                 }
-
-                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                if (string.IsNullOrWhiteSpace(json)) continue;
 
                 try
                 {
@@ -459,6 +894,30 @@ namespace Desktop
                             {
                                 _clientCameras[clientId] = cam;
                                 NotifyConnectedCameras();
+                                // Immediately push cached tally and inputs so reconnected camera is 100% synced in < 1ms
+                                var cachedTally = _lastTallyJson;
+                                if (!string.IsNullOrEmpty(cachedTally))
+                                {
+                                    _ = SafeSendTextAsync(webSocket, cachedTally);
+                                }
+                                if (GetActiveInputs != null)
+                                {
+                                    var inputsPayload = new { type = "inputs", inputs = GetActiveInputs() };
+                                    _ = SafeSendTextAsync(webSocket, JsonSerializer.Serialize(inputsPayload));
+                                }
+                            }
+                        }
+                        else if (type == "request-state")
+                        {
+                            var cachedTally = _lastTallyJson;
+                            if (!string.IsNullOrEmpty(cachedTally))
+                            {
+                                _ = SafeSendTextAsync(webSocket, cachedTally);
+                            }
+                            if (GetActiveInputs != null)
+                            {
+                                var inputsPayload = new { type = "inputs", inputs = GetActiveInputs() };
+                                _ = SafeSendTextAsync(webSocket, JsonSerializer.Serialize(inputsPayload));
                             }
                         }
                         else if (type == "ack")
@@ -471,13 +930,11 @@ namespace Desktop
                                 OnSuggestionAck?.Invoke(cam, shotId);
                             }
                         }
-                        else if (type == "ping" && root.TryGetProperty("id", out var idProp))
+                        else if (type == "ping")
                         {
-                            if (_clients.TryGetValue(clientId, out var ws) && ws.State == WebSocketState.Open)
-                            {
-                                var pong = JsonSerializer.Serialize(new { type = "pong", id = idProp.GetString() });
-                                _ = ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(pong)), WebSocketMessageType.Text, true, CancellationToken.None);
-                            }
+                            var pingId = root.TryGetProperty("id", out var idProp) ? idProp.ToString() : "";
+                            var pong = JsonSerializer.Serialize(new { type = "pong", id = pingId });
+                            _ = SafeSendTextAsync(webSocket, pong);
                         }
                         else if (type == "intercom-director-ready")
                         {
@@ -530,42 +987,43 @@ namespace Desktop
                         }
                         else if (type == "control-auth")
                         {
-                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                             var activeRoom = RoomManager.ActiveRoom;
-                            var success = activeRoom != null && (
-                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                            );
-                            var resp = JsonSerializer.Serialize(new { type = success ? "control-auth-success" : "control-auth-failed" });
-                            if (_clients.TryGetValue(clientId, out var ws) && ws.State == WebSocketState.Open)
+                            var success = IsValidControlCode(code, activeRoom);
+                            if (success) isControlAuthenticated = true;
+                            var resp = JsonSerializer.Serialize(new
                             {
-                                _ = ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(resp)), WebSocketMessageType.Text, true, CancellationToken.None);
+                                type = success ? "control-auth-success" : "control-auth-failed",
+                                roomId = activeRoom?.RoomId ?? "",
+                                productionName = activeRoom?.ProductionName ?? "Live Production",
+                                directorName = activeRoom?.DirectorName ?? "Director",
+                                instanceId = ServerInstanceId.ToString()
+                            });
+                            _ = SafeSendTextAsync(webSocket, resp);
+                            if (success)
+                            {
+                                if (GetActiveInputs != null)
+                                {
+                                    var inputsPayload = new { type = "inputs", inputs = GetActiveInputs() };
+                                    _ = SafeSendTextAsync(webSocket, JsonSerializer.Serialize(inputsPayload));
+                                }
+                                var cachedTally = _lastTallyJson;
+                                if (!string.IsNullOrEmpty(cachedTally))
+                                {
+                                    _ = SafeSendTextAsync(webSocket, cachedTally);
+                                }
+                                BroadcastAudioState();
                             }
                         }
                         else if (type == "switch")
                         {
-                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
-                            var activeRoom = RoomManager.ActiveRoom;
-                            if (activeRoom != null && (
-                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                            ))
-                            {
-                                var mode = root.TryGetProperty("mode", out var md) ? md.GetString() : "";
-                                if (root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var inputId))
-                                {
-                                    OnControlSwitch?.Invoke(mode, inputId);
-                                }
-                            }
+                            ProcessSwitchCommandElement(root, isControlAuthenticated);
                         }
                         else if (type == "audio-control")
                         {
-                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                             var activeRoom = RoomManager.ActiveRoom;
-                            if (activeRoom != null && (
-                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                            ))
+                            if (isControlAuthenticated || IsValidControlCode(code, activeRoom))
                             {
                                 long inputId = root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var id) ? id : 0;
                                 double? vol = root.TryGetProperty("volume", out var vp) && vp.TryGetDouble(out var v) ? v : null;
@@ -576,12 +1034,9 @@ namespace Desktop
                         }
                         else if (type == "audio-group-trigger")
                         {
-                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                             var activeRoom = RoomManager.ActiveRoom;
-                            if (activeRoom != null && (
-                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                            ))
+                            if (isControlAuthenticated || IsValidControlCode(code, activeRoom))
                             {
                                 var groupId = root.TryGetProperty("groupId", out var gp) ? gp.GetString() ?? "" : "";
                                 bool active = root.TryGetProperty("active", out var ap) && ap.GetBoolean();
@@ -590,12 +1045,9 @@ namespace Desktop
                         }
                         else if (type == "audio-group-config")
                         {
-                            var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                            var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                             var activeRoom = RoomManager.ActiveRoom;
-                            if (activeRoom != null && (
-                                (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                                (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                            ))
+                            if (isControlAuthenticated || IsValidControlCode(code, activeRoom))
                             {
                                 OnAudioGroupConfig?.Invoke(json);
                             }
@@ -611,12 +1063,71 @@ namespace Desktop
             }
         }
 
+        private bool IsValidControlCode(string? code, RoomState? activeRoom)
+        {
+            if (string.IsNullOrEmpty(code)) return false;
+            var clean = code.Trim();
+            if (string.Equals(clean, PinCode, StringComparison.OrdinalIgnoreCase)) return true;
+            if (activeRoom != null)
+            {
+                if (!string.IsNullOrEmpty(activeRoom.ControlCode) && string.Equals(clean, activeRoom.ControlCode.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (!string.IsNullOrEmpty(activeRoom.Pin) && string.Equals(clean, activeRoom.Pin.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private void ProcessSwitchCommandElement(JsonElement root, bool isControlAuthenticated)
+        {
+            var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
+            var activeRoom = RoomManager.ActiveRoom;
+            if (!isControlAuthenticated && !IsValidControlCode(code, activeRoom))
+                return;
+
+            var mode = ((root.TryGetProperty("mode", out var md) ? md.GetString() : "") ?? "").Trim().ToLowerInvariant();
+            long inputId = 0;
+            if (root.TryGetProperty("input", out var inp))
+            {
+                if (inp.ValueKind == JsonValueKind.Number && inp.TryGetInt64(out var parsedId))
+                    inputId = parsedId;
+                else if (inp.ValueKind == JsonValueKind.String && long.TryParse(inp.GetString(), out var strId))
+                    inputId = strId;
+            }
+
+            double? val = null;
+            if (root.TryGetProperty("value", out var vp))
+            {
+                if (vp.ValueKind == JsonValueKind.Number && vp.TryGetDouble(out var dval))
+                    val = dval;
+                else if (vp.ValueKind == JsonValueKind.String && double.TryParse(vp.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var sVal))
+                    val = sVal;
+            }
+
+            bool? on = null;
+            if (root.TryGetProperty("on", out var onp))
+            {
+                if (onp.ValueKind == JsonValueKind.True || onp.ValueKind == JsonValueKind.False)
+                    on = onp.GetBoolean();
+            }
+
+            string? style = root.TryGetProperty("style", out var sp) ? sp.GetString() : null;
+
+            if (OnExtendedSwitchCommand != null)
+            {
+                _ = OnExtendedSwitchCommand(mode, inputId, val, on, style);
+            }
+            else if (inputId > 0 || mode == "cut" || mode == "auto" || mode == "ftb")
+            {
+                OnControlSwitch?.Invoke(mode, inputId);
+            }
+        }
+
         private void ForwardToDirectorIntercom(string json)
         {
             if (_directorIntercomWs != null && _directorIntercomWs.State == WebSocketState.Open)
             {
-                var bytes = Encoding.UTF8.GetBytes(json);
-                _ = _directorIntercomWs.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                _ = SafeSendTextAsync(_directorIntercomWs, json);
             }
         }
 
@@ -630,7 +1141,7 @@ namespace Desktop
                 var ws = kvp.Value;
                 if (ws != _directorIntercomWs && ws.State == WebSocketState.Open)
                 {
-                    _ = ws.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None);
+                    _ = SafeSendAsync(ws, segment);
                 }
             }
 
@@ -662,6 +1173,10 @@ namespace Desktop
                         _remoteCrewCameras[clientId] = cam;
                         NotifyConnectedCameras();
                     }
+                    if (!string.IsNullOrEmpty(_lastTallyJson) && Relay != null && Relay.IsConnected)
+                    {
+                        _ = Relay.SendAsync(_lastTallyJson);
+                    }
                 }
                 else if (type == "crew-disconnected")
                 {
@@ -670,6 +1185,21 @@ namespace Desktop
                     {
                         _remoteCrewCameras.TryRemove(clientId, out _);
                         NotifyConnectedCameras();
+                    }
+                }
+                else if (type == "request-state")
+                {
+                    if (Relay != null && Relay.IsConnected)
+                    {
+                        if (GetActiveInputs != null)
+                        {
+                            var inputsPayload = new { type = "inputs", inputs = GetActiveInputs() };
+                            _ = Relay.SendAsync(JsonSerializer.Serialize(inputsPayload));
+                        }
+                        if (!string.IsNullOrEmpty(_lastTallyJson))
+                        {
+                            _ = Relay.SendAsync(_lastTallyJson);
+                        }
                     }
                 }
                 else if (type == "intercom-offer" || type == "intercom-ice" || type == "intercom-leave")
@@ -682,42 +1212,44 @@ namespace Desktop
                 }
                 else if (type == "control-auth")
                 {
-                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                     var activeRoom = RoomManager.ActiveRoom;
-                    var success = activeRoom != null && (
-                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                    );
-                    var resp = JsonSerializer.Serialize(new { type = success ? "control-auth-success" : "control-auth-failed" });
+                    var success = IsValidControlCode(code, activeRoom);
+                    var resp = JsonSerializer.Serialize(new
+                    {
+                        type = success ? "control-auth-success" : "control-auth-failed",
+                        roomId = activeRoom?.RoomId ?? "",
+                        productionName = activeRoom?.ProductionName ?? "Live Production",
+                        directorName = activeRoom?.DirectorName ?? "Director",
+                        instanceId = ServerInstanceId.ToString()
+                    });
                     if (Relay != null && Relay.IsConnected)
                     {
                         _ = Relay.SendAsync(resp);
+                        if (success)
+                        {
+                            if (GetActiveInputs != null)
+                            {
+                                var inputsPayload = new { type = "inputs", inputs = GetActiveInputs() };
+                                _ = Relay.SendAsync(JsonSerializer.Serialize(inputsPayload));
+                            }
+                            if (!string.IsNullOrEmpty(_lastTallyJson))
+                            {
+                                _ = Relay.SendAsync(_lastTallyJson);
+                            }
+                            BroadcastAudioState();
+                        }
                     }
                 }
                 else if (type == "switch")
                 {
-                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
-                    var activeRoom = RoomManager.ActiveRoom;
-                    if (activeRoom != null && (
-                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                    ))
-                    {
-                        var mode = root.TryGetProperty("mode", out var md) ? md.GetString() : "";
-                        if (root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var inputId))
-                        {
-                            OnControlSwitch?.Invoke(mode, inputId);
-                        }
-                    }
+                    ProcessSwitchCommandElement(root, isControlAuthenticated: false);
                 }
                 else if (type == "audio-control")
                 {
-                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                     var activeRoom = RoomManager.ActiveRoom;
-                    if (activeRoom != null && (
-                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                    ))
+                    if (IsValidControlCode(code, activeRoom))
                     {
                         long inputId = root.TryGetProperty("input", out var inp) && inp.TryGetInt64(out var id) ? id : 0;
                         double? vol = root.TryGetProperty("volume", out var vp) && vp.TryGetDouble(out var v) ? v : null;
@@ -728,12 +1260,9 @@ namespace Desktop
                 }
                 else if (type == "audio-group-trigger")
                 {
-                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                     var activeRoom = RoomManager.ActiveRoom;
-                    if (activeRoom != null && (
-                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                    ))
+                    if (IsValidControlCode(code, activeRoom))
                     {
                         var groupId = root.TryGetProperty("groupId", out var gp) ? gp.GetString() ?? "" : "";
                         bool active = root.TryGetProperty("active", out var ap) && ap.GetBoolean();
@@ -742,12 +1271,9 @@ namespace Desktop
                 }
                 else if (type == "audio-group-config")
                 {
-                    var code = root.TryGetProperty("code", out var cd) ? cd.GetString() : "";
+                    var code = (root.TryGetProperty("code", out var cd) ? cd.GetString() : "")?.Trim() ?? "";
                     var activeRoom = RoomManager.ActiveRoom;
-                    if (activeRoom != null && (
-                        (!string.IsNullOrEmpty(activeRoom.ControlCode) && code == activeRoom.ControlCode) ||
-                        (!string.IsNullOrEmpty(activeRoom.Pin) && code == activeRoom.Pin)
-                    ))
+                    if (IsValidControlCode(code, activeRoom))
                     {
                         OnAudioGroupConfig?.Invoke(json);
                     }
@@ -791,9 +1317,38 @@ namespace Desktop
             ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
         });
 
-        public async Task BroadcastTallyAsync(SwitcherState state)
+        public Task BroadcastTallyAsync(SwitcherState state)
         {
-            await BroadcastJsonAsync(new { type = "tally", mes = state.MEs });
+            var json = JsonSerializer.Serialize(new
+            {
+                type = "tally",
+                mes = state.MEs,
+                dsks = state.DownstreamKeyers,
+                transitionStyle = GetTransitionStyle?.Invoke() ?? "Mix",
+                transitionRateMs = GetTransitionRateMs?.Invoke() ?? 1000,
+                transitionPosition = GetTransitionPosition?.Invoke() ?? 0.0
+            }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            _lastTallyJson = json;
+            return BroadcastRawJsonAsync(json);
+        }
+
+        public void BroadcastTallyFast(long pgm, long pvw)
+        {
+            var json = JsonSerializer.Serialize(new
+            {
+                type = "tally",
+                mes = new[]
+                {
+                    new
+                    {
+                        meIndex = 0,
+                        program = new[] { pgm },
+                        preview = new[] { pvw }
+                    }
+                }
+            });
+            _lastTallyJson = json;
+            _ = BroadcastRawJsonAsync(json);
         }
 
         private string GetLocalIpAddress()
@@ -920,9 +1475,14 @@ namespace Desktop
             if (GetActiveInputs != null) await BroadcastJsonAsync(new { type = "inputs", inputs = GetActiveInputs() });
         }
 
-        private async Task BroadcastJsonAsync(object data)
+        private Task BroadcastJsonAsync(object data)
         {
             var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            return BroadcastRawJsonAsync(json);
+        }
+
+        private Task BroadcastRawJsonAsync(string json)
+        {
             var bytes = Encoding.UTF8.GetBytes(json);
             var segment = new ArraySegment<byte>(bytes);
 
@@ -930,11 +1490,12 @@ namespace Desktop
             {
                 if (kvp.Value.State == WebSocketState.Open)
                 {
-                    try { await kvp.Value.SendAsync(segment, WebSocketMessageType.Text, true, CancellationToken.None); } catch { }
+                    _ = SafeSendAsync(kvp.Value, segment);
                 }
             }
 
             if (Relay != null && Relay.IsConnected) _ = Relay.SendAsync(json);
+            return Task.CompletedTask;
         }
 
         public async ValueTask DisposeAsync()

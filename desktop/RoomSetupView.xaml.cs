@@ -86,5 +86,40 @@ namespace Desktop
                 MessageBox.Show($"Failed to create room: {ex.Message}", "Room Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        private async void BtnJoinByPin_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string pin = (TxtJoinPin?.Text ?? "").Trim();
+                string hint = (TxtJoinHostHint?.Text ?? "").Trim();
+                if (pin.Length < 4)
+                {
+                    if (TxtJoinPinStatus != null) TxtJoinPinStatus.Text = "Please enter the 4-digit PIN displayed on the Host computer.";
+                    return;
+                }
+
+                if (BtnJoinByPin != null) BtnJoinByPin.IsEnabled = false;
+                if (TxtJoinPinStatus != null) TxtJoinPinStatus.Text = $"Searching for switcher with PIN {pin} on LAN and Cloud Relay...";
+
+                if (Desktop.MainWindow.Instance != null)
+                {
+                    var (ok, msg) = await Desktop.MainWindow.Instance.ConnectRemoteSwitcherByPinAsync(pin, hint);
+                    if (TxtJoinPinStatus != null) TxtJoinPinStatus.Text = msg;
+                    if (ok)
+                    {
+                        Desktop.MainWindow.Instance.SelectViewTab("Switcher");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (TxtJoinPinStatus != null) TxtJoinPinStatus.Text = $"Error: {ex.Message}";
+            }
+            finally
+            {
+                if (BtnJoinByPin != null) BtnJoinByPin.IsEnabled = true;
+            }
+        }
     }
 }

@@ -1,8 +1,8 @@
 /**
  * TallyIndicator.tsx
  * 
- * High-visibility Broadcast Tally Indicator Component.
- * Supports compact Card Mode and Immersive Fullscreen Rig Mode.
+ * High-visibility Broadcast Tally Indicator Component matching the new VidikomCrew design.
+ * Supports Card Mode and Fullscreen Rig Mode.
  */
 
 import React from 'react';
@@ -33,7 +33,7 @@ export interface TallyIndicatorProps {
 export const TallyIndicator: React.FC<TallyIndicatorProps> = ({
   tallyState,
   cameraId,
-  callsign,
+  callsign = 'STAGE LEFT',
   activeShotTitle,
   mode = 'card',
   onToggleFullscreen,
@@ -47,64 +47,103 @@ export const TallyIndicator: React.FC<TallyIndicatorProps> = ({
   const isDisconnected = tallyState === 'DISCONNECTED';
   const isFullscreen = mode === 'fullscreen';
 
-  // Derive visual tokens
-  let bgColor = theme.tallyStandby;
-  let borderColor = theme.surfaceBorder;
-  let statusText = 'SAFE';
+  // State colors and title matching designs and broadcast test contracts
+  let bgColor = '#222327';
+  let stateTitle = 'SAFE';
   let subtext = 'STANDBY / OFF AIR';
-  let glowShadow = theme.shadows.none;
+  let badgeLabel = 'STANDBY';
 
   if (isProgram) {
-    bgColor = theme.tallyProgram;
-    borderColor = theme.tallyProgram;
-    statusText = 'LIVE';
+    bgColor = '#EF4444';
+    stateTitle = 'LIVE';
     subtext = 'ON AIR';
-    glowShadow = theme.shadows.tallyProgram;
+    badgeLabel = '● LIVE';
   } else if (isPreview) {
-    bgColor = theme.tallyPreview;
-    borderColor = theme.tallyPreview;
-    statusText = 'PREVIEW';
+    bgColor = '#10B981';
+    stateTitle = 'PREVIEW';
     subtext = 'STANDBY';
-    glowShadow = theme.shadows.tallyPreview;
+    badgeLabel = 'NEXT';
   } else if (isDisconnected) {
-    bgColor = theme.tallyWarning;
-    borderColor = theme.tallyWarning;
-    statusText = 'CONNECTION LOST';
+    bgColor = '#D97706';
+    stateTitle = 'CONNECTION LOST';
     subtext = 'TALLY UNKNOWN';
-    glowShadow = theme.shadows.none;
+    badgeLabel = 'ALERT';
   }
 
-  return (
-    <View
-      testID={testID}
-      style={[
-        styles.container,
-        isFullscreen ? styles.fullscreenContainer : styles.cardContainer,
-        style,
-      ]}
-      accessible={true}
-      accessibilityRole="summary"
-      accessibilityLabel={`Camera ${cameraId} tally state: ${statusText}`}
-    >
+  const camLabel = `CAM ${cameraId || 1}`;
+  const subLabel = (callsign || 'STAGE LEFT').toUpperCase();
+
+  if (isFullscreen) {
+    return (
       <View
-        testID="tally-box"
-        style={[
-          styles.tallyBox,
-          isFullscreen ? styles.fullscreenTallyBox : styles.cardTallyBox,
-          { backgroundColor: bgColor, borderColor },
-          glowShadow,
-        ]}
+        testID={testID}
+        style={[styles.fullscreenWrapper, { backgroundColor: bgColor }, style]}
       >
-        {/* Header Row: Camera Badge & Fullscreen Toggle */}
-        <View style={styles.headerRow}>
-          <View testID="tally-cam-badge" style={styles.camBadge}>
-            <View
-              style={[
-                styles.pip,
-                { backgroundColor: isProgram ? '#FFFFFF' : theme.tallyPreview },
-              ]}
-            />
-            <Text style={styles.camBadgeText}>CAM {cameraId}</Text>
+        {/* Top Fullscreen Header */}
+        <View style={styles.fullscreenHeader}>
+          <TouchableOpacity
+            testID="tally-fullscreen-btn"
+            style={styles.backCircleBtn}
+            onPress={onToggleFullscreen}
+            accessibilityRole="button"
+            accessibilityLabel="Exit Fullscreen Tally"
+            activeOpacity={0.8}
+          >
+            <Text style={styles.backArrowText}>‹</Text>
+          </TouchableOpacity>
+
+          <View style={styles.liveBadgePill}>
+            <Text style={styles.liveBadgeText}>{badgeLabel}</Text>
+          </View>
+        </View>
+
+        {/* Central Indicator */}
+        <View style={styles.fullscreenCenter}>
+          <Text testID="tally-cam-badge" style={styles.fullscreenCamText}>{camLabel}</Text>
+          <Text testID="tally-status-text" style={styles.fullscreenStateText}>{stateTitle}</Text>
+          <Text testID="tally-badge" style={styles.fullscreenSubText}>{subtext}</Text>
+        </View>
+
+        {activeShotTitle ? (
+          <View testID="tally-shot-overlay" style={styles.shotOverlay}>
+            <Text style={styles.shotOverlayTitle} numberOfLines={1}>{activeShotTitle}</Text>
+          </View>
+        ) : null}
+
+        {isDisconnected && (
+          <View testID="tally-safe-disconnect" style={styles.disconnectNotice}>
+            <Text style={styles.disconnectNoticeText}>CONNECTION LOST - TALLY UNKNOWN</Text>
+          </View>
+        )}
+
+        {/* Bottom Exit Prompt */}
+        <TouchableOpacity
+          onPress={onToggleFullscreen}
+          style={styles.fullscreenFooter}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.chevronUpText}>^</Text>
+          <Text style={styles.swipeExitText}>Swipe down to exit</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Card Mode (Default)
+  return (
+    <TouchableOpacity
+      testID={testID}
+      style={[styles.cardWrapper, { backgroundColor: bgColor }, style]}
+      onPress={onToggleFullscreen}
+      activeOpacity={0.9}
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel={`Camera ${cameraId} tally state: ${stateTitle}. Tap for full screen rig mode.`}
+    >
+      <View testID="tally-box" style={styles.cardContent}>
+        <View style={styles.cardHeaderRow}>
+          <View testID="tally-cam-badge" style={styles.badgePlaceholder}>
+            <Text style={styles.cardCamText}>{camLabel}</Text>
           </View>
 
           {onToggleFullscreen && (
@@ -113,110 +152,65 @@ export const TallyIndicator: React.FC<TallyIndicatorProps> = ({
               onPress={onToggleFullscreen}
               style={styles.fullscreenBtn}
               accessibilityRole="button"
-              accessibilityLabel={isFullscreen ? 'Exit Fullscreen Tally' : 'Enter Fullscreen Tally'}
+              accessibilityLabel="Enter Fullscreen Tally"
             >
-              <Text style={styles.fullscreenBtnText}>
-                {isFullscreen ? '⤢ EXIT' : '⤢ EXPAND'}
-              </Text>
+              <Text style={styles.fullscreenBtnText}>⤢ EXPAND</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Central Indicator */}
-        <View style={styles.centerContent}>
-          <Text
-            testID="tally-status-text"
-            style={[
-              styles.statusText,
-              isFullscreen ? styles.fullscreenStatusText : styles.cardStatusText,
-            ]}
-          >
-            {statusText}
-          </Text>
-          <Text testID="tally-badge" style={styles.subtext}>
-            {subtext}
-          </Text>
-        </View>
+        <Text testID="tally-status-text" style={styles.cardStateText}>
+          {stateTitle}
+        </Text>
+        <Text testID="tally-badge" style={styles.cardSubText}>{subtext}</Text>
 
-        {/* Active Shot Overlay Footer */}
         {activeShotTitle ? (
           <View testID="tally-shot-overlay" style={styles.shotOverlay}>
-            <Text style={styles.shotOverlayLabel}>
-              {isPreview ? 'NEXT CUE:' : 'ACTIVE CUE:'}
-            </Text>
-            <Text style={styles.shotOverlayTitle} numberOfLines={1}>
-              {activeShotTitle}
-            </Text>
+            <Text style={styles.shotOverlayTitle} numberOfLines={1}>{activeShotTitle}</Text>
           </View>
         ) : null}
 
-        {/* Safe Disconnect Notice */}
         {isDisconnected && (
           <View testID="tally-safe-disconnect" style={styles.disconnectNotice}>
             <Text style={styles.disconnectNoticeText}>CONNECTION LOST - TALLY UNKNOWN</Text>
           </View>
         )}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  // Card Mode Styles
+  cardWrapper: {
+    borderRadius: 18,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  cardContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
     width: '100%',
   },
-  cardContainer: {
-    marginVertical: 8,
-  },
-  fullscreenContainer: {
-    flex: 1,
-    height: '100%',
-  },
-  tallyBox: {
-    borderRadius: 24,
-    borderWidth: 2,
-    justifyContent: 'space-between',
-    padding: 16,
-    overflow: 'hidden',
-  },
-  cardTallyBox: {
-    minHeight: 180,
-  },
-  fullscreenTallyBox: {
-    flex: 1,
-    minHeight: 400,
-    borderRadius: 0,
-    borderWidth: 0,
-  },
-  headerRow: {
+  cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  camBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  pip: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
-  },
-  camBadgeText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-    letterSpacing: 1.5,
+    width: '100%',
+    marginBottom: 6,
   },
   fullscreenBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderRadius: 8,
   },
   fullscreenBtnText: {
@@ -225,52 +219,128 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1,
   },
-  centerContent: {
+  badgePlaceholder: {
+    marginBottom: 2,
+  },
+  cardCamText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  cardStateText: {
+    fontSize: 44,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+    marginVertical: 4,
+    textTransform: 'uppercase',
+  },
+  cardSubText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    opacity: 0.95,
+  },
+
+  // Fullscreen Mode Styles
+  fullscreenWrapper: {
+    ...(StyleSheet.absoluteFill as any),
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 48,
+    paddingBottom: 40,
+    zIndex: 9999,
+  },
+  fullscreenHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  backCircleBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 16,
   },
-  statusText: {
+  backArrowText: {
     color: '#FFFFFF',
-    fontWeight: '900',
-    textAlign: 'center',
+    fontSize: 32,
+    fontWeight: '300',
+    marginTop: -4,
   },
-  cardStatusText: {
-    fontSize: 36,
-    letterSpacing: 4,
+  liveBadgePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.25)',
   },
-  fullscreenStatusText: {
-    fontSize: 64,
-    letterSpacing: 8,
-  },
-  subtext: {
-    color: 'rgba(255, 255, 255, 0.85)',
+  liveBadgeText: {
+    color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  fullscreenCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullscreenCamText: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#FFFFFF',
     letterSpacing: 2,
-    marginTop: 6,
-    textAlign: 'center',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  fullscreenStateText: {
+    fontSize: 68,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    marginVertical: 4,
+  },
+  fullscreenSubText: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginTop: 8,
+  },
+  fullscreenFooter: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  chevronUpText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  swipeExitText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginTop: 2,
   },
   shotOverlay: {
     backgroundColor: 'rgba(0, 0, 0, 0.45)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  shotOverlayLabel: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginRight: 6,
-    letterSpacing: 0.5,
+    marginTop: 8,
   },
   shotOverlayTitle: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
-    flex: 1,
   },
   disconnectNotice: {
     backgroundColor: 'rgba(0, 0, 0, 0.6)',

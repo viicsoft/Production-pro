@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using Core;
 
@@ -13,8 +13,10 @@ namespace Desktop.HardwareAbstraction
         public string HardwareType => "ATEM";
 
         public bool IsConnected => _switcher.IsConnected;
+        public System.Collections.Generic.IReadOnlyList<long> GetDiscoveredPhysicalChannels() => _switcher.GetDiscoveredFairlightInputs();
 
         public event Action<string, long, double?, bool?, bool?>? HardwareStateChanged;
+        public event EventHandler<AudioMeterState>? MeterChanged;
         public event Action<string, long, bool?, Core.EqBandUpdate?>? HardwareEqStateChanged;
 
         public AtemAudioDriver(string deviceId, string displayName, IAtemSwitch switcher)
@@ -27,6 +29,13 @@ namespace Desktop.HardwareAbstraction
             _switcher.AudioVolumeChanged += OnSwitcherAudioVolumeChanged;
             _switcher.EqStateChanged += OnSwitcherEqStateChanged;
             _switcher.DynamicsStateChanged += OnSwitcherDynamicsStateChanged;
+            _switcher.AudioLevelUpdated += OnSwitcherAudioLevelUpdated;
+        }
+
+        private void OnSwitcherAudioLevelUpdated(long physicalInput, double left, double right)
+        {
+            double maxLevel = Math.Max(left, right);
+            MeterChanged?.Invoke(this, new AudioMeterState(physicalInput, maxLevel, maxLevel, DateTimeOffset.UtcNow));
         }
 
         private void OnSwitcherAudioStateChanged(long physicalInput, bool isOn, bool isAfv)
@@ -82,6 +91,9 @@ namespace Desktop.HardwareAbstraction
         public Task SetOnAsync(long physicalChannel, bool isOn) => _switcher.SetAudioOnAsync(physicalChannel, isOn);
         public Task SetAfvAsync(long physicalChannel, bool isAfv) => _switcher.SetAudioAfvAsync(physicalChannel, isAfv);
 
+        public Task<Core.EqState?> GetEqStateAsync(long physicalChannel) => _switcher.GetEqStateAsync(physicalChannel);
+        public Task<Core.DynamicsState?> GetDynamicsStateAsync(long physicalChannel) => _switcher.GetDynamicsStateAsync(physicalChannel);
+
         public Task SetEqBandFrequencyAsync(long physicalChannel, int bandIndex, double frequency) => _switcher.SetEqBandFrequencyAsync(physicalChannel, bandIndex, frequency);
         public Task SetEqBandGainAsync(long physicalChannel, int bandIndex, double gain) => _switcher.SetEqBandGainAsync(physicalChannel, bandIndex, gain);
         public Task SetEqBandQFactorAsync(long physicalChannel, int bandIndex, double qFactor) => _switcher.SetEqBandQFactorAsync(physicalChannel, bandIndex, qFactor);
@@ -116,3 +128,5 @@ namespace Desktop.HardwareAbstraction
         public async Task SetLimiterReleaseAsync(long physicalChannel, double release) { await _switcher.SetLimiterReleaseAsync(physicalChannel, release); }
     }
 }
+
+

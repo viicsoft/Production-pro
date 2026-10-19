@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -177,8 +177,7 @@ namespace Desktop.Views
                     TxtStorageHealth.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76));
 
                     // Status Banner
-                    TxtStatusBannerIcon.Text = "🔴";
-                    TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
+
                     TxtStatusHeadline.Text = $"Recording Active: {status.Filename}";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
                     TxtStatusDetails.Text = $"Writing program and ISO feeds to active media disk. {status.TotalRecordingTimeAvailableMinutes} minutes available.";
@@ -205,8 +204,6 @@ namespace Desktop.Views
                     TxtStatState.Text = "STOPPING";
                     TxtStatState.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
 
-                    TxtStatusBannerIcon.Text = "⏳";
-                    TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                     TxtStatusHeadline.Text = "Finalizing Recording...";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00));
                     TxtStatusDetails.Text = "Flushing MP4 containers, writing DaVinci Resolve project metadata, and closing files.";
@@ -233,8 +230,6 @@ namespace Desktop.Views
                     TxtStorageHealth.Text = "STANDBY";
                     TxtStorageHealth.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
 
-                    TxtStatusBannerIcon.Text = "○";
-                    TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x71, 0x71, 0x7A));
                     TxtStatusHeadline.Text = "Recording Engine Idle";
                     TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xA1, 0xA1, 0xAA));
                     TxtStatusDetails.Text = "Disks mounted and ready. Click 'Start Recording' to begin disk capture.";
@@ -249,8 +244,7 @@ namespace Desktop.Views
             {
                 TxtStatusHeadline.Text = $"Record Error: {status.Error}";
                 TxtStatusHeadline.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
-                TxtStatusBannerIcon.Text = "⚠️";
-                TxtStatusBannerIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x53, 0x50));
+
             }
         }
 
@@ -400,3 +394,5 @@ namespace Desktop.Views
         #endregion
     }
 }
+
+

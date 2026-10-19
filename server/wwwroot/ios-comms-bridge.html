@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vidikom iOS Comms Bridge</title>
+</head>
+<body style="margin:0;padding:0;background:transparent;">
+  <div id="audio-container"></div>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      let roomId = (params.get('roomId') || '731003').replace(/\s+/g, '');
+      let pin = (params.get('pin') || '4595').trim();
+      let myAlias = (params.get('alias') || 'Cam 2').trim();
+      let isMuted = params.get('muted') === '1';
+      let masterVolume = parseFloat(params.get('volume') || '1') || 1.0;
+
+      let ws = null;
+      let localStream = null;
+      let audioCtx = null;
+      let micProcessor = null;
+      let micSource = null;
+      const peers = {}; // alias -> { pc, role, volume, muted, audioEl, gainNode, analyser, nextPlayTime, audioLevel, speaking }
+      let reconnectTimer = null;
+      let pingInterval = null;
+      let statsInterval = null;
+      let lastMsgTime = Date.now();
+
+      function postRN(payload) {
+        try {
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+          }
+        } catch (e) {}
+      }
+
+      function log(msg) {
+        console.log('[iOSBridge] ' + msg);
+        postRN({ type: 'log', message: String(msg) });
+      }
+
+      function ensureAudioContext() {
+        try {
+          if (!audioCtx) {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new Ctx({ latencyHint: 'interactive' });
+          }
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(function () {});
+          }
+        } catch (e) {
+          log('AudioContext error: ' + e.message);
+        }
+        return audioCtx;
+      }
+
+      function floatTo16BitBase64(float32Array, inputSampleRate, targetSampleRate) {
+        const ratio = inputSampleRate / targetSampleRate;
+        const outLength = Math.floor(float32Array.length / ratio);
+        const int16 = new Int16Array(outLength);
+        let rms = 0;
+        for (let i = 0; i < outLength; i++) {
+          const idx = Math.min(Math.floor(i * ratio), float32Array.length - 1);
+          const s = Math.max(-1, Math.min(1, float32Array[idx]));
+          rms += s * s;
+          int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        rms = Math.sqrt(rms / Math.max(1, outLength));
+        if (rms < 0.004) return null; // Silence gate to save bandwidth
+        const bytes = new Uint8Array(int16.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+      }
+
+      function playPcmBase64(alias, b64, sampleRate) {
+        const ctx = ensureAudioContext();
+        if (!ctx) return;
+        const peer = peers[alias];
+        if (peer && peer.muted) return;
+
+        try {
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const int16 = new Int16Array(bytes.buffer);
+          const float32 = new Float32Array(int16.length);
+          let sumSq = 0;
+          const gain = masterVolume * (peer ? peer.volume : 1.0);
+          for (let i = 0; i < int16.length; i++) {
+            const sample = (int16[i] / 32768.0) * gain;
+            float32[i] = Math.max(-1, Math.min(1, sample));
+            sumSq += sample * sample;
+          }
+
+          if (peer) {
+            const rms = Math.sqrt(sumSq / Math.max(1, int16.length));
+            peer.audioLevel = Math.min(1.0, rms * 4.0);
+            peer.speaking = peer.audioLevel > 0.04;
+            peer.lastPcmAt = Date.now();
+          }
+
+          const sr = sampleRate || 16000;
+          const audioBuffer = ctx.createBuffer(1, float32.length, sr);
+          audioBuffer.getChannelData(0).set(float32);
+
+          const src = ctx.createBufferSource();
+          src.buffer = audioBuffer;
+          src.connect(ctx.destination);
+
+          const now = ctx.currentTime;
+          let startAt = peer && peer.nextPlayTime ? peer.nextPlayTime : now;
+          if (startAt < now || startAt > now + 0.4) {
+            startAt = now + 0.02;
+          }
+          src.start(startAt);
+          if (peer) {
+            peer.nextPlayTime = startAt + audioBuffer.duration;
+          }
+        } catch (e) {
+          log('playPcm error: ' + e.message);
+        }
+      }
+
+      function setupMicPcmCapture(stream) {
+        try {
+          const ctx = ensureAudioContext();
+          if (!ctx || !stream) return;
+          if (micProcessor) {
+            try { micProcessor.disconnect(); } catch (_) {}
+          }
+          if (micSource) {
+            try { micSource.disconnect(); } catch (_) {}
+          }
+          micSource = ctx.createMediaStreamSource(stream);
+          micProcessor = ctx.createScriptProcessor(2048, 1, 1);
+          micProcessor.onaudioprocess = function (e) {
+            if (isMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const peerAliases = Object.keys(peers);
+            const fallbackTargets = peerAliases.filter(function (a) {
+              const p = peers[a];
+              const pcState = p && p.pc ? p.pc.iceConnectionState : '';
+              return pcState !== 'connected' && pcState !== 'completed';
+            });
+            if (fallbackTargets.length === 0) return;
+
+            const inputData = e.inputBuffer.getChannelData(0);
+            const b64 = floatTo16BitBase64(inputData, ctx.sampleRate || 48000, 16000);
+            if (!b64) return;
+
+            for (let i = 0; i < fallbackTargets.length; i++) {
+              const targetAlias = fallbackTargets[i];
+              try {
+                ws.send(JSON.stringify({
+                  type: 'signal',
+                  roomId: roomId,
+                  from: myAlias,
+                  to: targetAlias,
+                  data: {
+                    type: 'ws-pcm',
+                    sr: 16000,
+                    pcm: b64
+                  }
+                }));
+              } catch (_) {}
+            }
+          };
+          const zeroGain = ctx.createGain();
+          zeroGain.gain.value = 0;
+          micSource.connect(micProcessor);
+          micProcessor.connect(zeroGain);
+          zeroGain.connect(ctx.destination);
+          log('Mic PCM WebSocket relay pipeline ready');
+        } catch (e) {
+          log('setupMicPcmCapture error: ' + e.message);
+        }
+      }
+
+      async function initMicrophone() {
+        ensureAudioContext();
+        if (localStream && localStream.getAudioTracks().some(function (t) { return t.readyState === 'live'; })) {
+          localStream.getAudioTracks().forEach(function (t) { t.enabled = !isMuted; });
+          return true;
+        }
+        try {
+          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            try {
+              localStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true
+                },
+                video: false
+              });
+            } catch (err1) {
+              localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            }
+            localStream.getAudioTracks().forEach(function (t) { t.enabled = !isMuted; });
+            setupMicPcmCapture(localStream);
+            log('iPhone microphone acquired (' + localStream.getAudioTracks().length + ' track)');
+            postRN({ type: 'micState', granted: true, listenOnly: false, muted: isMuted });
+            return true;
+          }
+        } catch (err) {
+          log('getUserMedia warning: ' + err.message);
+        }
+        postRN({ type: 'micState', granted: true, listenOnly: false, muted: isMuted });
+        return false;
+      }
+
+      function emitPeers() {
+        const list = Object.keys(peers).map(function (alias) {
+          const p = peers[alias];
+          return {
+            peerId: alias,
+            alias: alias,
+            role: p.role || (alias === 'Director' ? 'director' : 'camera'),
+            volume: p.volume,
+            muted: p.muted,
+            speaking: Boolean(p.speaking),
+            audioLevel: p.audioLevel || 0
+          };
+        });
+        postRN({ type: 'peers', peers: list });
+      }
+
+      function tuneOpus(sdp) {
+        if (!sdp) return sdp;
+        const lines = sdp.split('\r\n');
+        let opusPt = null;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].indexOf('a=rtpmap:') === 0 && lines[i].toLowerCase().indexOf('opus') !== -1) {
+            const m = lines[i].match(/a=rtpmap:(\d+)/);
+            if (m) opusPt = m[1];
+          }
+        }
+        if (opusPt) {
+          let found = false;
+          const fmtp = 'a=fmtp:' + opusPt + ' minptime=10;ptime=10;maxaveragebitrate=128000;stereo=0;useinbandfec=1;usedtx=0;cbr=1;maxplaybackrate=48000';
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].indexOf('a=fmtp:' + opusPt) === 0) {
+              lines[i] = fmtp;
+              found = true;
+            }
+          }
+          if (!found) lines.push(fmtp);
+        }
+        return lines.join('\r\n');
+      }
+
+      async function getOrCreatePeer(alias, role, initiateOffer) {
+        let entry = peers[alias];
+        if (entry && entry.pc) {
+          const st = entry.pc.iceConnectionState;
+          if (st === 'failed' || st === 'closed') {
+            removePeer(alias);
+            entry = null;
+          } else {
+            return entry;
+          }
+        }
+
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        });
+
+        entry = {
+          pc: pc,
+          alias: alias,
+          role: role || (alias === 'Director' ? 'director' : 'camera'),
+          isPolite: alias === 'Director' || myAlias.localeCompare(alias) > 0,
+          makingOffer: false,
+          ignoreOffer: false,
+          iceQueue: [],
+          volume: 1.0,
+          muted: false,
+          speaking: false,
+          audioLevel: 0,
+          nextPlayTime: 0,
+          lastPcmAt: 0
+        };
+        peers[alias] = entry;
+
+        if (localStream) {
+          localStream.getAudioTracks().forEach(function (track) {
+            try {
+              track.enabled = !isMuted;
+              pc.addTrack(track, localStream);
+            } catch (_) {}
+          });
+        }
+
+        pc.ontrack = function (event) {
+          log('Remote WebRTC track received from ' + alias);
+          const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+          let audioEl = document.getElementById('peer-audio-' + alias);
+          if (!audioEl) {
+            audioEl = document.createElement('audio');
+            audioEl.id = 'peer-audio-' + alias;
+            audioEl.autoplay = true;
+            audioEl.playsInline = true;
+            document.getElementById('audio-container').appendChild(audioEl);
+          }
+          audioEl.srcObject = stream;
+          audioEl.volume = entry.muted ? 0 : Math.min(1, masterVolume * entry.volume);
+          audioEl.play().catch(function (e) { log('audioEl.play warn: ' + e.message); });
+          entry.audioEl = audioEl;
+
+          try {
+            const ctx = ensureAudioContext();
+            if (ctx) {
+              const src = ctx.createMediaStreamSource(stream);
+              const gainNode = ctx.createGain();
+              gainNode.gain.value = entry.muted ? 0 : masterVolume * entry.volume;
+              const analyser = ctx.createAnalyser();
+              analyser.fftSize = 256;
+              src.connect(analyser);
+              analyser.connect(gainNode);
+              gainNode.connect(ctx.destination);
+              entry.gainNode = gainNode;
+              entry.analyser = analyser;
+            }
+          } catch (_) {}
+          emitPeers();
+        };
+
+        pc.onicecandidate = function (event) {
+          if (event.candidate && event.candidate.candidate && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'signal',
+              roomId: roomId,
+              from: myAlias,
+              to: alias,
+              data: {
+                type: 'candidate',
+                candidate: event.candidate
+              }
+            }));
+          }
+        };
+
+        pc.oniceconnectionstatechange = function () {
+          log('ICE state with ' + alias + ': ' + pc.iceConnectionState);
+        };
+
+        emitPeers();
+
+        if (initiateOffer) {
+          try {
+            entry.makingOffer = true;
+            const offer = await pc.createOffer({ offerToReceiveAudio: true });
+            if (pc.signalingState === 'stable') {
+              const sdp = tuneOpus(offer.sdp);
+              await pc.setLocalDescription({ type: offer.type, sdp: sdp });
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'signal',
+                  roomId: roomId,
+                  from: myAlias,
+                  to: alias,
+                  data: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
+                }));
+              }
+            }
+          } catch (e) {
+            log('Offer error for ' + alias + ': ' + e.message);
+          } finally {
+            entry.makingOffer = false;
+          }
+        }
+
+        return entry;
+      }
+
+      async function handleSignal(fromAlias, data) {
+        if (!data) return;
+        if (data.type === 'ws-pcm' && data.pcm) {
+          if (!peers[fromAlias]) {
+            await getOrCreatePeer(fromAlias, fromAlias === 'Director' ? 'director' : 'camera', false);
+          }
+          playPcmBase64(fromAlias, data.pcm, data.sr || 16000);
+          return;
+        }
+
+        const entry = await getOrCreatePeer(fromAlias, fromAlias === 'Director' ? 'director' : 'camera', false);
+        const pc = entry.pc;
+
+        if (data.type === 'offer' || data.type === 'answer') {
+          const isOffer = data.type === 'offer';
+          const offerCollision = isOffer && (entry.makingOffer || pc.signalingState !== 'stable');
+          entry.ignoreOffer = !entry.isPolite && offerCollision;
+          if (entry.ignoreOffer) return;
+
+          if (offerCollision && entry.isPolite && pc.signalingState !== 'stable') {
+            try { await pc.setLocalDescription({ type: 'rollback' }); } catch (_) {}
+          }
+
+          await pc.setRemoteDescription(new RTCSessionDescription(data));
+          while (entry.iceQueue.length > 0) {
+            const c = entry.iceQueue.shift();
+            try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+          }
+
+          if (isOffer) {
+            if (localStream) {
+              const hasAudio = pc.getSenders().some(function (s) { return s.track && s.track.kind === 'audio'; });
+              if (!hasAudio) {
+                localStream.getAudioTracks().forEach(function (t) {
+                  try { pc.addTrack(t, localStream); } catch (_) {}
+                });
+              }
+            }
+            const answer = await pc.createAnswer();
+            const sdp = tuneOpus(answer.sdp);
+            await pc.setLocalDescription({ type: answer.type, sdp: sdp });
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'signal',
+                roomId: roomId,
+                from: myAlias,
+                to: fromAlias,
+                data: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }
+              }));
+            }
+          }
+        } else if (data.type === 'candidate' || data.candidate) {
+          const cand = data.candidate || data;
+          if (!cand || !cand.candidate) return;
+          if (!pc.remoteDescription) {
+            entry.iceQueue.push(cand);
+          } else {
+            try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (_) {}
+          }
+        }
+      }
+
+      function removePeer(alias) {
+        const entry = peers[alias];
+        if (!entry) return;
+        try { if (entry.pc) entry.pc.close(); } catch (_) {}
+        try { if (entry.audioEl) entry.audioEl.remove(); } catch (_) {}
+        delete peers[alias];
+        emitPeers();
+      }
+
+      function connectWs() {
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        if (ws) {
+          try { ws.onclose = null; ws.close(); } catch (_) {}
+          ws = null;
+        }
+
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = proto + '//' + location.host + '/ws/voice?roomId=' + encodeURIComponent(roomId) + '&pin=' + encodeURIComponent(pin);
+        log('Connecting voice WS: ' + url + ' as ' + myAlias);
+        ws = new WebSocket(url);
+
+        ws.onopen = function () {
+          lastMsgTime = Date.now();
+          postRN({ type: 'connection', connected: true, connecting: false, error: null });
+          ws.send(JSON.stringify({
+            type: 'join',
+            roomId: roomId,
+            alias: myAlias,
+            role: 'camera'
+          }));
+
+          if (pingInterval) clearInterval(pingInterval);
+          pingInterval = setInterval(function () {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              try { ws.send(JSON.stringify({ type: 'ping', id: String(Date.now()) })); } catch (_) {}
+            }
+          }, 4000);
+        };
+
+        ws.onmessage = async function (e) {
+          lastMsgTime = Date.now();
+          try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'pong') return;
+            if (msg.type === 'peers' && Array.isArray(msg.peers)) {
+              for (let i = 0; i < msg.peers.length; i++) {
+                const p = msg.peers[i];
+                if (p.alias && p.alias !== myAlias) {
+                  await getOrCreatePeer(p.alias, p.role || 'camera', true);
+                }
+              }
+              emitPeers();
+            } else if (msg.type === 'peer-joined') {
+              const alias = msg.alias || (msg.peer && msg.peer.alias);
+              const role = msg.role || (msg.peer && msg.peer.role) || 'camera';
+              if (alias && alias !== myAlias) {
+                await getOrCreatePeer(alias, role, false);
+                emitPeers();
+              }
+            } else if (msg.type === 'peer-left') {
+              const alias = msg.alias || msg.peerId;
+              if (alias) removePeer(alias);
+            } else if (msg.type === 'signal') {
+              if (msg.from && msg.to === myAlias && msg.data) {
+                await handleSignal(msg.from, msg.data);
+              }
+            }
+          } catch (err) {
+            log('WS message error: ' + err.message);
+          }
+        };
+
+        ws.onclose = function () {
+          ws = null;
+          postRN({ type: 'connection', connected: false, connecting: true, error: null });
+          reconnectTimer = setTimeout(connectWs, 1500);
+        };
+      }
+
+      if (!statsInterval) {
+        statsInterval = setInterval(function () {
+          let changed = false;
+          const now = Date.now();
+          Object.keys(peers).forEach(function (alias) {
+            const p = peers[alias];
+            if (p.analyser) {
+              const data = new Uint8Array(p.analyser.frequencyBinCount);
+              p.analyser.getByteFrequencyData(data);
+              let sum = 0;
+              for (let i = 0; i < data.length; i++) sum += data[i];
+              const avg = sum / (data.length * 255);
+              const level = Math.min(1, avg * 3);
+              const spk = level > 0.04;
+              if (Math.abs(level - p.audioLevel) > 0.03 || spk !== p.speaking) {
+                p.audioLevel = level;
+                p.speaking = spk;
+                changed = true;
+              }
+            } else if (p.lastPcmAt && now - p.lastPcmAt > 300 && p.speaking) {
+              p.audioLevel = 0;
+              p.speaking = false;
+              changed = true;
+            }
+          });
+          if (changed) emitPeers();
+        }, 250);
+      }
+
+      window.vidikomBridge = {
+        setMuted: function (muted) {
+          isMuted = Boolean(muted);
+          ensureAudioContext();
+          if (localStream) {
+            localStream.getAudioTracks().forEach(function (t) { t.enabled = !isMuted; });
+          }
+          postRN({ type: 'micState', granted: true, listenOnly: false, muted: isMuted });
+        },
+        setMasterVolume: function (vol) {
+          masterVolume = Math.max(0, Math.min(2, Number(vol) || 1));
+          Object.keys(peers).forEach(function (alias) {
+            const p = peers[alias];
+            if (p.gainNode) p.gainNode.gain.value = p.muted ? 0 : masterVolume * p.volume;
+            if (p.audioEl) p.audioEl.volume = p.muted ? 0 : Math.min(1, masterVolume * p.volume);
+          });
+        },
+        setPeerVolume: function (alias, vol) {
+          const p = peers[alias];
+          if (p) {
+            p.volume = Math.max(0, Math.min(2, Number(vol) || 1));
+            if (p.gainNode) p.gainNode.gain.value = p.muted ? 0 : masterVolume * p.volume;
+            if (p.audioEl) p.audioEl.volume = p.muted ? 0 : Math.min(1, masterVolume * p.volume);
+            emitPeers();
+          }
+        },
+        setPeerMute: function (alias, muted) {
+          const p = peers[alias];
+          if (p) {
+            p.muted = Boolean(muted);
+            if (p.gainNode) p.gainNode.gain.value = p.muted ? 0 : masterVolume * p.volume;
+            if (p.audioEl) p.audioEl.volume = p.muted ? 0 : Math.min(1, masterVolume * p.volume);
+            emitPeers();
+          }
+        },
+        updateConfig: async function (cfg) {
+          const needReconnect =
+            (cfg.roomId && cfg.roomId !== roomId) ||
+            (cfg.pin !== undefined && cfg.pin !== pin) ||
+            (cfg.alias && cfg.alias !== myAlias);
+          if (cfg.roomId) roomId = String(cfg.roomId).replace(/\s+/g, '');
+          if (cfg.pin !== undefined) pin = String(cfg.pin).trim();
+          if (cfg.alias) myAlias = String(cfg.alias).trim();
+          if (cfg.muted !== undefined) this.setMuted(cfg.muted);
+          if (cfg.masterVolume !== undefined) this.setMasterVolume(cfg.masterVolume);
+          await initMicrophone();
+          if (needReconnect || !ws || ws.readyState !== WebSocket.OPEN) {
+            connectWs();
+          }
+        },
+        retryMic: async function () {
+          await initMicrophone();
+        }
+      };
+
+      (async function start() {
+        await initMicrophone();
+        connectWs();
+      })();
+    })();
+  </script>
+</body>
+</html>

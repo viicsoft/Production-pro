@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 
 namespace Desktop.HardwareAbstraction
@@ -8,6 +8,7 @@ namespace Desktop.HardwareAbstraction
         private readonly ConcurrentDictionary<string, IAudioHardwareDriver> _drivers = new();
 
         public event Action<string, long, double?, bool?, bool?>? DriverStateChanged;
+        public event EventHandler<AudioMeterState>? MeterChanged;
         public event Action<string, long, bool?, Core.EqBandUpdate?>? DriverEqStateChanged;
         public event Action<string, long, Core.DynamicsUpdate>? HardwareDynamicsStateChanged;
 
@@ -39,6 +40,7 @@ namespace Desktop.HardwareAbstraction
         }
     }
 }
+
 
 
 

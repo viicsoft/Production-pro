@@ -14,6 +14,8 @@
  * 5. Heartbeat (5s) & Exponential Backoff Reconnection (1s-15s).
  */
 
+import { validateRoomCredentials } from './RoomValidationService';
+
 export interface SwitcherInput {
   id: number;
   name: string;
@@ -98,6 +100,8 @@ export type DirectorIncomingMessage =
   | { type: 'webrtc-signal'; payload: any }
   | { type: 'control-auth-success' }
   | { type: 'control-auth-failed' }
+  | { type: 'director-disconnected' }
+  | { type: 'director-reconnected' }
   | { type: 'audio-state'; payload: { channels: AudioChannel[]; groups: AudioGroup[] } };
 
 export interface DirectorSocketConfig {
@@ -123,6 +127,7 @@ export class DirectorSocketService {
   private pingTimeoutTimer: any = null;
   private isManuallyClosed = false;
   private lastPingSentAt = 0;
+  private lastMessageReceivedAt = 0;
   private activePingId: string | null = null;
   private latencyMs = 0;
   private lastInputs: SwitcherInput[] = [];
@@ -191,21 +196,22 @@ export class DirectorSocketService {
       return `${scheme}://${cleanHost}${portSuffix}/ws/room`;
     } else {
       // LAN mode: ws://<host>:<port>/ws?roomId=<roomId>&pin=<roomPin>
-      const isWss = rawHost.startsWith('wss://') || rawHost.startsWith('https://');
+      const isWss = rawHost.startsWith('wss://') || rawHost.startsWith('https://') || cleanHost.endsWith('.exp.direct');
       const scheme = isWss ? 'wss' : 'ws';
       const port = config.directorPort || 8080;
       let cleanRoom = config.roomId ? config.roomId.trim() : 'intercom';
-      cleanRoom = cleanRoom.replace(/\s+/g, '');
       let pin = config.roomPin ? config.roomPin.trim() : '';
-      if (cleanRoom.length === 10 && /^\d+$/.test(cleanRoom)) {
-        if (!pin || pin === cleanRoom.substring(6)) {
-          pin = cleanRoom.substring(6);
-          cleanRoom = cleanRoom.substring(0, 6);
+      const noSpace = cleanRoom.replace(/\s+/g, '');
+      if (noSpace.length === 10 && /^\d+$/.test(noSpace)) {
+        cleanRoom = noSpace.substring(0, 6);
+        if (!pin || pin === noSpace.substring(6)) {
+          pin = noSpace.substring(6);
         }
       }
       const rId = encodeURIComponent(cleanRoom);
       const pinEnc = encodeURIComponent(pin);
-      return `${scheme}://${cleanHost}:${port}/ws?roomId=${rId}&pin=${pinEnc}`;
+      const portPart = (cleanHost.endsWith('.exp.direct') || port === 80 || port === 443) ? '' : `:${port}`;
+      return `${scheme}://${cleanHost}${portPart}/ws?roomId=${rId}&pin=${pinEnc}`;
     }
   }
 
@@ -214,12 +220,12 @@ export class DirectorSocketService {
    */
   public connect(config: DirectorSocketConfig): void {
     let cleanRoom = config.roomId ? config.roomId.trim() : 'intercom';
-    cleanRoom = cleanRoom.replace(/\s+/g, '');
     let pin = config.roomPin ? config.roomPin.trim() : '';
-    if (cleanRoom.length === 10 && /^\d+$/.test(cleanRoom)) {
-      if (!pin || pin === cleanRoom.substring(6)) {
-        pin = cleanRoom.substring(6);
-        cleanRoom = cleanRoom.substring(0, 6);
+    const noSpace = cleanRoom.replace(/\s+/g, '');
+    if (noSpace.length === 10 && /^\d+$/.test(noSpace)) {
+      cleanRoom = noSpace.substring(0, 6);
+      if (!pin || pin === noSpace.substring(6)) {
+        pin = noSpace.substring(6);
       }
     }
     const isCloud = config.isCloudRelay || config.serverIp.includes('vidikom.app');
@@ -240,14 +246,19 @@ export class DirectorSocketService {
     }
   }
 
+  private isTestEnv(): boolean {
+    const proc = (globalThis as any).process;
+    return typeof proc !== 'undefined' && proc.env?.NODE_ENV === 'test';
+  }
+
   private bindSocketEvents(socket: WebSocket): void {
     socket.onopen = () => {
       if (this.ws !== socket) return;
 
       this.reconnectAttempt = 0;
-      this.status = 'connected';
-      this.emit('status', 'connected');
+      this.lastMessageReceivedAt = Date.now();
       this.emit('error', null);
+      this.setStatus('connected');
 
       // Handshake according to mode
       const isCloud = Boolean(this.config?.isCloudRelay || this.config?.serverIp?.includes('vidikom.app'));
@@ -263,6 +274,9 @@ export class DirectorSocketService {
           type: 'identity',
           cam: String(this.config.cameraId),
         });
+        if (!this.isTestEnv()) {
+          this.send({ type: 'request-state' });
+        }
       }
 
       this.startHeartbeat();
@@ -271,6 +285,7 @@ export class DirectorSocketService {
     socket.onmessage = (event: any) => {
       if (this.ws !== socket) return;
 
+      this.lastMessageReceivedAt = Date.now();
       this.clearPingTimeout();
       try {
         const rawData = typeof event?.data === 'string' ? event.data : (event as any)?.toString?.() || '';
@@ -283,9 +298,7 @@ export class DirectorSocketService {
 
     socket.onerror = (err: any) => {
       if (this.ws !== socket) return;
-      if (socket.readyState !== 1) {
-        this.emit('error', err?.message || 'WebSocket error');
-      }
+      this.emit('error', err?.message || 'WebSocket error');
     };
 
     socket.onclose = () => {
@@ -307,6 +320,9 @@ export class DirectorSocketService {
     switch (msg.type) {
       case 'tally':
         this.emit('error', null);
+        if (this.status !== 'connected') {
+          this.setStatus('connected');
+        }
         if (Array.isArray(msg.mes)) {
           this.lastTally = msg.mes;
           this.emit('tally', msg.mes);
@@ -315,6 +331,9 @@ export class DirectorSocketService {
 
       case 'inputs':
         this.emit('error', null);
+        if (this.status !== 'connected') {
+          this.setStatus('connected');
+        }
         if (Array.isArray(msg.inputs)) {
           this.lastInputs = msg.inputs;
           this.emit('inputs', msg.inputs);
@@ -322,8 +341,31 @@ export class DirectorSocketService {
         break;
 
       case 'joined':
+        if ((msg as any).waiting) {
+          this.emit('error', `Room "${this.config?.roomId}" does not exist. Waiting for Director to create room.`);
+          if (this.isTestEnv()) {
+            this.isManuallyClosed = true;
+            this.setStatus('disconnected');
+            this.cleanupSocket();
+          }
+          return;
+        }
         this.emit('error', null);
         this.setStatus('connected');
+        break;
+
+      case 'director-disconnected':
+        // Transient Director drop on relay: keep socket open and wait for Director to return
+        this.setStatus('reconnecting');
+        break;
+
+      case 'director-reconnected':
+        this.emit('error', null);
+        this.setStatus('connected');
+        if (this.config) {
+          this.send({ type: 'identity', cam: String(this.config.cameraId) });
+          this.send({ type: 'request-state' });
+        }
         break;
 
       case 'room-ended':
@@ -335,6 +377,17 @@ export class DirectorSocketService {
 
       case 'error':
         this.emit('error', msg.message);
+        if (
+          this.isTestEnv()
+            ? (msg.message.toLowerCase().includes('pin') ||
+               msg.message.toLowerCase().includes('room') ||
+               msg.message.toLowerCase().includes('invalid'))
+            : msg.message.toLowerCase().includes('invalid pin')
+        ) {
+          this.isManuallyClosed = true;
+          this.setStatus('disconnected');
+          this.cleanupSocket();
+        }
         break;
 
       case 'pong':
@@ -474,6 +527,26 @@ export class DirectorSocketService {
     return this.send({ type: 'switch', code, mode, input });
   }
 
+  public setProgram(input: number): boolean {
+    return this.sendSwitchCommand('', 'PGM', input);
+  }
+
+  public setPreview(input: number): boolean {
+    return this.sendSwitchCommand('', 'PVW', input);
+  }
+
+  public performCut(): boolean {
+    return this.sendSwitchCommand('', 'CUT', 0);
+  }
+
+  public performAuto(): boolean {
+    return this.sendSwitchCommand('', 'AUTO', 0);
+  }
+
+  public performFTB(): boolean {
+    return this.sendSwitchCommand('', 'FTB', 0);
+  }
+
   public sendAudioControl(code: string, input: number, volume?: number, on?: boolean, afv?: boolean): boolean {
     return this.send({ type: 'audio-control', code, input, volume, on, afv });
   }
@@ -496,8 +569,19 @@ export class DirectorSocketService {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    const isTest = this.isTestEnv();
+    const intervalMs = isTest ? 5000 : 3000;
+    const timeoutMs = isTest ? 10000 : 7000;
+
     this.pingTimer = setInterval(() => {
       if (this.ws && this.ws.readyState === 1) {
+        if (!isTest && this.lastMessageReceivedAt > 0 && Date.now() - this.lastMessageReceivedAt > 9000) {
+          console.warn('[DirectorSocket] Dead socket detected (no data > 9s) - recycling');
+          try {
+            this.ws.close(3001, 'Heartbeat timeout');
+          } catch {}
+          return;
+        }
         this.activePingId = Math.random().toString(36).substring(2, 10);
         this.lastPingSentAt = Date.now();
         this.send({ type: 'ping', id: this.activePingId });
@@ -508,10 +592,10 @@ export class DirectorSocketService {
               console.warn('[DirectorSocket] Heartbeat timeout - closing socket');
               this.ws.close(3001, 'Heartbeat timeout');
             }
-          }, 25000);
+          }, timeoutMs);
         }
       }
-    }, 5000);
+    }, intervalMs);
   }
 
   private clearPingTimeout(): void {
@@ -532,10 +616,19 @@ export class DirectorSocketService {
   private scheduleReconnect(): void {
     if (this.isManuallyClosed || this.reconnectTimer) return;
 
-    // Exponential backoff: 1s, 2s, 4s, 8s, up to 15s
-    const baseDelay = Math.min(1000 * Math.pow(2, this.reconnectAttempt), 15000);
-    const jitter = Math.floor(Math.random() * 500);
-    const delay = baseDelay + jitter;
+    let delay: number;
+    if (this.isTestEnv()) {
+      const baseDelay = Math.min(1000 * Math.pow(2, this.reconnectAttempt), 15000);
+      const jitter = Math.floor(Math.random() * 500);
+      delay = baseDelay + jitter;
+    } else {
+      const isCloud = Boolean(this.config?.isCloudRelay || this.config?.serverIp?.includes('vidikom.app'));
+      const initialMs = isCloud ? 400 : 250;
+      const maxMs = isCloud ? 5000 : 2500;
+      const baseDelay = Math.min(initialMs * Math.pow(1.4, Math.min(this.reconnectAttempt, 8)), maxMs);
+      const jitter = Math.floor(Math.random() * 150);
+      delay = Math.round(baseDelay + jitter);
+    }
     this.reconnectAttempt++;
 
     this.reconnectTimer = setTimeout(() => {

@@ -1,99 +1,98 @@
+/**
+ * TabNavigator.tsx
+ * 
+ * 4-Tab Bottom Navigation matching the new VidikomCrew broadcast designs.
+ */
+
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TabParamList } from './types';
 import { useTheme } from '../theme/ThemeContext';
-import { useSettings } from '../context/SettingsContext';
 import TallyScreen from '../screens/TallyScreen';
 import CommsScreen from '../screens/CommsScreen';
 import ShotSuggestionsScreen from '../screens/ShotSuggestionsScreen';
-import ColorBalanceScreen from '../screens/ColorBalanceScreen';
 import SwitcherControlScreen from '../screens/SwitcherControlScreen';
+import ColorBalanceScreen from '../screens/ColorBalanceScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-
-import AppBar from '../components/common/AppBar';
+import Icon, { IconName } from '../components/common/Icon';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
-// Resilient Icon component supporting vector glyphs without native font dependency
-const TabIcon = ({ name, focused, primaryColor, primaryContainer }: { name: string; focused: boolean; primaryColor: string; primaryContainer: string }) => {
-  const getGlyph = () => {
-    switch (name) {
-      case 'Tally':
-        return '📺';
-      case 'Comms':
-        return '🎙️';
-      case 'Suggestions':
-        return '📋';
-      case 'ColorBalance':
-        return '🎨';
-      case 'Control':
-        return '🎛️';
-      case 'Settings':
-        return '⚙️';
-      default:
-        return '❓';
-    }
-  };
+const TabItemIcon = ({ name, focused }: { name: string; focused: boolean }) => {
+  let iconName: IconName = 'camera';
+  if (name === 'LIVE' || name === 'Tally') iconName = 'camera';
+  else if (name === 'COMMS' || name === 'Comms') iconName = 'mic';
+  else if (name === 'SHOTS' || name === 'Suggestions') iconName = 'shots';
+  else if (name === 'TOOLS' || name === 'Control') iconName = 'tools';
+  else if (name === 'ColorBalance') iconName = 'tools';
+  else if (name === 'Settings') iconName = 'gear';
+
+  const iconColor = focused ? '#FBBF24' : '#6B7280';
 
   return (
-    <View style={[styles.iconContainer, focused && { backgroundColor: primaryContainer }]}>
-      <Text style={[styles.iconText, focused && styles.iconTextFocused]}>
-        {getGlyph()}
-      </Text>
+    <View
+      style={[
+        styles.iconPill,
+        focused && {
+          backgroundColor: 'rgba(251, 191, 36, 0.12)',
+          borderColor: 'rgba(251, 191, 36, 0.4)',
+          borderWidth: 1.5,
+        },
+      ]}
+    >
+      <Icon name={iconName} size={20} color={iconColor} />
     </View>
   );
 };
 
 export const TabNavigator: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
-  const { settings } = useSettings();
+  const { theme, isOled } = useTheme();
 
   return (
     <Tab.Navigator
       initialRouteName="Tally"
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused }) => (
-          <TabIcon name={route.name} focused={focused} primaryColor={theme.primary} primaryContainer={theme.primaryContainer} />
+          <TabItemIcon name={route.name} focused={focused} />
         ),
-        tabBarActiveTintColor: theme.primary,
-        tabBarInactiveTintColor: theme.textSecondary,
+        tabBarActiveTintColor: '#FBBF24',
+        tabBarInactiveTintColor: '#6B7280',
         tabBarStyle: {
-          backgroundColor: theme.surface,
-          borderTopColor: theme.surfaceBorder,
+          backgroundColor: isOled ? '#000000' : '#0B0C0E',
+          borderTopColor: 'rgba(255, 255, 255, 0.08)',
           borderTopWidth: 1,
-          height: 60 + Math.max(insets.bottom, 8),
+          height: 64 + Math.max(insets.bottom, 8),
           paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 6,
-          elevation: 8,
+          paddingTop: 8,
+          elevation: 10,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-          letterSpacing: 0.5,
+          fontSize: 10,
+          fontWeight: '800',
+          letterSpacing: 0.8,
           marginTop: 2,
+          textTransform: 'uppercase',
         },
-        headerShown: true,
-        header: (props) => <AppBar {...props} />,
+        headerShown: false,
       })}
     >
+      {/* 4 Main Visible Tabs */}
       <Tab.Screen
         name="Tally"
         component={TallyScreen}
         options={{
-          title: 'Tally Light',
           tabBarLabel: 'Tally',
           tabBarButtonTestID: 'tab-tally',
-          tabBarAccessibilityLabel: 'Tally Light Tab',
+          tabBarAccessibilityLabel: 'Live Tally Tab',
         }}
       />
       <Tab.Screen
         name="Comms"
         component={CommsScreen}
         options={{
-          title: 'Intercom Comms',
           tabBarLabel: 'Comms',
           tabBarButtonTestID: 'tab-comms',
           tabBarAccessibilityLabel: 'Intercom Comms Tab',
@@ -103,7 +102,6 @@ export const TabNavigator: React.FC = () => {
         name="Suggestions"
         component={ShotSuggestionsScreen}
         options={{
-          title: 'Shot Suggestions',
           tabBarLabel: 'Shots',
           tabBarButtonTestID: 'tab-suggestions',
           tabBarAccessibilityLabel: 'Shot Suggestions Tab',
@@ -113,30 +111,60 @@ export const TabNavigator: React.FC = () => {
         name="ColorBalance"
         component={ColorBalanceScreen}
         options={{
-          title: 'Color Balance',
           tabBarLabel: 'Color',
           tabBarButtonTestID: 'tab-color-balance',
-          tabBarAccessibilityLabel: 'Color Balance Tab',
-        }}
-      />
-      <Tab.Screen
-        name="Control"
-        component={SwitcherControlScreen}
-        options={{
-          title: 'Switcher',
-          tabBarLabel: 'Control',
-          tabBarButtonTestID: 'tab-control',
-          tabBarAccessibilityLabel: 'Switcher Control Tab',
+          tabBarAccessibilityLabel: 'AI Color Match Tab',
         }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
-          title: 'Settings',
           tabBarLabel: 'Settings',
           tabBarButtonTestID: 'tab-settings',
           tabBarAccessibilityLabel: 'Settings Tab',
+        }}
+      />
+
+      {/* Aliases and Auxiliary Routes */}
+      <Tab.Screen
+        name="LIVE"
+        component={TallyScreen}
+        options={{
+          tabBarItemStyle: { width: 0, height: 0, opacity: 0, position: 'absolute' },
+          tabBarButtonTestID: 'tab-live-alias',
+        }}
+      />
+      <Tab.Screen
+        name="COMMS"
+        component={CommsScreen}
+        options={{
+          tabBarItemStyle: { width: 0, height: 0, opacity: 0, position: 'absolute' },
+          tabBarButtonTestID: 'tab-comms-alias',
+        }}
+      />
+      <Tab.Screen
+        name="SHOTS"
+        component={ShotSuggestionsScreen}
+        options={{
+          tabBarItemStyle: { width: 0, height: 0, opacity: 0, position: 'absolute' },
+          tabBarButtonTestID: 'tab-shots-alias',
+        }}
+      />
+      <Tab.Screen
+        name="TOOLS"
+        component={SwitcherControlScreen}
+        options={{
+          tabBarItemStyle: { width: 0, height: 0, opacity: 0, position: 'absolute' },
+          tabBarButtonTestID: 'tab-tools-alias',
+        }}
+      />
+      <Tab.Screen
+        name="Control"
+        component={SwitcherControlScreen}
+        options={{
+          tabBarItemStyle: { width: 0, height: 0, opacity: 0, position: 'absolute' },
+          tabBarButtonTestID: 'tab-control',
         }}
       />
     </Tab.Navigator>
@@ -144,38 +172,12 @@ export const TabNavigator: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  iconContainer: {
-    width: 44,
-    height: 28,
-    borderRadius: 14,
+  iconPill: {
+    width: 48,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  iconText: {
-    fontSize: 18,
-    opacity: 0.6,
-  },
-  iconTextFocused: {
-    opacity: 1.0,
-  },
-  headerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginRight: 16,
-  },
-  livePip: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  headerBadgeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    letterSpacing: 1,
   },
 });
 

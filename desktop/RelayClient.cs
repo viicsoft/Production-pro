@@ -14,6 +14,7 @@ namespace Desktop
     public class RelayClient : IAsyncDisposable
     {
         private ClientWebSocket? _ws;
+        private readonly SemaphoreSlim _sendLock = new(1, 1);
         private CancellationTokenSource? _cts;
         public string RelayUrl { get; private set; } = "";
         private string _roomId = "";
@@ -21,8 +22,9 @@ namespace Desktop
         private string _productionName = "";
         private IEnumerable<object>? _activeInputs;
         private bool _shouldReconnect;
-        private int _reconnectDelayMs = 1000;
-        private const int MaxReconnectDelayMs = 30000;
+        private int _reconnectDelayMs = 500;
+        private const int MaxReconnectDelayMs = 10000;
+        private long _lastReceivedTicks = DateTime.UtcNow.Ticks;
 
         public bool IsConnected => _ws?.State == WebSocketState.Open;
         
@@ -46,8 +48,9 @@ namespace Desktop
             _activeInputs = activeInputs;
             _cameraRoles = cameraRoles;
             _shouldReconnect = true;
-            _reconnectDelayMs = 1000;
+            _reconnectDelayMs = 500;
 
+            _cts?.Cancel();
             _cts = new CancellationTokenSource();
             await DoConnectAsync(_cts.Token);
         }
@@ -58,30 +61,33 @@ namespace Desktop
             {
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(10);
 
                 var uri = new Uri(RelayUrl);
                 await _ws.ConnectAsync(uri, ct);
+                Interlocked.Exchange(ref _lastReceivedTicks, DateTime.UtcNow.Ticks);
 
-                // Send director-join message
+                // Send director-join message (including local LAN IP & port for hybrid same-network discovery)
                 var joinMsg = JsonSerializer.Serialize(new
                 {
                     type = "director-join",
                     roomId = _roomId,
                     pin = _pin,
                     productionName = _productionName,
+                    lanIp = PwaServer.Instance.GetCurrentLanIp(),
+                    directorPort = PwaServer.Instance.ActivePort,
                     inputs = _activeInputs,
                     cameraRoles = _cameraRoles
                 });
-                var joinBytes = Encoding.UTF8.GetBytes(joinMsg);
-                await _ws.SendAsync(new ArraySegment<byte>(joinBytes), WebSocketMessageType.Text, true, ct);
+                await SendAsync(joinMsg);
 
-                _reconnectDelayMs = 1000; // Reset backoff on successful connect
+                _reconnectDelayMs = 500; // Reset backoff on successful connect
                 OnConnectionChanged?.Invoke(true);
                 Console.WriteLine($"[RelayClient] Connected to relay: {RelayUrl}");
 
-                // Start receive loop in background
+                // Start receive & ping loops in background
                 _ = Task.Run(() => ReceiveLoopAsync(ct), ct);
+                _ = Task.Run(() => PingLoopAsync(ct), ct);
             }
             catch (Exception ex)
             {
@@ -95,9 +101,33 @@ namespace Desktop
             }
         }
 
+        private async Task PingLoopAsync(CancellationToken ct)
+        {
+            var ws = _ws;
+            try
+            {
+                while (ws != null && _ws == ws && ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
+                {
+                    await Task.Delay(8000, ct);
+                    if (_ws != ws || ws.State != WebSocketState.Open) break;
+
+                    var elapsedSec = (DateTime.UtcNow - new DateTime(Interlocked.Read(ref _lastReceivedTicks), DateTimeKind.Utc)).TotalSeconds;
+                    if (elapsedSec > 25)
+                    {
+                        Console.WriteLine("[RelayClient] Relay heartbeat timed out, recycling connection...");
+                        try { ws.Abort(); } catch { }
+                        break;
+                    }
+
+                    await SendAsync($"{{\"type\":\"ping\",\"id\":\"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}\"}}");
+                }
+            }
+            catch { }
+        }
+
         private async Task ReceiveLoopAsync(CancellationToken ct)
         {
-            var buffer = new byte[8 * 1024];
+            var buffer = new byte[64 * 1024];
             try
             {
                 while (_ws != null && _ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
@@ -112,6 +142,7 @@ namespace Desktop
                         sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
                     } while (!result.EndOfMessage);
 
+                    Interlocked.Exchange(ref _lastReceivedTicks, DateTime.UtcNow.Ticks);
                     var message = sb.ToString();
                     OnRemoteMessage?.Invoke(message);
                 }
@@ -141,7 +172,7 @@ namespace Desktop
             }
             catch (OperationCanceledException) { return; }
 
-            // Exponential backoff
+            // Exponential backoff capped at 10s
             _reconnectDelayMs = Math.Min(_reconnectDelayMs * 2, MaxReconnectDelayMs);
 
             if (_shouldReconnect && !ct.IsCancellationRequested)
@@ -151,20 +182,35 @@ namespace Desktop
         }
 
         /// <summary>
-        /// Send a JSON message through the relay to all remote crew.
+        /// Send a JSON message through the relay to all remote crew in a thread-safe manner.
         /// </summary>
         public async Task SendAsync(string json)
         {
-            if (_ws == null || _ws.State != WebSocketState.Open) return;
+            var ws = _ws;
+            if (ws == null || ws.State != WebSocketState.Open) return;
             
+            bool acquired = false;
             try
             {
-                var bytes = Encoding.UTF8.GetBytes(json);
-                await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await _sendLock.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+                acquired = true;
+                if (ws.State == WebSocketState.Open)
+                {
+                    var bytes = Encoding.UTF8.GetBytes(json);
+                    await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, timeoutCts.Token).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[RelayClient] Send failed: {ex.Message}");
+            }
+            finally
+            {
+                if (acquired)
+                {
+                    try { _sendLock.Release(); } catch { }
+                }
             }
         }
 

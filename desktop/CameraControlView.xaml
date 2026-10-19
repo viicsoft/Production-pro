@@ -9,27 +9,43 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <Border Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="0,0,0,1" Padding="16,10">
+        <Border Background="#1E1E22" BorderBrush="#3D3D44" BorderThickness="0,0,0,1" Padding="16,9">
             <Grid>
-                <TextBlock Text="CAMERA CONTROL &amp; CCU SHADING" Foreground="#FF9800" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Border Background="#2A2A30" CornerRadius="3" Padding="8,4" Margin="0,0,8,0">
-                        <TextBlock Text="AUTO IRIS: ON" Foreground="#00E676" FontSize="10" FontWeight="Bold"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="CAMERA CONTROL, NDI PTZ &amp; CCU SHADING" Foreground="#FF9800" FontWeight="Bold" FontSize="12" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                    <Border x:Name="NdiStatusBadge" Background="#162820" BorderBrush="#00C853" BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                        <TextBlock x:Name="TxtNdiStatus" Text="NDI 6 PTZ ENGINE: READY" Foreground="#00E676" FontSize="10" FontWeight="Bold"/>
                     </Border>
-                    <Border Background="#2A2A30" CornerRadius="3" Padding="8,4">
-                        <TextBlock Text="TALLY LINKED" Foreground="#FF9800" FontSize="10" FontWeight="Bold"/>
-                    </Border>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="BtnScanNdi" Content="SCAN NDI CAMERAS" Click="BtnScanNdi_Click"
+                            Background="#2A2A34" Foreground="#E4E4E7" BorderBrush="#484858" BorderThickness="1"
+                            Padding="10,4" Margin="0,0,6,0" FontSize="10" FontWeight="Bold" Cursor="Hand"/>
+                    <Button x:Name="BtnAutoAssignNdi" Content="AUTO-ASSIGN NDI" Click="BtnAutoAssignNdi_Click"
+                            Background="#2A2A34" Foreground="#38BDF8" BorderBrush="#0284C7" BorderThickness="1"
+                            Padding="10,4" Margin="0,0,10,0" FontSize="10" FontWeight="Bold" Cursor="Hand"
+                            ToolTip="Automatically map discovered NDI sources to Camera strips"/>
+                    <Button x:Name="BtnAutoIrisToggle" Content="AUTO IRIS: ON" Click="BtnAutoIrisToggle_Click"
+                            Background="#1B2E24" Foreground="#00E676" BorderBrush="#00C853" BorderThickness="1"
+                            Padding="10,4" Margin="0,0,6,0" FontSize="10" FontWeight="Bold" Cursor="Hand"/>
+                    <Button x:Name="BtnTallyLinkedToggle" Content="TALLY LINKED: ON" Click="BtnTallyLinkedToggle_Click"
+                            Background="#2E2316" Foreground="#FF9800" BorderBrush="#FF9800" BorderThickness="1"
+                            Padding="10,4" FontSize="10" FontWeight="Bold" Cursor="Hand"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Camera CCU Strips Container with Mouse Wheel & Drag Scrolling -->
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="12"
+        <!-- Camera CCU & NDI PTZ Strips Container -->
+        <ScrollViewer x:Name="MainCameraScroll" Grid.Row="1"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="10,8"
                       PreviewMouseWheel="ScrollViewer_PreviewMouseWheel"
                       PreviewMouseLeftButtonDown="ScrollViewer_PreviewMouseLeftButtonDown"
                       PreviewMouseMove="ScrollViewer_PreviewMouseMove"
                       PreviewMouseLeftButtonUp="ScrollViewer_PreviewMouseLeftButtonUp">
-            <StackPanel x:Name="CameraPanel" Orientation="Horizontal" VerticalAlignment="Stretch"/>
+            <StackPanel x:Name="CameraPanel" Orientation="Horizontal" VerticalAlignment="Top"/>
         </ScrollViewer>
     </Grid>
 </UserControl>
