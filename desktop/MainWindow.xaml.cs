@@ -583,8 +583,33 @@ namespace Desktop
                 }
                 catch (Exception ex)
                 {
-                    LogIntercom("Intercom init: WebView2 runtime check failed", ex);
-                    throw;
+                    LogIntercom("Intercom init: WebView2 runtime check failed, attempting silent bootstrapper install", ex);
+                    var setupPath = System.IO.Path.Combine(AppContext.BaseDirectory, "MicrosoftEdgeWebview2Setup.exe");
+                    if (!System.IO.File.Exists(setupPath))
+                    {
+                        setupPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory, "..", "MicrosoftEdgeWebview2Setup.exe"));
+                    }
+                    if (System.IO.File.Exists(setupPath))
+                    {
+                        try
+                        {
+                            var psi = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = setupPath,
+                                Arguments = "/silent /install",
+                                UseShellExecute = false,
+                                CreateNoWindow = true
+                            };
+                            using var proc = System.Diagnostics.Process.Start(psi);
+                            if (proc != null)
+                            {
+                                await proc.WaitForExitAsync();
+                            }
+                        }
+                        catch { }
+                    }
+                    var retryVersion = CoreWebView2Environment.GetAvailableBrowserVersionString();
+                    LogIntercom($"Intercom init: WebView2 runtime version after bootstrapper = {retryVersion}");
                 }
 
 
@@ -720,7 +745,6 @@ namespace Desktop
             catch (Exception ex)
             {
                 LogIntercom("Intercom init: failed with exception", ex);
-                System.Windows.MessageBox.Show($"WebView2 Init failed:\n{ex.Message}\n\nPath: {System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AtemDirector", "webview2_data")}", "WebView2 Error");
             }
         }
 
